@@ -44,6 +44,7 @@
 //! | `geotim/virtim/versy/noisy/ef1var/timvar/f2var/esind` layer parameters | [`ionosphere`] | yes |
 //! | `esreg/esmod` sporadic E losses | — | with the systems model |
 //! | `ionset/lecden/gethp/f2dis/curmuf` MUF | [`muf`] | yes |
+//! | `sang/selmod/genion/fobby/alosfv` ionogram tables | [`ionogram`] | yes |
 //! | `luffy` + relatives, systems model | — | not yet |
 //! | `noisy/genois/anois1` noise | — | not yet |
 //! | `setluf/outlin` output fields | — | not yet |
@@ -51,6 +52,7 @@
 pub mod coefficients;
 pub mod con;
 pub mod geometry;
+pub mod ionogram;
 pub mod ionosphere;
 pub mod magnetic;
 pub mod muf;

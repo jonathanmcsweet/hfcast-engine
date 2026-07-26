@@ -6,6 +6,11 @@ point-to-point prediction path the app exercises — method 30, isotropic
 antennas, single power, sporadic-E on. Area coverage, antenna pattern files
 and the interactive front end are out of scope.
 
+Method 30 internally means `MSPEC = 121` (`decred.for`): the short-path
+systems model below 7000 km, the long-path model beyond 10000 km, and
+**both models run and smoothed together between 7000 and 10000 km** — so
+the systems-model stage must port both paths and the smoothing blend.
+
 ## Why the port
 
 Not accuracy — a faithful port produces the same numbers by definition, and
@@ -55,7 +60,8 @@ geometry trace only matches this way.
 | sporadic E parameters                 | `esind`                                                           | `engine::ionosphere`   | 9.8k point-hours                         |
 | sporadic E losses                     | `esreg`, `esmod`                                                  | —                      | (with the systems model)                 |
 | MUF                                   | `ionset`, `lecden`, `gethp`, `f2dis`, `curmuf`                    | `engine::muf`          | 2.3k hours, 20 fields + profiles         |
-| systems model (modes, losses, signal) | `luffy` and relatives                                             | —                      |                                          |
+| ionogram, reflectrix, deviative loss  | `sang`, `selmod`, `genion`, `fobby`, `alosfv`                     | `engine::ionogram`     | 4.6k area calls incl. exact reflectrix   |
+| systems model (modes, losses, signal) | `setlng`, `sigdis`, `luffy` and relatives                         | —                      |                                          |
 | noise                                 | `noisy`, `genois`, `anois1`                                       | —                      |                                          |
 | output fields                         | `setluf`, `outlin`                                                | —                      |                                          |
 

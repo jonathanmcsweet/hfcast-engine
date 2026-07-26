@@ -17,7 +17,8 @@ use propcore::deck::build_deck;
 use propcore::engine::coefficients::{redmap, FoF2Model};
 use propcore::engine::con::MagneticPole;
 use propcore::engine::ionosphere::{cofion, esind, layer_parameters, virtim, LayerParams};
-use propcore::engine::muf::{curmuf, ionset, IonoState};
+use propcore::engine::ionogram::{alosfv, fobby, genion, sang, selmod};
+use propcore::engine::muf::{curmuf, ionset, lecden, IonoState};
 use propcore::engine::geometry::{path_geometry, PathGeometry};
 use propcore::engine::magnetic::magvar;
 use propcore::runner::{run_deck_with_env, variant_bin, IsolatedRoot};
@@ -88,6 +89,10 @@ fn parse_geom_trace(text: &str) -> Vec<GeomTrace> {
 /// trace (`F2V gmt km` + one `PT` line of 16 values per control point).
 struct HourTrace {
     gmt: f64,
+    /// Second and third header fields where the dump has them (the area
+    /// index K, and NANG for the reflectrix), NaN otherwise.
+    h2: f64,
+    h3: f64,
     values: Vec<f64>,
     points: Vec<Vec<f64>>,
 }
@@ -97,11 +102,21 @@ fn parse_hour_traces(text: &str, header: &str) -> Vec<HourTrace> {
     for line in text.lines() {
         let fields: Vec<&str> = line.split_whitespace().collect();
         match fields.first() {
-            Some(&h) if h == header => out.push(HourTrace {
-                gmt: fields.get(1).and_then(|v| v.parse().ok()).unwrap_or(f64::NAN),
-                values: Vec::new(),
-                points: Vec::new(),
-            }),
+            Some(&h) if h == header => {
+                let field = |i: usize| {
+                    fields
+                        .get(i)
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(f64::NAN)
+                };
+                out.push(HourTrace {
+                    gmt: field(1),
+                    h2: field(2),
+                    h3: field(3),
+                    values: Vec::new(),
+                    points: Vec::new(),
+                });
+            }
             Some(&"PT") => {
                 if let Some(current) = out.last_mut() {
                     current
@@ -190,7 +205,16 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    let cases: Vec<_> = sweep_cases().into_iter().take(case_limit).collect();
+    let only = argv
+        .iter()
+        .position(|a| a == "--only")
+        .and_then(|i| argv.get(i + 1))
+        .cloned();
+    let cases: Vec<_> = sweep_cases()
+        .into_iter()
+        .filter(|c| only.as_ref().is_none_or(|o| c.id.contains(o.as_str())))
+        .take(case_limit)
+        .collect();
     println!("# Port stage check: {} sweep cases\n", cases.len());
 
     let mut worst = [
@@ -266,6 +290,13 @@ fn main() -> ExitCode {
         Worst::new("layer MUF median (MHz)"),
         Worst::new("layer MUF upper decile (MHz)"),
     ];
+    let mut ion_worst = [
+        Worst::new("sounding frequency (MHz)"),
+        Worst::new("ionogram virtual height (km)"),
+        Worst::new("ionogram true height (km)"),
+        Worst::new("deviative loss factor"),
+        Worst::new("reflectrix frequency (kHz)"),
+    ];
     let mut structural = 0usize;
     let mut compared = 0usize;
     let mut mag_points = 0usize;
@@ -275,6 +306,7 @@ fn main() -> ExitCode {
     let mut es_points = 0usize;
     let mut lec_points = 0usize;
     let mut muf_hours = 0usize;
+    let mut ion_calls = 0usize;
 
     for case in &cases {
         let deck = match build_deck(case) {
@@ -469,6 +501,18 @@ fn main() -> ExitCode {
         }
         let muf_dump = std::fs::read_to_string(trace_dir.join("curmuf.txt")).unwrap_or_default();
         let mufs = parse_hour_traces(&muf_dump, "MUF");
+        let ion_dump = std::fs::read_to_string(trace_dir.join("ionogram.txt")).unwrap_or_default();
+        let ions = parse_hour_traces(&ion_dump, "ION");
+        if only.is_some() {
+            let heads: Vec<String> = ions
+                .iter()
+                .take(8)
+                .map(|t| format!("(gmt {} area {})", t.gmt, t.h2))
+                .collect();
+            eprintln!("{}: {} ION dumps: {}", case.id, ions.len(), heads.join(" "));
+        }
+        let fob_dump = std::fs::read_to_string(trace_dir.join("fobby.txt")).unwrap_or_default();
+        let fobs = parse_hour_traces(&fob_dump, "FOB");
         if mufs.len() != virs.len() || lecs.len() != virs.len() {
             eprintln!(
                 "{}: {} VIRTIM dumps but {} CURMUF and {} LECDEN dumps",
@@ -483,10 +527,11 @@ fn main() -> ExitCode {
         let cof = cofion(&set);
         let mags: Vec<_> = rust.points.iter().map(|p| magvar(p.lat, p.lon)).collect();
         let clats: Vec<f32> = rust.points.iter().map(|p| p.lat).collect();
-        // FSECV lives in a COMMON block and carries across hours. The
-        // carry here is partial — LUFFY's own lecden calls (next stage)
-        // also write it — which is one reason FSECV is not compared.
+        // FSECV lives in a COMMON block and carries across hours; the
+        // ionogram chain's lecden calls update it after curmuf's.
         let mut fsecv_carry = [0.0f32; 3];
+        let mut ion_index = 0usize;
+        let nang = sang(rust.gcd_km, 0.1);
         for (((vir, f2h), esh), (lech, mufh)) in virs
             .iter()
             .zip(&f2s)
@@ -579,7 +624,6 @@ fn main() -> ExitCode {
                 0.1,
                 red.ssn as f32,
             );
-            fsecv_carry = state.fsecv;
             let scalars = &mufh.values;
             if scalars.len() != 10 || mufh.points.len() != 4 {
                 eprintln!("{}: malformed CURMUF dump", case.id);
@@ -670,6 +714,76 @@ fn main() -> ExitCode {
                 lec_worst[3].update((f64::from(state.htr[i]) - lv[4 + i]).abs(), &case.id);
                 lec_worst[4].update((f64::from(state.fnsq[i]) - lv[54 + i]).abs(), &case.id);
             }
+
+            // The ionogram chain, per LUFFY under method 30 (MSPEC=121,
+            // the short/long smoothing method): below 7000 km the short
+            // pass alone runs (the control area); from 7000 to 10000 km
+            // a long-path pass follows for the end areas the short pass
+            // did not cover; beyond 10000 km only the long pass runs.
+            let jmode = selmod(&state);
+            let areas: Vec<usize> = if rust.gcd_km >= 10000.0 {
+                if state.kfx > 1 {
+                    vec![0, state.kfx - 1]
+                } else {
+                    vec![0]
+                }
+            } else {
+                let mut v = vec![jmode];
+                if rust.gcd_km >= 7000.0 {
+                    if jmode != 0 {
+                        v.push(0);
+                    }
+                    if state.kfx > 1 && jmode != state.kfx - 1 {
+                        v.push(state.kfx - 1);
+                    }
+                }
+                v
+            };
+            for &k in &areas {
+                let (Some(ionh), Some(fobh)) = (ions.get(ion_index), fobs.get(ion_index)) else {
+                    eprintln!("{}: ran out of ionogram dumps", case.id);
+                    structural += 1;
+                    break;
+                };
+                ion_index += 1;
+                if ionh.h2 as usize != k + 1
+                    || fobh.h2 as usize != k + 1
+                    || fobh.h3 as usize != nang
+                    || ionh.values.len() != 120
+                    || fobh.points.len() != nang
+                {
+                    eprintln!(
+                        "{}: ionogram dump for area {} angles {} where Rust ran {} {}",
+                        case.id,
+                        ionh.h2,
+                        fobh.h3,
+                        k + 1,
+                        nang
+                    );
+                    structural += 1;
+                    continue;
+                }
+                lecden(&mut state, k);
+                let mut ion = genion(&state, k);
+                let table = fobby(&ion, nang);
+                alosfv(&state, k, &mut ion, &hour.layers);
+                ion_calls += 1;
+                for i in 0..30 {
+                    ion_worst[0].update((f64::from(ion.fvert[i]) - ionh.values[i]).abs(), &case.id);
+                    ion_worst[1]
+                        .update((f64::from(ion.hprim[i]) - ionh.values[30 + i]).abs(), &case.id);
+                    ion_worst[2]
+                        .update((f64::from(ion.htrue[i]) - ionh.values[60 + i]).abs(), &case.id);
+                    ion_worst[3]
+                        .update((f64::from(ion.afac[i]) - ionh.values[90 + i]).abs(), &case.id);
+                }
+                for (row, traced_row) in table.iter().zip(&fobh.points) {
+                    for (r, t) in row.iter().zip(traced_row) {
+                        ion_worst[4].update((f64::from(*r) - t).abs(), &case.id);
+                    }
+                }
+            }
+            fsecv_carry = state.fsecv;
         }
     }
 
@@ -724,6 +838,14 @@ fn main() -> ExitCode {
     println!("| field | worst difference | case |");
     println!("| --- | --: | --- |");
     for w in muf_worst.iter().chain(&muf_layer_worst).chain(&lec_worst) {
+        println!("| {} | {:.2e} | {} |", w.name, w.value, w.case);
+    }
+
+    println!("\n## Stage: ionogram tables (sang, selmod, genion, fobby, alosfv)\n");
+    println!("Compared {ion_calls} area calls.\n");
+    println!("| field | worst difference | case |");
+    println!("| --- | --: | --- |");
+    for w in &ion_worst {
         println!("| {} | {:.2e} | {} |", w.name, w.value, w.case);
     }
 
