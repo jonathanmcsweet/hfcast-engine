@@ -30,7 +30,7 @@ use super::modes::{
     es_slots, luffy_freq_loop, luffy_luf, luffy_smooth, outbod_sentinels, setlng, setluf,
     DeckParams, Geog, HourSaves, ModeLoopState, PassCtx, Son,
 };
-use super::muf::{curmuf, ionset, lecden, IonoState};
+use super::muf::{curmuf, ionset, lecden, nommuf, IonoState};
 use super::noise::{anois1, genois};
 use super::sigdis::{sigdis, SignalDistribution};
 
@@ -174,6 +174,104 @@ fn build_antennas(itshfbc: &Path, inp: &RunInputs) -> Result<AntennaSet, String>
     .map_err(|e| e.to_string())?;
     ants.install(2, rx.min_freq, rx.max_freq, rx_table, 0.0);
     Ok(ants)
+}
+
+/// One hour of a MUF-only run (`ITRUN` 3 and 4, card methods 3 to 11):
+/// what `CURMUF` leaves for `OUTMUF` and `OUTLAY` to print.
+#[derive(Debug, Clone)]
+pub struct MufHourOut {
+    pub gmt: R,
+    pub lmt: R,
+    pub fot: R,
+    pub hpf: R,
+    pub esmuf: R,
+    pub allmuf: R,
+    /// E, F1, F2 and Es. `OUTLAY` prints slots 1 and 2 on its first
+    /// line and 3 and 4 on its second, under headings that name the
+    /// F1 and F2 layers the other way round.
+    pub layers: [super::muf::LayerMuf; 4],
+}
+
+/// Runs the MUF computation alone for all 24 hours, with no systems
+/// model after it. Card methods 7 to 11 (`ITRUN = 4`) take the MUFs
+/// from the complete electron-density profile with `CURMUF`; methods
+/// 3 to 6 (`ITRUN = 3`) take them from the manual nomogram method with
+/// `NOMMUF`, which fills no per-layer detail.
+pub fn run_muf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<MufHourOut>, String> {
+    let pole = MagneticPole::for_tree(itshfbc);
+    let geo = path_geometry(
+        inp.from_lat_deg as R,
+        inp.from_lon_deg as R,
+        inp.to_lat_deg as R,
+        inp.to_lon_deg as R,
+        false,
+        pole,
+    );
+    let mags: Vec<_> = geo.points.iter().map(|p| magvar(p.lat, p.lon)).collect();
+    let set: CoefficientSet =
+        redmap(itshfbc, FoF2Model::Ccir, inp.month, inp.ssn).map_err(|e| e.to_string())?;
+    let cof = cofion(&set);
+    let _ = alatd(&geo.points);
+    let clats: Vec<R> = geo.points.iter().map(|p| p.lat).collect();
+    let psc = [1.0, 1.0, 1.0, if inp.sporadic_e { 1.0 } else { 0.0 }];
+    let from_lon_rad = inp.from_lon_deg as R * D2R;
+    let to_lon_rad = inp.to_lon_deg as R * D2R;
+
+    let mut fsecv_carry = [0.0 as R; 3];
+    let mut out = Vec::with_capacity(24);
+    for jt in 1..=24i32 {
+        let gmt = jt as R;
+        let ab = virtim(&cof, &set.ikim, gmt);
+        let params = layer_parameters(
+            &set, &ab, &geo.points, &mags, inp.month, inp.ssn, gmt, &psc,
+        );
+        let es = esind(&set, &ab, &geo.points, &mags, &psc);
+        let mut state = IonoState::from_layers(&params);
+        state.fsecv = fsecv_carry;
+        ionset(&mut state);
+        let mut es_state = es.clone();
+        let clcks: Vec<R> = params.iter().map(|p| p.clck).collect();
+        let hour = if (3..=6).contains(&inp.method) {
+            let (fs, hs) = es_slots(&es_state);
+            let mut f2m3 = [0.0 as R; 5];
+            for (k, p) in params.iter().enumerate() {
+                f2m3[k] = p.f2m3;
+            }
+            nommuf(
+                &state.fi,
+                &f2m3,
+                &fs,
+                &hs,
+                state.km,
+                geo.gcd,
+                geo.gcd_km,
+            )
+        } else {
+            curmuf(
+                &mut state,
+                &mut es_state,
+                &set.f2d,
+                &clats,
+                &clcks,
+                geo.gcd,
+                geo.gcd_km,
+                0.1,
+                inp.ssn,
+            )
+        };
+        let times = geotim(jt, 1, from_lon_rad, to_lon_rad);
+        out.push(MufHourOut {
+            gmt,
+            lmt: times.lmt_tx,
+            fot: hour.fot,
+            hpf: hour.hpf,
+            esmuf: hour.esmuf,
+            allmuf: hour.allmuf,
+            layers: hour.layers,
+        });
+        fsecv_carry = state.fsecv;
+    }
+    Ok(out)
 }
 
 /// One hour of a LUF run (`ITRUN = 8`, card methods 26-29): the MUF

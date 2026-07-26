@@ -156,25 +156,37 @@ fn main() -> ExitCode {
     }
 }
 
-/// Pulls the 24 data rows out of a method-26 listing: the lines with
-/// exactly seven numeric fields after the header.
+/// Pulls the 24 data rows out of a method-26 listing.
+///
+/// `OUTMUF` builds its format as `(1H ,2X,2F6.1,` then one `F7.2` per
+/// tabulated column, so the fields are read by column rather than by
+/// splitting: a MUF of 1000.00 fills its field completely and leaves
+/// no space before the next one.
 fn parse_outmuf(text: &str) -> Vec<Row> {
+    let field = |line: &str, from: usize, to: usize| -> Option<f64> {
+        if line.len() < to {
+            return None;
+        }
+        line[from..to].trim().parse().ok()
+    };
     let mut out = Vec::new();
     for line in text.lines() {
-        // The card-echo ruler is also seven bare integers; data rows
-        // carry a decimal point in every field.
-        if !line.split_whitespace().all(|t| t.contains('.')) {
+        let (Some(gmt), Some(lmt)) = (field(line, 3, 9), field(line, 9, 15)) else {
+            continue;
+        };
+        if !(1.0..=24.0).contains(&gmt) {
             continue;
         }
-        let fields: Vec<f64> = line
-            .split_whitespace()
-            .map(|t| t.parse::<f64>())
-            .collect::<Result<_, _>>()
-            .unwrap_or_default();
-        if fields.len() == 7 && (1.0..=24.0).contains(&fields[0]) {
-            out.push([
-                fields[0], fields[1], fields[2], fields[3], fields[4], fields[5], fields[6],
-            ]);
+        let mut row: Row = [gmt, lmt, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let mut ok = true;
+        for c in 0..5 {
+            match field(line, 15 + c * 7, 22 + c * 7) {
+                Some(v) => row[2 + c] = v,
+                None => ok = false,
+            }
+        }
+        if ok {
+            out.push(row);
         }
     }
     out

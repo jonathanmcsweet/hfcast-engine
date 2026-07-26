@@ -248,6 +248,31 @@ computes one, so the cell reads zero either way.
 `fuzz --method M` runs the corpus with a different `METHOD` card.
 Methods 16 to 22 are identical to the reference over 60 cases each.
 
+## The MUF-only methods (`run_muf`)
+
+Card methods 3 to 11 stop at the hour's MUFs and run no systems model.
+Methods 7 to 11 (`ITRUN = 4`) take them from the complete
+electron-density profile with `CURMUF`, which the systems methods
+already use; methods 3 to 6 (`ITRUN = 3`) take them from the manual
+nomogram method of NBS Report 7619 instead, which `NOMMUF` computes
+from two distance-factor polynomials in great-circle miles, the lowest
+E and F2 critical frequencies along the path and, for sporadic E, a
+single hop at a 0.5 probability of reflection. There is no separate F1
+MUF on that path.
+
+`mufcheck` compares both. Method 7 prints `OUTLAY`'s table — the lower
+decile, median and upper decile of the MUF, the takeoff angle, the
+virtual and true heights and the equivalent vertical frequency, for
+each of four layers — which is a wider view of `CURMUF` than any
+systems method prints, since method 30's listing carries only the
+circuit MUF, FOT and HPF. Method 3 prints `OUTMUF`'s four summary
+columns. 48 cases each, every cell identical.
+
+Both tables are read by column rather than by splitting on spaces: a
+MUF of 1000.00, which is what the sporadic-E slot holds when no
+control point has a sporadic-E layer, fills its `F7.2` field
+completely and leaves no space before the next one.
+
 ## The LUF passes (`run_luf`)
 
 Card methods 26 to 29 are `ITRUN = 8`: instead of the deck's

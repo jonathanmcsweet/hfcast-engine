@@ -529,6 +529,117 @@ fn hop_geometry(gcdkm: R, amind: R, hp: R, ht: R, split_first: bool) -> HopGeome
     }
 }
 
+/// Port of `NOMMUF`: the layer MUFs and the circuit MUF by the manual
+/// nomogram method — NBS Report 7619, programmed for the computer —
+/// rather than from a complete electron-density profile. Card methods
+/// 3 to 6 (`ITRUN = 3`) use it instead of [`curmuf`].
+///
+/// `fi` and `f2m3` are the per-control-point critical frequencies and
+/// F2 M(3000) factors; `fs`/`hs` are the sporadic-E slots. There is no
+/// separate F1 MUF on this path, and the returned per-layer detail
+/// that [`curmuf`] fills stays at zero: `OUTLAY` is not reachable from
+/// these methods.
+pub fn nommuf(
+    fi: &[[R; 3]; 5],
+    f2m3: &[R; 5],
+    fs: &[[R; 3]; 5],
+    hs: &[R; 5],
+    km: usize,
+    gcd: R,
+    gcdkm: R,
+) -> MufHour {
+    // The two distance factors, as polynomials in great-circle miles.
+    const AE: [R; 7] = [
+        -1.133_200_756E-2,
+        3.761_385_053E-2,
+        -5.038_476_266E-3,
+        2.624_808_315E-4,
+        -5.976_618_436E-6,
+        1.334_494_261E-7,
+        -4.368_460_907E-9,
+    ];
+    const AF: [R; 7] = [
+        4.699_243_101E-3,
+        2.264_634_341E-3,
+        9.202_437_332E-5,
+        6.865_259_817E-5,
+        -9.985_831_104E-6,
+        4.491_514_41E-7,
+        -6.712_654_756E-9,
+    ];
+    let arc = gcdkm * 0.0062137;
+    // E and F1 distance factor.
+    let elfc = if arc < 16.0 {
+        let mut v = AE[6];
+        for c in AE[..6].iter().rev() {
+            v = v * arc + c;
+        }
+        v * arc + 0.2085
+    } else {
+        1.02
+    };
+    // F2 distance factor.
+    let flfc = if 24.0 <= arc {
+        1.0
+    } else {
+        let mut v = AF[6];
+        for c in AF[..6].iter().rev() {
+            v = v * arc + c;
+        }
+        v * arc
+    };
+    let mut ec: R = 1000.0;
+    for f in fi.iter().take(km) {
+        if ec > f[0] {
+            ec = f[0];
+        }
+    }
+    let emuf = 4.871 * ec * elfc;
+    let mut f2muf: R = 1000.0;
+    for k in 0..km {
+        let four = f2m3[k] * fi[k][2] * 1.1;
+        let fmuf = fi[k][2] + flfc * (four - fi[k][2]);
+        if fmuf < f2muf {
+            f2muf = fmuf;
+        }
+    }
+    let allmuf = if emuf >= f2muf { emuf } else { f2muf };
+    let fot = (0.85 * f2muf).max(emuf);
+    let hpf = (1.15 * f2muf).max(emuf);
+    // Sporadic E, at a 0.5 probability of reflection.
+    let mut esmuf: R = 1000.0;
+    for k in 0..km {
+        if fs[k][1] <= 0.0 {
+            continue;
+        }
+        let dmax = 225.0 * hs[k].sqrt();
+        let hop = gcdkm / dmax + 1.0;
+        let psi = 0.5 * gcd / hop;
+        let tdel = (psi.cos() - RZ / (RZ + hs[k])) / psi.sin();
+        let cdel = 1.0 / (1.0 + tdel * tdel).sqrt();
+        let sphe = RZ * cdel / (RZ + hs[k]);
+        let secp = 1.0 / (1.0 - sphe * sphe).sqrt();
+        let esd = fs[k][1] * secp;
+        if esmuf > esd {
+            esmuf = esd;
+        }
+    }
+    MufHour {
+        emuf,
+        // No separate F1 on this path.
+        f1muf: -1.0,
+        f2muf,
+        esmuf,
+        allmuf,
+        fot,
+        hpf,
+        angmuf: 0.0,
+        modmuf: 0,
+        layers: [LayerMuf::default(); 4],
+        ks: 0,
+    }
+}
+
 /// Port of `CURMUF` (the `_orig` variant): layer MUFs, deciles and the
 /// circuit MUF. `clat`/`clck` are per control point (radians, hours);
 /// `es` is mutated where the source rewrites `FS(1,KSX)`.
