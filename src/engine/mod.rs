@@ -51,6 +51,7 @@
 //! | `setluf/outlin` output fields | [`modes`] `setluf` | line output open |
 
 pub mod antenna;
+pub mod ccir;
 pub mod coefficients;
 pub mod con;
 pub mod geometry;

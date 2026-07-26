@@ -107,20 +107,33 @@ through a 32-bit float.
 
 Status over the 73 definition files in the tree (`antcheck`):
 
-| family             | types          | files | ported |
-| ------------------ | -------------- | ----: | ------ |
-| isotrope           | 0              |     3 | yes    |
-| gain tables        | 10, 11, 13, 14 |     8 | yes    |
-| NOSC               | 48             |     1 | yes    |
-| IONCAP             | 21-30          |    10 | yes    |
-| CCIR               | 1-9            |    34 | no     |
-| NTIA curtain array | 12             |     1 | no     |
-| HFMUFES            | 31-47          |    14 | no     |
-| Harris             | 90+            |     2 | no     |
+| family       | types          | files | ported |
+| ------------ | -------------- | ----: | ------ |
+| isotrope     | 0              |     3 | yes    |
+| gain tables  | 10, 11, 13, 14 |     8 | yes    |
+| NOSC         | 48             |     1 | yes    |
+| IONCAP       | 21-30          |    10 | yes    |
+| CCIR REC705  | 1-9            |    34 | yes    |
+| NTIA curtain | 12             |     1 | yes    |
+| HFMUFES      | 31-47          |    14 | no     |
+| Harris       | 90+            |     2 | no     |
 
-The ported families match on every cell: 60,852 compared. Unported
+The ported families match on every cell: 157,662 compared. Unported
 families return an error rather than a number, so the report lists
 remaining work instead of passing silently.
+
+The CCIR family (`engine::ccir`) surfaced the porting rule that cost
+the most this stage: Fortran's exponent binds before multiplication,
+so `aa * rl**2` is `aa` times the square, and flattening it to
+`(aa * rl) * rl` rounds differently — three printed digits flipped
+across two log-periodic files until the `ria` fit, the `shf`
+polynomial and the curtain's `FZTHR` product were re-associated to the
+source's order. Two dead-code findings are recorded in the module:
+`antinit2` returns before `parmprec` for type 10, so the monopole's
+Bessel and surface-impedance branch is unreachable, and `dirgain` has
+no callers. The trig tables also keep their doctored end values —
+`b(0)` is `cos(0.005)` in radians, the one entry missing the degree
+factor.
 
 The IONCAP family (`engine::ioncap`) added two findings. The curtain
 pattern compares its elevation against the integer literal `0001` —

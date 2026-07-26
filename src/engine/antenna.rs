@@ -14,10 +14,10 @@
 //! | type | family | ported |
 //! | --- | --- | --- |
 //! | 0 | isotrope | yes |
-//! | 1-9 | CCIR (`ccirgain`, `gainrel`) | no |
+//! | 1-9 | CCIR (`ccirgain`, `gainrel`) | yes |
 //! | 10 | vertical monopole, table | yes |
 //! | 11 | gain table over 91 elevations | yes |
-//! | 12 | NTIA curtain arrays (`curtain`) | no |
+//! | 12 | NTIA curtain arrays (`curtain`) | yes |
 //! | 13 | gain table over 360 azimuths | yes |
 //! | 14 | gain table over 30 frequencies | yes |
 //! | 21-30 | IONCAP (`ioninit`, `iongain`) | yes |
@@ -484,16 +484,47 @@ pub fn point_to_point_table(s: &AntennaSetup) -> Result<GainTable, Unsupported> 
             }
         }
         1..=9 => {
-            return Err(Unsupported {
-                jant,
-                family: "CCIR",
-            })
+            // The REC705 patterns. ANTINIT2's first act is SETMAXGAIN,
+            // which overwrites parm(5) and parm(8) (and parm(6) for
+            // the quadrant), so the mutation must happen before the
+            // parameter extraction reads them.
+            for ifreq in lo..=hi {
+                let freq = ifreq as R;
+                parm[4] = freq;
+                let giso = super::ccir::setmaxgain(file, &mut parm, freq, design_freq)
+                    .expect("types 1-9 always have a max-gain mode");
+                let ant = super::ccir::antinit2(file, &parm);
+                let row = &mut table.gains[(ifreq - 1) as usize];
+                for (ielev, slot) in row.iter_mut().enumerate() {
+                    *slot = ant.ccirgain(ielev as R, offazim, giso);
+                }
+            }
         }
         12 => {
-            return Err(Unsupported {
-                jant,
-                family: "NTIA curtain array",
-            })
+            // The NTIA curtain normalises from the file's GainNorm
+            // table; ANTINIT2 returns before touching anything for
+            // type 12, so no parm mutation happens here.
+            for ifreq in lo..=hi {
+                let freq = ifreq as R;
+                parm[4] = freq;
+                // ANTCAL's gnorm interpolation; at whole frequencies it
+                // reads the slot exactly.
+                let ifq = ifreq as usize;
+                let gn = if ifq < 30 {
+                    file.gainmaxb[ifq - 1]
+                        + (freq - ifq as R) * (file.gainmaxb[ifq] - file.gainmaxb[ifq - 1])
+                } else {
+                    file.gainmaxb[29]
+                };
+                let row = &mut table.gains[(ifreq - 1) as usize];
+                for (ielev, slot) in row.iter_mut().enumerate() {
+                    let mut g = super::ccir::curtain::gain(&parm, offazim, ielev as R, gn);
+                    if g < -30.0 {
+                        g = -30.0;
+                    }
+                    *slot = g;
+                }
+            }
         }
         21..=30 => {
             let indx = jant - 20;
@@ -914,7 +945,7 @@ mod tests {
 
     #[test]
     fn unported_families_say_so_instead_of_answering() {
-        let file = read_antenna(&tree(), "default/ccir.001").expect("ccir.001");
+        let file = read_antenna(&tree(), "samples/sample.31").expect("sample.31");
         let err = point_to_point_table(&AntennaSetup {
             file: &file,
             end: AntennaEnd::Transmit,
@@ -925,8 +956,8 @@ mod tests {
             power_field: 0.1,
             azimuth_deg: 57.0,
         })
-        .expect_err("CCIR is not ported");
-        assert_eq!(err.jant, 1);
+        .expect_err("HFMUFES is not ported yet");
+        assert_eq!(err.jant, 31);
     }
 
     #[test]
