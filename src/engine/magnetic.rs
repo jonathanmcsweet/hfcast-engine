@@ -11,6 +11,10 @@
 //! Rawer dip formula — an arctangent of an arctangent divided by the square
 //! root of a cosine — is exactly what the source computes.
 
+// The DATA values are kept digit for digit, including digits beyond f32
+// precision; "fixing" them would drift from the model being ported.
+#![allow(clippy::excessive_precision)]
+
 use super::con::{D2R, R};
 
 /// Fortran `SIGN` is not needed here, but the polar clamp is: latitudes
