@@ -50,6 +50,7 @@
 //! | `anois1/genfam/genois` noise | [`noise`] | yes |
 //! | `setluf/outlin` output fields | [`modes`] `setluf` | line output open |
 
+pub mod antenna;
 pub mod coefficients;
 pub mod con;
 pub mod geometry;

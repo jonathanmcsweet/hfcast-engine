@@ -87,6 +87,48 @@ geometry trace only matches this way.
 Working order is data flow, top to bottom. Each stage lands with its trace
 instrumentation, its `porttest` comparison, and unit tests.
 
+## Antennas (`engine::antenna`)
+
+The engine never reads an antenna definition file while predicting.
+`ANTCALC` runs first, turns each `ANTENNA` card into a table of 30
+frequencies by 91 elevation angles, and writes `run/gainNN.dat`;
+`DECRED` reads that back and `GAIN` interpolates it per mode. The file
+is the interface between the two halves, so it is also the verification
+surface — `antcheck` compares this module's table against the one the
+shipped engine wrote, needing no instrumented build, at the 0.001 dB
+its `f7.3` fields carry. Both sides are rounded to each field's own
+format before comparing, because the reference's digits come back
+through a 32-bit float.
+
+Status over the 73 definition files in the tree (`antcheck`):
+
+| family             | types          | files | ported |
+| ------------------ | -------------- | ----: | ------ |
+| isotrope           | 0              |     3 | yes    |
+| gain tables        | 10, 11, 13, 14 |     8 | yes    |
+| CCIR               | 1-9            |    34 | no     |
+| NTIA curtain array | 12             |     1 | no     |
+| IONCAP             | 21-30          |    10 | no     |
+| HFMUFES            | 31-47          |    14 | no     |
+| NOSC               | 48             |     1 | no     |
+| Harris             | 90+            |     2 | no     |
+
+The ported families match on every cell: 30,426 compared. Unported
+families return an error rather than a number, so the report lists
+remaining work instead of passing silently.
+
+Two things the module records. `DAZEL0` is the antenna half's own
+geometry — double precision, 6370 km Earth — so the azimuth a pattern
+is cut along is deliberately not the path azimuth
+`engine::geometry` computes. And the card's last field is transmit
+power in kW, except on a receive card where a non-zero value is reused
+as the isotrope's gain.
+
+Not yet wired into the prediction: the engine still treats both ends as
+the 0 dB isotrope. Feeding [`gain_lookup`] into the mode loop is the
+step that makes a directional antenna change an answer, and it needs
+the CCIR family first so there is something directional to feed it.
+
 ## Sporadic E off
 
 The `FPROB` card multiplies each critical frequency, and its fourth
