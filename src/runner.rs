@@ -234,6 +234,57 @@ pub fn run_deck_with_env(
     fs::read_to_string(run_dir.join(output_name)).map_err(RunError::from)
 }
 
+/// Runs the reference in area-coverage mode and returns the grid file
+/// it writes.
+///
+/// An area run reads none of the card decks the other methods use.
+/// `voacapl` takes the literal argument `area`, a mode word (`calc`),
+/// and the name of a keyed text file under the tree's `areadata`
+/// directory; the results go to a sibling file with a `.vg1`
+/// extension. `name` is that file's stem, `voa` its contents.
+pub fn run_area(
+    bin: &Path,
+    itshfbc: &Path,
+    name: &str,
+    voa: &str,
+) -> Result<String, RunError> {
+    let dir = itshfbc.join("areadata").join("default");
+    fs::create_dir_all(&dir)?;
+    fs::write(dir.join(format!("{name}.voa")), voa)?;
+    let out = dir.join(format!("{name}.vg1"));
+    let _ = fs::remove_file(&out);
+    let mut command = Command::new(bin);
+    let mut child = command
+        .arg(itshfbc)
+        .arg("area")
+        .arg("calc")
+        .arg(format!("default/{name}.voa"))
+        .current_dir(itshfbc)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let deadline = Instant::now() + RUN_TIMEOUT;
+    loop {
+        if let Some(status) = child.try_wait()? {
+            if !status.success() {
+                let o = child.wait_with_output()?;
+                return Err(RunError::Failed {
+                    code: status.code(),
+                    output: String::from_utf8_lossy(&o.stderr).into_owned(),
+                });
+            }
+            break;
+        }
+        if Instant::now() > deadline {
+            let _ = child.kill();
+            return Err(RunError::TimedOut);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    Ok(fs::read_to_string(&out)?)
+}
+
 fn run_to_completion(
     bin: &Path,
     itshfbc: &Path,
