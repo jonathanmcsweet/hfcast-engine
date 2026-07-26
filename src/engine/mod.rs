@@ -40,7 +40,7 @@
 //! | `blkdat.for` constants, `north_pole.txt` | [`con`] | yes |
 //! | `geom.for` path geometry, control points | [`geometry`] | yes |
 //! | `magvar.for` magnetic field at control points | [`magnetic`] | yes |
-//! | `redmap.for` coefficient loading | — | not yet |
+//! | `redmap.for` coefficient loading | [`coefficients`] | yes |
 //! | `geotim/virtim/timvar/f2var` map evaluation | — | not yet |
 //! | `esind/esreg/esmod` sporadic E | — | not yet |
 //! | `ionset/curmuf` MUF | — | not yet |
@@ -48,6 +48,7 @@
 //! | `noisy/genois/anois1` noise | — | not yet |
 //! | `setluf/outlin` output fields | — | not yet |
 
+pub mod coefficients;
 pub mod con;
 pub mod geometry;
 pub mod magnetic;

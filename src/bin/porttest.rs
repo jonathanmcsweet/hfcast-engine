@@ -14,6 +14,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use propcore::deck::build_deck;
+use propcore::engine::coefficients::{redmap, FoF2Model};
 use propcore::engine::con::MagneticPole;
 use propcore::engine::geometry::{path_geometry, PathGeometry};
 use propcore::engine::magnetic::magvar;
@@ -80,6 +81,50 @@ fn parse_geom_trace(text: &str) -> Vec<GeomTrace> {
     out
 }
 
+/// The Fortran side of one REDMAP call, parsed from the trace dump: the
+/// header values and each labelled array's elements in storage order.
+struct RedmapTrace {
+    ssn: f64,
+    month: u32,
+    arrays: Vec<(String, Vec<f64>)>,
+}
+
+/// Parses the first REDMAP dump in the file (later dumps repeat the same
+/// month for the deck's other method calls).
+fn parse_redmap_trace(text: &str) -> Option<RedmapTrace> {
+    let mut trace: Option<RedmapTrace> = None;
+    for line in text.lines() {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        match fields.first() {
+            Some(&"REDMAP") if fields.len() == 3 => {
+                if trace.is_some() {
+                    break; // only the first dump
+                }
+                trace = Some(RedmapTrace {
+                    ssn: fields[1].parse().ok()?,
+                    month: fields[2].parse().ok()?,
+                    arrays: Vec::new(),
+                });
+            }
+            Some(&"ARR") if fields.len() == 2 => {
+                trace
+                    .as_mut()?
+                    .arrays
+                    .push((fields[1].to_string(), Vec::new()));
+            }
+            Some(_) => {
+                if let Some((_, values)) = trace.as_mut().and_then(|t| t.arrays.last_mut()) {
+                    for f in &fields {
+                        values.push(f.parse().unwrap_or(f64::NAN));
+                    }
+                }
+            }
+            None => {}
+        }
+    }
+    trace
+}
+
 fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args().collect();
     let case_limit = argv
@@ -112,9 +157,11 @@ fn main() -> ExitCode {
         Worst::new("Rawer dip (rad)"),
         Worst::new("east longitude (rad)"),
     ];
+    let mut red_worst: Vec<Worst> = Vec::new();
     let mut structural = 0usize;
     let mut compared = 0usize;
     let mut mag_points = 0usize;
+    let mut red_points = 0usize;
 
     for case in &cases {
         let deck = match build_deck(case) {
@@ -213,6 +260,61 @@ fn main() -> ExitCode {
             mag_worst[1].update((rust_mag.gmdip as f64 - f[3]).abs(), &case.id);
             mag_worst[2].update((rust_mag.east_lon as f64 - f[1]).abs(), &case.id);
         }
+
+        // The coefficient stage: REDMAP runs once per month group, and the
+        // sweep decks have one month each, so the first dump is the one.
+        let red_dump = std::fs::read_to_string(trace_dir.join("redmap.txt")).unwrap_or_default();
+        let Some(red) = parse_redmap_trace(&red_dump) else {
+            eprintln!("{}: no REDMAP trace in the dump", case.id);
+            return ExitCode::FAILURE;
+        };
+        if red.month != case.month || (red.ssn - case.ssn).abs() > 1e-4 {
+            eprintln!(
+                "{}: REDMAP ran month {} ssn {} but the deck says {} {}",
+                case.id, red.month, red.ssn, case.month, case.ssn
+            );
+            structural += 1;
+            continue;
+        }
+        let set = match redmap(root.path(), FoF2Model::Ccir, red.month, red.ssn as f32) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("{}: coefficient load failed: {e}", case.id);
+                return ExitCode::FAILURE;
+            }
+        };
+        let flat = set.flattened();
+        if red_worst.is_empty() {
+            red_worst = flat.iter().map(|(name, _)| Worst::new(name)).collect();
+        }
+        if red.arrays.len() != flat.len() {
+            eprintln!(
+                "{}: {} arrays in the trace, {} in Rust",
+                case.id,
+                red.arrays.len(),
+                flat.len()
+            );
+            structural += 1;
+            continue;
+        }
+        for (index, ((trace_name, trace_values), (rust_name, rust_values))) in
+            red.arrays.iter().zip(&flat).enumerate()
+        {
+            if trace_name != rust_name || trace_values.len() != rust_values.len() {
+                eprintln!(
+                    "{}: array {index} is {trace_name}[{}] in the trace, {rust_name}[{}] in Rust",
+                    case.id,
+                    trace_values.len(),
+                    rust_values.len()
+                );
+                structural += 1;
+                continue;
+            }
+            for (traced, ported) in trace_values.iter().zip(rust_values) {
+                red_worst[index].update((ported - traced).abs(), &case.id);
+            }
+            red_points += trace_values.len();
+        }
     }
 
     println!("## Stage: geometry (geom.for)\n");
@@ -220,6 +322,14 @@ fn main() -> ExitCode {
     println!("| field | worst difference | case |");
     println!("| --- | --: | --- |");
     for w in &worst {
+        println!("| {} | {:.2e} | {} |", w.name, w.value, w.case);
+    }
+
+    println!("\n## Stage: coefficient loading (redmap.for)\n");
+    println!("Compared {red_points} array elements.\n");
+    println!("| array | worst difference | case |");
+    println!("| --- | --: | --- |");
+    for w in &red_worst {
         println!("| {} | {:.2e} | {} |", w.name, w.value, w.case);
     }
 
