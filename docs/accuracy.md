@@ -113,6 +113,22 @@ own median, which no unknown antenna can shift):
   storms) are worse than a bell curve allows. Reliability shown near 100%
   should be read as "9 in 10", not certainty.
 
+## Finding 5 — the missing bad days are storm days, and Kp finds them
+
+Full write-up in [storm.md](storm.md). Tagging every measured day-hour with
+the highest Kp of its preceding 24 hours (GFZ Potsdam record):
+
+- With no recent storm, the calibrated spread is confirmed on data it was
+  not fitted on (widening needed: 1.0–1.2).
+- After a storm the downward spread must widen with storm strength — about
+  1.4 times for Kp 5–6, 2 for Kp 6–7, 2.5 for Kp 7+ — and the same
+  staircase appears independently in the fit month and in the seven test
+  months. The upward side never changes: storms only suppress.
+- The graded rule `1 + 0.5 × (Kp24 − 4.75)`, capped at 2.5, brings
+  predicted frequencies into approximate agreement with measured ones in
+  the decision-relevant 6–10 dB range. The server applies it to now-casts,
+  which are the requests that know the current Kp.
+
 ## The decision this supports
 
 **VOACAP, with its sporadic-E term enabled, its daily swing shrunk by
@@ -126,9 +142,11 @@ field it already reads.
 
 - **Absolute level.** The per-path offset removes it; predicting it needs
   known antennas.
-- **Storm-day tails.** Deviations beyond 10 dB happen more often than the
-  scaled spread predicts; the reliability number is honest in the common
-  range and optimistic about rare deep fades.
+- **Storm-day tails on non-now-cast predictions.** A forecast for a future
+  day cannot know that day's Kp, so it keeps the quiet-day calibration; the
+  small share of days that turn out stormy will be worse than it says. For
+  now-casts the storm widening covers this, except the very deepest Kp 7+
+  fades, which exceed any bell curve.
 - **Geography.** WSPR receivers cluster in North America and Europe.
 - **The remaining factor of ~3.** Sporadic-E closed most of the gap at solar
   minimum, but reality still swings about a third of the corrected-model

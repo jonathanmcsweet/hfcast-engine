@@ -12,15 +12,19 @@
 //! - [`sweep`] enumerates input cases covering the model's regimes.
 //! - [`runner`] drives a chosen `voacapl` binary.
 //! - [`compare`] measures how far two listings differ, field by field.
+//! - [`spread`] pairs the engine's day-to-day spread claims with measured days.
+//! - [`geomag`] reads the GFZ Kp record, so days can be split by storm state.
 //!
 //! All of it survives the port: the same parser and comparator that measure
 //! compiler-to-compiler spread today will measure Rust-to-Fortran spread later.
 
 pub mod compare;
 pub mod deck;
+pub mod geomag;
 pub mod itu;
 pub mod listing;
 pub mod runner;
+pub mod spread;
 pub mod stats;
 pub mod sweep;
 pub mod wspr;

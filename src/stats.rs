@@ -61,6 +61,23 @@ pub fn correlation(a: &[f64], b: &[f64]) -> Option<f64> {
     Some(num / (da * db).sqrt())
 }
 
+/// Standard normal cumulative distribution, via Abramowitz-Stegun 7.1.26.
+///
+/// Accurate to about 1e-7, far below anything these measurements resolve.
+pub fn phi(z: f64) -> f64 {
+    let x = z.abs() / std::f64::consts::SQRT_2;
+    let t = 1.0 / (1.0 + 0.3275911 * x);
+    let poly = t
+        * (0.254829592
+            + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
+    let erf = 1.0 - poly * (-x * x).exp();
+    if z >= 0.0 {
+        0.5 * (1.0 + erf)
+    } else {
+        0.5 * (1.0 - erf)
+    }
+}
+
 /// Least-squares fit of `observed = intercept + slope * predicted`.
 ///
 /// The slope matters as much as the fit. A model can put the peaks and troughs
@@ -125,6 +142,14 @@ mod tests {
     #[test]
     fn correlation_refuses_a_constant_side() {
         assert_eq!(correlation(&[1.0, 1.0, 1.0], &[1.0, 2.0, 3.0]), None);
+    }
+
+    #[test]
+    fn phi_hits_the_anchors_that_matter() {
+        // The median day, and the definition of a decile.
+        assert!((phi(0.0) - 0.5).abs() < 1e-9);
+        assert!((phi(-1.2816) - 0.1).abs() < 1e-3);
+        assert!((phi(1.2816) - 0.9).abs() < 1e-3);
     }
 
     #[test]
