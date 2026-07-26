@@ -93,7 +93,7 @@ Then, from `propcore/`, with `cargo` as above:
 | `antcheck`  | antenna gain tables against the reference's own files | `--only NAME` `--verbose`                                                                                                   |
 | `lufcheck`  | `OUTMUF`'s table from a method-26 deck                | `--cases N` `--from N` `--jobs J`                                                                                           |
 | `mufcheck`  | methods 1, 3 and 7 tables                             | `--method 1\|3\|7` `--cases N` `--from N` `--jobs J`                                                                        |
-| `areacheck` | area grid coordinates against the reference's grid    | `--jobs J`                                                                                                                  |
+| `areacheck` | area coverage rows against the reference's grid file  | `--jobs J`                                                                                                                  |
 
 `fuzz`'s `--method`, `--coeffs`, `--fprob` and `--botlines` are applied
 after a case is generated, so the corpus is the same set of paths with
@@ -548,23 +548,33 @@ compares the path length against `GCDLNG` with `.GT.` where `HFMUFS` uses
 `.GE.`, which changes the model at exactly 10000 km.
 
 `OUTAREA` prints **24** value columns, not 27, and only when the run has
-one frequency; with more it prints 7. Six of the 24 are the largest value
-over the frequencies rather than the first frequency's, because the
+one frequency; with more it prints 7 — the MUF and the six values that
+are maxima over the frequencies. Those six are the largest value over the
+frequencies rather than the first frequency's in both forms, because the
 reference walks them overwriting slot 1 — and the power cut, which reads
 the same slot, therefore sees a maximised median against unmaximised
-decile deviations. `PWRCUT` is George Lane's algorithm: an eleven-point
+decile deviations.
+
+Asking for several frequencies is not obvious: the area file's `Freqs`
+line holds one frequency **per plot**, not a list for one run. A value at
+or below 0.5 makes `GETFREQS` read the list from `run/areafreq.dat`
+instead, up to eleven frequencies, which is the only way to reach the
+seven-column form. The distributed tree ships no such file, so
+`areacheck` writes one. The reference prints a warning on that path that
+the transmit antenna must be non-directional, which fits: with more than
+one frequency `ANTCALC` builds an ordinary point-to-point table instead
+of the 360-azimuth one. `PWRCUT` is George Lane's algorithm: an eleven-point
 normal distribution of signal-to-noise ratios built from the median and
 the two deciles, interpolated at the half-power and quarter-power limits.
 
 `areacheck` compares the reference's rows as text, field by field, which
-is stricter than parsing them back: 8450 printed cells over the five
-grids are identical.
+is stricter than parsing them back: 8891 printed cells over six grids —
+five one-frequency grids in the 24-column form and one four-frequency
+grid in the 7-column form — are identical.
 
-What that run does **not** exercise, because it uses one frequency and
-isotropes at both ends:
+What those runs do **not** exercise, because they use isotropes at both
+ends:
 
-- The seven-column form and its maximum-over-frequencies loop. Needs a
-  multi-frequency area file.
 - The 360-azimuth antenna table. An area antenna is built at a single
   frequency over 360 azimuths and 91 elevations, stored as hundredths of
   a decibel by `NINT`, and never travels through `gainNN.dat` — the
@@ -577,7 +587,9 @@ isotropes at both ends:
   only when the run has **one** frequency (`freqarea(2)` is zero). A
   multi-frequency area run uses the ordinary point-to-point table, cut
   along the azimuth from the transmitter to the grid centre and fixed for
-  every point — a path that is already verified.
+  every point — a path that is already verified. The port builds a
+  constant table for both, which is right for an isotrope but would cut a
+  directional pattern along the wrong bearing.
 
 Three things about this mode are recorded at the code and matter to the
 rest of the stage. The `AREA` card's last field picks the projection:

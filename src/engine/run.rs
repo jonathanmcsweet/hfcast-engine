@@ -1116,9 +1116,28 @@ fn area_point(ix: usize, iy: usize, lat: R, lon: R, h: &HourPrediction, nf: usiz
             snxx = s.snxx;
         }
     }
-    let power_cut = pwrcut(sndb, s0.snrlw, s0.snrup, 88.0, 91.0);
     // `ANGLER` falls back to the transmit angle when it is not positive.
     let angr = if s0.angler <= 0.0 { s0.angle } else { s0.angler };
+    if nf > 1 {
+        // With more than one frequency `OUTAREA` prints seven columns
+        // instead of twenty-four: the MUF and the six values that are
+        // maxima over the frequencies.
+        return AreaPoint {
+            ix,
+            iy,
+            lat,
+            lon,
+            fields: vec![
+                f_fixed(h.frel[11], 6, 2),
+                f6(dbu, 1),
+                f6(dbw, 1),
+                f6(sndb, 1),
+                f6(reliab, 3),
+                f6(sprob, 3),
+                f6(snxx, 1),
+            ],
+        };
+    }
     let mode = if h.long_model {
         format!("  {}{}", laytyp(s0.mode_layer), laytyp(s0.moder_layer))
     } else {
@@ -1147,7 +1166,7 @@ fn area_point(ix: usize, iy: usize, lat: R, lon: R, h: &HourPrediction, nf: usiz
         f6(s0.dl_nois, 2),
         f6(s0.dblosl, 2),
         f6(s0.dblosu, 2),
-        f6(power_cut, 3),
+        f6(pwrcut(sndb, s0.snrlw, s0.snrup, 88.0, 91.0), 3),
         f6(angr, 2),
     ];
     AreaPoint {

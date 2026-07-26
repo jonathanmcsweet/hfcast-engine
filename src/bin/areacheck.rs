@@ -42,6 +42,16 @@ struct Case {
     name: &'static str,
     why: &'static str,
     grid: Grid,
+    /// The run's frequencies. One gives `OUTAREA`'s 24-column form, more
+    /// than one its 7-column form, where six values are the largest over
+    /// the frequencies.
+    ///
+    /// The area file's `Freqs` line holds one frequency per plot, not a
+    /// list for one run. Several frequencies are asked for by naming a
+    /// frequency at or below 0.5, which makes the reference read the list
+    /// from `run/areafreq.dat` instead — a file this tree does not ship,
+    /// so the case writes it.
+    freqs: &'static [f32],
 }
 
 fn cases() -> Vec<Case> {
@@ -61,26 +71,37 @@ fn cases() -> Vec<Case> {
             name: "dist",
             why: "the distributed file's own rectangle, at a smaller size",
             grid: gc(35.80, -5.90, -1000.0, 6000.0, -1000.0, 4000.0, 9),
+            freqs: &[FREQ],
         },
         Case {
             name: "odd",
             why: "a grid whose centre point falls exactly on the origin",
             grid: gc(51.50, -0.13, -2000.0, 2000.0, -2000.0, 2000.0, 5),
+            freqs: &[FREQ],
         },
         Case {
             name: "south",
             why: "a southern centre, where the latitude sign flips",
             grid: gc(-33.87, 151.21, -3000.0, 3000.0, -3000.0, 3000.0, 7),
+            freqs: &[FREQ],
         },
         Case {
             name: "polar",
             why: "reaching over the pole, where the azimuth arithmetic folds",
             grid: gc(78.20, 15.60, -4000.0, 4000.0, -4000.0, 4000.0, 7),
+            freqs: &[FREQ],
         },
         Case {
             name: "anti",
             why: "a rectangle wide enough to pass the antipode",
             grid: gc(0.00, 0.00, -19000.0, 19000.0, -8000.0, 8000.0, 11),
+            freqs: &[FREQ],
+        },
+        Case {
+            name: "manyfreq",
+            why: "several frequencies, where the columns become maxima over them",
+            grid: gc(48.86, 2.35, -5000.0, 5000.0, -5000.0, 5000.0, 7),
+            freqs: &[7.100, 11.850, 15.400, 21.650],
         },
         // The IPROJ = 8 projection is left out until its printed
         // longitudes are understood: the reference prints them
@@ -133,7 +154,18 @@ fn main() -> ExitCode {
                 return out;
             }
         };
-        let text = match run_area(&reference, root.path(), case.name, &area_file(&case.grid)) {
+        if case.freqs.len() > 1 {
+            let mut list = String::new();
+            for i in 0..11 {
+                list += &format!("{:8.3}", case.freqs.get(i).copied().unwrap_or(0.0));
+            }
+            if let Err(e) = std::fs::write(root.path().join("run").join("areafreq.dat"), list + "\n")
+            {
+                out.broken = Some(format!("areafreq.dat: {e}"));
+                return out;
+            }
+        }
+        let text = match run_area(&reference, root.path(), case.name, &area_file(case)) {
             Ok(t) => t,
             Err(e) => {
                 out.broken = Some(format!("reference: {e}"));
@@ -153,7 +185,7 @@ fn main() -> ExitCode {
             month: MONTH,
             ssn: SSN,
             hour: HOUR,
-            freqs_mhz: vec![FREQ],
+            freqs_mhz: case.freqs.to_vec(),
             required_snr_db: REQUIRED_SNR,
             noise_dbw: NOISE_DBW,
             watts: WATTS,
@@ -257,7 +289,8 @@ fn main() -> ExitCode {
 
 /// Writes the keyed area input file. The values that are not the grid
 /// are held fixed: what varies here is the geometry.
-fn area_file(grid: &Grid) -> String {
+fn area_file(case: &Case) -> String {
+    let grid = &case.grid;
     let hemi = |v: f32, pos: char, neg: char| {
         format!("{:9.2}{}", v.abs(), if v >= 0.0 { pos } else { neg })
     };
@@ -292,7 +325,16 @@ fn area_file(grid: &Grid) -> String {
         format!("Months   :{MONTH:7.2}   0.00   0.00   0.00   0.00   0.00   0.00   0.00   0.00"),
         format!("Ssns     :{:7}      0      0      0      0      0      0      0      0", SSN as i32),
         format!("Hours    :{HOUR:7}      0      0      0      0      0      0      0      0"),
-        format!("Freqs    :{FREQ:7.3}  0.000  0.000  0.000  0.000  0.000  0.000  0.000  0.000"),
+        {
+            // One frequency per plot. A value at or below 0.5 asks the
+            // reference to read its frequency list from areafreq.dat.
+            let first = if case.freqs.len() > 1 {
+                0.0
+            } else {
+                case.freqs[0]
+            };
+            format!("Freqs    :{first:7.3}  0.000  0.000  0.000  0.000  0.000  0.000  0.000  0.000")
+        },
         format!(
             "System   :{NOISE_DBW:5}     0.100   90{:5}     3.000     0.100",
             REQUIRED_SNR as i32
