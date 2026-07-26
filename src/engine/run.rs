@@ -24,7 +24,7 @@ use super::ionosphere::{
     alatd, cofion, esind, geotim, ground_constants, layer_parameters, virtim,
 };
 use super::antenna::{
-    dazel0, point_to_point_table, read_antenna, AntennaEnd, AntennaSet, AntennaSetup, GainTable,
+    area_table, dazel0, point_to_point_table, read_antenna, AntennaEnd, AntennaSet, AntennaSetup,
 };
 use super::magnetic::{magvar, MagneticVars};
 use super::modes::{
@@ -912,14 +912,6 @@ fn hour_body(
 
 /// An area run's inputs: the grid, the transmitter at its centre, and the
 /// one hour and frequency set the run asks for.
-///
-/// The antennas are given as constant gains rather than definition files.
-/// An area antenna is a 360-azimuth table `ANTCALC` builds at a single
-/// frequency, which is a separate stage; a pattern with no azimuth
-/// variation — an isotrope, or a gain table in elevation only — reduces
-/// that table to one column, and `GAIN`'s azimuth interpolation then
-/// returns the same number at every bearing. Those are exactly the cases
-/// this covers.
 #[derive(Debug, Clone)]
 pub struct AreaInputs {
     pub grid: Grid,
@@ -938,10 +930,12 @@ pub struct AreaInputs {
     pub psc: [R; 4],
     pub method: u32,
     pub fof2: FoF2Model,
-    /// Constant gain in dB at each end, as `ANTCALC` would store it:
-    /// hundredths of a decibel.
-    pub tx_gain_db: R,
-    pub rx_gain_db: R,
+    /// `None` is the isotrope card at that end.
+    pub tx_antenna: Option<AntennaCardSpec>,
+    pub rx_antenna: Option<AntennaCardSpec>,
+    /// The receive card's last field: a non-zero value becomes the
+    /// receive isotrope's gain.
+    pub rx_gain_field: R,
 }
 
 /// One grid point's output row: the indices, the coordinates and
@@ -1008,7 +1002,7 @@ pub fn run_area(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<AreaPoint>, Str
     let set: CoefficientSet =
         redmap(itshfbc, area.fof2, area.month, area.ssn).map_err(|e| e.to_string())?;
     let nf = area.freqs_mhz.iter().take_while(|f| **f != 0.0).count().max(1);
-    let ants = constant_gain_set(area);
+    let ants = build_area_antennas(itshfbc, area, nf)?;
     let mut lp = ModeLoopState::default();
     let mut fsecv = [0.0 as R; 3];
     let mut out = Vec::with_capacity(area.grid.nx * area.grid.ny);
@@ -1041,6 +1035,10 @@ pub fn run_area(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<AreaPoint>, Str
             // point-to-point driver uses `.GE.`. It matters only at
             // exactly 10000 km, but it is a real difference.
             s.area = true;
+            // `GEOM` runs per grid point, and an area antenna is cut
+            // along the bearings it leaves behind.
+            s.ants.btrd = s.geo.btr * R2D;
+            s.ants.brtd = s.geo.brt * R2D;
             let h = hour_body(&s, area.hour, &mut lp, &mut fsecv);
             out.push(area_point(ix, iy, rlat, rlon, &h, nf));
         }
@@ -1048,41 +1046,67 @@ pub fn run_area(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<AreaPoint>, Str
     Ok(out)
 }
 
-/// The antenna set for a constant-gain area run: one value at every
-/// frequency and elevation, quantised to hundredths of a decibel.
+/// `ANTCALC` for an area run: which of its two branches the run takes,
+/// and both ends' tables.
 ///
-/// `ANTCALC` stores an area antenna as `NINT(gain*100)` in an integer
-/// table and the prediction reads that back, so the engine computes with
-/// two decimals. Unlike the point-to-point path the values never travel
-/// through `gainNN.dat`, because the read-back is commented out.
-fn constant_gain_set(area: &AreaInputs) -> AntennaSet {
-    let mut ants = AntennaSet::default();
-    let quantise = |g: R| (nint_hundredths(g) as R) / 100.0;
-    for (iat, gain) in [(1, area.tx_gain_db), (2, area.rx_gain_db)] {
-        let table = GainTable {
-            gains: vec![[quantise(gain); 91]; 30],
-            eff: [0.0; 30],
-            fs: 2.0,
-            fe: 30.0,
-            beam_main: 0.0,
-            offazim: -999.0,
-            cond: 0.0,
-            diel: 0.0,
-        };
-        let kw = if iat == 1 { area.watts / 1000.0 } else { 0.0 };
-        ants.install(iat, 2, 30, table, kw);
-    }
-    ants
-}
+/// A single-frequency run builds the 360-azimuth table and the prediction
+/// re-cuts it per grid point. Several frequencies take the ordinary
+/// point-to-point table instead — `ANTCALC` tests `freqarea(2)` before it
+/// tests for area coverage — cut along one bearing for the whole grid:
+/// the deck `AREAMAP` writes names the plot centre as the receiver, so
+/// that is the bearing, whatever the grid point.
+fn build_area_antennas(
+    itshfbc: &Path,
+    area: &AreaInputs,
+    nf: usize,
+) -> Result<AntennaSet, String> {
+    let pwrkw = area.watts / 1000.0;
+    let iso = AntennaCardSpec::isotrope();
+    let tx = area.tx_antenna.as_ref().unwrap_or(&iso);
+    let rx = area.rx_antenna.as_ref().unwrap_or(&iso);
+    let txf = read_antenna(itshfbc, &tx.file)?;
+    let rxf = read_antenna(itshfbc, &rx.file)?;
+    let centre = (area.grid.plat, area.grid.plon);
+    let (taz, _) = dazel0(
+        area.tx_lat_deg as R,
+        area.tx_lon_deg as R,
+        centre.0,
+        centre.1,
+    );
+    let (raz, _) = dazel0(
+        centre.0,
+        centre.1,
+        area.tx_lat_deg as R,
+        area.tx_lon_deg as R,
+    );
+    let ends = [
+        (1, tx, &txf, AntennaEnd::Transmit, pwrkw, taz),
+        (2, rx, &rxf, AntennaEnd::Receive, area.rx_gain_field, raz),
+    ];
 
-/// Fortran `NINT` on hundredths of a decibel: round half away from zero.
-fn nint_hundredths(v: R) -> i32 {
-    let x = v * 100.0;
-    if x >= 0.0 {
-        (x + 0.5) as i32
-    } else {
-        (x - 0.5) as i32
+    let mut ants = AntennaSet::default();
+    for (iat, card, file, end, power_field, azimuth_deg) in ends {
+        let setup = AntennaSetup {
+            file,
+            end,
+            min_freq: card.min_freq,
+            max_freq: card.max_freq,
+            design_freq: card.design_freq,
+            beam_deg: card.beam_deg,
+            power_field,
+            azimuth_deg,
+        };
+        let kw = if iat == 1 { pwrkw } else { 0.0 };
+        if nf > 1 {
+            let table = point_to_point_table(&setup).map_err(|e| e.to_string())?;
+            ants.install(iat, card.min_freq, card.max_freq, table, kw);
+        } else {
+            let (header, table) =
+                area_table(&setup, area.freqs_mhz[0]).map_err(|e| e.to_string())?;
+            ants.install_area(iat, card.min_freq, card.max_freq, header, table, kw)?;
+        }
     }
+    Ok(ants)
 }
 
 /// `OUTAREA`'s value columns for one grid point.

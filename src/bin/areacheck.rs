@@ -3,14 +3,15 @@
 //! An area run sweeps a grid of receiver locations and, at each one,
 //! runs the same one-hour prediction a point-to-point method runs. The
 //! grid file it writes names every point's latitude and longitude
-//! before the predicted values, so the geometry can be checked on its
-//! own, ahead of the antenna work the predictions still need.
+//! before the predicted values, so both the geometry and the prediction
+//! are compared, as text, in the formats the file prints.
 //!
-//! This runs the reference over several grids — both projections, a
-//! range of sizes, centres north and south, and rectangles that
-//! straddle the prime meridian and the poles — and compares every
-//! point's coordinates against [`Grid::point`] at the four decimals the
-//! file prints.
+//! Two things vary across the cases. The geometry: a range of sizes,
+//! centres north and south, rectangles that straddle the prime meridian
+//! and the poles, and one and several frequencies. And the antennas: one
+//! case per family `ANTCALC`'s area branch computes, at both ends, over a
+//! grid whose points reach every quadrant — so the 360-azimuth table is
+//! read at a different bearing at every point.
 //!
 //! Usage: `cargo run --release --bin areacheck [--jobs J]`
 
@@ -18,7 +19,7 @@ use std::process::ExitCode;
 
 use propcore::engine::area::{Grid, Projection};
 use propcore::engine::coefficients::FoF2Model;
-use propcore::engine::run::{f_fixed, run_area as port_area, AreaInputs};
+use propcore::engine::run::{f_fixed, run_area as port_area, AntennaCardSpec, AreaInputs};
 use propcore::runner::{map_limit, run_area, variant_bin, IsolatedRoot};
 
 /// The values the area file holds fixed. What varies between cases is
@@ -30,12 +31,39 @@ const FREQ: f32 = 11.850;
 const REQUIRED_SNR: f32 = 73.0;
 const NOISE_DBW: i32 = 145;
 const WATTS: f32 = 100.0;
-/// Isotropes at both ends, so the area antenna table is one constant at
-/// every azimuth and elevation. The transmit card's design frequency and
-/// the receive card's gain field both become the isotrope's gain, and
-/// they differ here so a swap between the two ends would show.
 const TX_GAIN: f32 = 2.5;
 const RX_GAIN: f32 = 1.5;
+
+/// One antenna, as the area input file's `Tx Ants` or `Rec Ants` line
+/// carries it.
+struct Ant {
+    /// The directory and name, as the bracketed card field wants them.
+    dir: &'static str,
+    name: &'static str,
+    /// The transmit line's design frequency, or the receive line's gain.
+    /// Both end up in the same card field, and for an isotrope both
+    /// become its gain.
+    value: f32,
+    /// The main beam bearing.
+    beam: f32,
+}
+
+/// The isotropes the geometry cases use, so the area table is one
+/// constant at every azimuth and elevation. The transmit card's design
+/// frequency and the receive card's gain field both become the isotrope's
+/// gain, and they differ here so a swap between the two ends would show.
+const TX_ISO: Ant = Ant {
+    dir: "default",
+    name: "isotrope",
+    value: TX_GAIN,
+    beam: 0.0,
+};
+const RX_ISO: Ant = Ant {
+    dir: "default",
+    name: "isotrope",
+    value: RX_GAIN,
+    beam: 0.0,
+};
 
 /// One grid to check, with the reason it is in the set.
 struct Case {
@@ -52,6 +80,8 @@ struct Case {
     /// from `run/areafreq.dat` instead — a file this tree does not ship,
     /// so the case writes it.
     freqs: &'static [f32],
+    tx: Ant,
+    rx: Ant,
 }
 
 fn cases() -> Vec<Case> {
@@ -66,42 +96,133 @@ fn cases() -> Vec<Case> {
         nx: n,
         ny: n,
     };
+    // A grid that reaches every quadrant from its centre, so the 25
+    // points cut the antenna pattern at 25 different bearings.
+    let spread = gc(40.00, 10.00, -3000.0, 3000.0, -3000.0, 3000.0, 5);
+    // The antenna pairs put a different family at each end, so a swap
+    // between the two ends changes every row.
+    let ant = |dir, name, value, beam| Ant {
+        dir,
+        name,
+        value,
+        beam,
+    };
     vec![
         Case {
             name: "dist",
             why: "the distributed file's own rectangle, at a smaller size",
             grid: gc(35.80, -5.90, -1000.0, 6000.0, -1000.0, 4000.0, 9),
             freqs: &[FREQ],
+            tx: TX_ISO,
+            rx: RX_ISO,
         },
         Case {
             name: "odd",
             why: "a grid whose centre point falls exactly on the origin",
             grid: gc(51.50, -0.13, -2000.0, 2000.0, -2000.0, 2000.0, 5),
             freqs: &[FREQ],
+            tx: TX_ISO,
+            rx: RX_ISO,
         },
         Case {
             name: "south",
             why: "a southern centre, where the latitude sign flips",
             grid: gc(-33.87, 151.21, -3000.0, 3000.0, -3000.0, 3000.0, 7),
             freqs: &[FREQ],
+            tx: TX_ISO,
+            rx: RX_ISO,
         },
         Case {
             name: "polar",
             why: "reaching over the pole, where the azimuth arithmetic folds",
             grid: gc(78.20, 15.60, -4000.0, 4000.0, -4000.0, 4000.0, 7),
             freqs: &[FREQ],
+            tx: TX_ISO,
+            rx: RX_ISO,
         },
         Case {
             name: "anti",
             why: "a rectangle wide enough to pass the antipode",
             grid: gc(0.00, 0.00, -19000.0, 19000.0, -8000.0, 8000.0, 11),
             freqs: &[FREQ],
+            tx: TX_ISO,
+            rx: RX_ISO,
         },
         Case {
             name: "manyfreq",
             why: "several frequencies, where the columns become maxima over them",
             grid: gc(48.86, 2.35, -5000.0, 5000.0, -5000.0, 5000.0, 7),
             freqs: &[7.100, 11.850, 15.400, 21.650],
+            tx: TX_ISO,
+            rx: RX_ISO,
+        },
+        // From here the antenna is what varies: one case per family the
+        // area branch of `ANTCALC` computes, at both ends.
+        Case {
+            name: "ccir",
+            why: "the CCIR patterns, types 2 and 6",
+            grid: spread,
+            freqs: &[FREQ],
+            tx: ant("samples", "sample.02", 0.0, 45.0),
+            rx: ant("samples", "sample.06", 0.0, 200.0),
+        },
+        Case {
+            name: "rhombic",
+            why: "a non-terminated rhombic, whose table is built over folded azimuths",
+            grid: spread,
+            freqs: &[FREQ],
+            tx: ant("samples", "sample.07", 0.0, -40.0),
+            rx: ant("samples", "sample.09", 0.0, 130.0),
+        },
+        Case {
+            name: "tables",
+            why: "the measured tables, over 360 azimuths and over 30 frequencies",
+            grid: spread,
+            freqs: &[FREQ],
+            tx: ant("samples", "sample.13", 0.0, 70.0),
+            rx: ant("samples", "sample.14", 0.0, 250.0),
+        },
+        Case {
+            name: "curtain",
+            why: "an NTIA curtain array, and a gain table in elevation only",
+            grid: spread,
+            freqs: &[FREQ],
+            tx: ant("samples", "sample.12", 0.0, 90.0),
+            rx: ant("samples", "sample.11", 0.0, 0.0),
+        },
+        Case {
+            name: "ioncap",
+            why: "the IONCAP patterns, types 21 and 25",
+            grid: spread,
+            freqs: &[FREQ],
+            tx: ant("samples", "sample.21", 0.0, 20.0),
+            // Type 25's efficiency varies with elevation, so which of
+            // the branch's calls leaves the stored value behind matters.
+            rx: ant("samples", "sample.25", 0.0, 300.0),
+        },
+        Case {
+            name: "mufes",
+            why: "the HFMUFES patterns, types 31 and 44",
+            grid: spread,
+            freqs: &[FREQ],
+            tx: ant("samples", "sample.31", 0.0, 160.0),
+            rx: ant("samples", "sample.44", 0.0, 10.0),
+        },
+        Case {
+            name: "nosc",
+            why: "the NOSC inverted cone, and a vertical monopole",
+            grid: spread,
+            freqs: &[FREQ],
+            tx: ant("samples", "sample.48", 0.0, 0.0),
+            rx: ant("samples", "sample.10", 0.0, 0.0),
+        },
+        Case {
+            name: "multiant",
+            why: "several frequencies with a beam, where the table is cut along one bearing",
+            grid: spread,
+            freqs: &[7.100, 11.850, 15.400],
+            tx: ant("samples", "sample.02", 0.0, 45.0),
+            rx: ant("samples", "sample.06", 0.0, 200.0),
         },
         // The IPROJ = 8 projection is left out until its printed
         // longitudes are understood: the reference prints them
@@ -192,8 +313,11 @@ fn main() -> ExitCode {
             psc: [1.0, 1.0, 1.0, 0.0],
             method: 30,
             fof2: FoF2Model::Ccir,
-            tx_gain_db: TX_GAIN,
-            rx_gain_db: RX_GAIN,
+            // The transmit card carries a design frequency and the
+            // receive card a gain, in the same field.
+            tx_antenna: Some(spec(&case.tx, case.tx.value)),
+            rx_antenna: Some(spec(&case.rx, 0.0)),
+            rx_gain_field: case.rx.value,
         };
         let ported = match port_area(root.path(), &inputs) {
             Ok(p) => p,
@@ -287,8 +411,21 @@ fn main() -> ExitCode {
     }
 }
 
+/// The card as the port reads it, from the same fields the input file
+/// carries. `AREAMAP` writes the transmit card's design frequency from
+/// the input file and the receive card's as zero.
+fn spec(ant: &Ant, design_freq: f32) -> AntennaCardSpec {
+    AntennaCardSpec {
+        file: format!("{}/{}", ant.dir, ant.name),
+        design_freq,
+        beam_deg: ant.beam,
+        min_freq: 2,
+        max_freq: 30,
+    }
+}
+
 /// Writes the keyed area input file. The values that are not the grid
-/// are held fixed: what varies here is the geometry.
+/// are held fixed: what varies here is the geometry and the antennas.
 fn area_file(case: &Case) -> String {
     let grid = &case.grid;
     let hemi = |v: f32, pos: char, neg: char| {
@@ -340,8 +477,18 @@ fn area_file(case: &Case) -> String {
             REQUIRED_SNR as i32
         ),
         "Fprob    : 1.00 1.00 1.00 0.00".to_string(),
-        format!("Rec Ants :[default /isotrope    ]  gain={RX_GAIN:6.1}   0.0"),
-        format!("Tx Ants  :[default /isotrope    ]{TX_GAIN:7.3}   0.0{:10.4}", WATTS / 1000.0),
+        format!(
+            "Rec Ants :[{:<8}/{:<12}]  gain={:6.1}{:6.1}",
+            case.rx.dir, case.rx.name, case.rx.value, case.rx.beam
+        ),
+        format!(
+            "Tx Ants  :[{:<8}/{:<12}]{:7.3}{:6.1} {:10.4}",
+            case.tx.dir,
+            case.tx.name,
+            case.tx.value,
+            case.tx.beam,
+            WATTS / 1000.0
+        ),
     ]
     .join("\n")
         + "\n"

@@ -93,7 +93,7 @@ Then, from `propcore/`, with `cargo` as above:
 | `antcheck`  | antenna gain tables against the reference's own files | `--only NAME` `--verbose`                                                                                                   |
 | `lufcheck`  | `OUTMUF`'s table from a method-26 deck                | `--cases N` `--from N` `--jobs J`                                                                                           |
 | `mufcheck`  | methods 1, 3 and 7 tables                             | `--method 1\|3\|7` `--cases N` `--from N` `--jobs J`                                                                        |
-| `areacheck` | area coverage rows against the reference's grid file  | `--jobs J`                                                                                                                  |
+| `areacheck` | area coverage rows and antennas against the grid file | `--jobs J`                                                                                                                  |
 
 `fuzz`'s `--method`, `--coeffs`, `--fprob` and `--botlines` are applied
 after a case is generated, so the corpus is the same set of paths with
@@ -318,7 +318,11 @@ multipath probability from whichever pass it chose and the long pass
 never computes one — so the cell reads zero whether the port is right or
 wrong. The port was wrong there through several passing sweeps. Before
 trusting a result, ask what input would make the branch visible in a
-printed cell, and whether the corpus contains it.
+printed cell, and whether the corpus contains it. The cheap way to answer
+that is to break the new code on purpose and re-run: a case that stays
+green under a deliberate error never reached the code. That is how the
+area antenna cases were checked, and it is how the one detail no printed
+cell can distinguish — the `.0174533` elevation constant — was found.
 
 **The listing does not print everything.** A difference in a value the
 listing never shows is invisible to `portcheck` and `fuzz`. That is what
@@ -522,16 +526,24 @@ complete working input file. A 9 by 9 grid runs in 0.03 seconds, so the
 comparison loop is fast and a grid can be large.
 
 The grid file prints each point's own latitude and longitude before the
-27 predicted columns, which is what let the geometry be verified ahead of
+predicted columns, which is what let the geometry be verified ahead of
 everything else: two `I3` indices, then latitude in columns 6 to 16 and
 longitude in 16 to 26. Its header carries the grid dimensions in the same
 columns the rows use for their indices, so a data row is recognised by
 having coordinates that parse.
 
 `engine::area` is `GRIDXY` and `DAZEL1` plus the driver's two corrections
-to each receiver point. `areacheck` compares 325 points over five grids —
-the distributed rectangle, a centre-on-origin grid, a southern centre,
-one reaching over a pole, one past the antipode — all exact.
+to each receiver point.
+
+The input file's two antenna lines are keyed but their values are still
+read from fixed columns, so a misplaced space silently changes an antenna.
+`Tx Ants  :` is a bracketed 21-character name, then the design frequency
+in columns 34 to 40, the main beam bearing in 41 to 46, and the power in
+kilowatts in 48 to 57. `Rec Ants :` is the name, seven ignored characters,
+then the gain in 41 to 46 and the bearing in 47 to 52. `AREAMAP` turns
+these into two `ANTENNA` cards, and writes the transmit card's design
+frequency from the file while the receive card's is always zero — which is
+why the receive line's gain field is what reaches a receive isotrope.
 
 ## The area driver and its output columns (`run_area`)
 
@@ -567,30 +579,6 @@ of the 360-azimuth one. `PWRCUT` is George Lane's algorithm: an eleven-point
 normal distribution of signal-to-noise ratios built from the median and
 the two deciles, interpolated at the half-power and quarter-power limits.
 
-`areacheck` compares the reference's rows as text, field by field, which
-is stricter than parsing them back: 8891 printed cells over six grids —
-five one-frequency grids in the 24-column form and one four-frequency
-grid in the 7-column form — are identical.
-
-What those runs do **not** exercise, because they use isotropes at both
-ends:
-
-- The 360-azimuth antenna table. An area antenna is built at a single
-  frequency over 360 azimuths and 91 elevations, stored as hundredths of
-  a decibel by `NINT`, and never travels through `gainNN.dat` — the
-  read-back in `DECRED` is commented out. `GAIN` takes that branch when
-  the card's `OFFAZIM` field is `-999`, interpolating in azimuth from the
-  path bearing as well as in elevation. An azimuth-independent pattern —
-  an isotrope, or a gain table in elevation only — reduces that table to
-  one column, which is what the port models today.
-- A useful shortcut for the next stage: `ANTCALC` takes the area branch
-  only when the run has **one** frequency (`freqarea(2)` is zero). A
-  multi-frequency area run uses the ordinary point-to-point table, cut
-  along the azimuth from the transmitter to the grid centre and fixed for
-  every point — a path that is already verified. The port builds a
-  constant table for both, which is right for an isotrope but would cut a
-  directional pattern along the wrong bearing.
-
 Three things about this mode are recorded at the code and matter to the
 rest of the stage. The `AREA` card's last field picks the projection:
 zero gives the great-circle mesh (`IPROJ = 7`) and anything else the
@@ -600,3 +588,46 @@ for and so takes its plain branch. The azimuth is scaled by the literal
 which differs in its last digits. And this driver compares the path
 length against `GCDLNG` with `.GT.` where the point-to-point driver uses
 `.GE.`.
+
+`areacheck` compares the reference's rows as text, field by field, which
+is stricter than parsing them back: 13,666 printed cells over 14 grids are
+identical.
+
+## The area antenna table (`area_table`, `area_gain_lookup`)
+
+`ANTCALC` has a second branch for area coverage: one frequency, 360
+azimuths by 91 elevation angles. It takes that branch only when the run
+asks for a **single** frequency (`freqarea(2)` is zero) and the input file
+asks for area coverage; with several frequencies an area run uses the
+ordinary point-to-point table, cut along the transmitter-to-plot-centre
+bearing and fixed for the whole grid, because the deck `AREAMAP` writes
+names the plot centre as the receiver.
+
+The table never travels through `gainNN.dat`. The area branch writes only
+the two header lines and stores the numbers straight into a COMMON, and
+`DECRED`'s read-back is commented out — so the values carry
+`NINT(gain*100)` in an `INTEGER*2` and none of the file's `f7.3`
+rounding. The `-999` the header's off-azimuth field holds is the whole
+flag: it is what makes `GAIN` interpolate in bearing instead of frequency.
+
+Four details of the branch are easy to miss:
+
+- The pattern models are initialised **once**, at the one frequency,
+  rather than per frequency as point-to-point does.
+- The elevation angles are converted with `.0174533` where the
+  point-to-point branch writes `.01745329`. Both are in the source. The
+  difference is far below the table's hundredth of a decibel, so no
+  printed cell can distinguish them — the constant is right by
+  transcription, not by verification.
+- A non-terminated rhombic (type 7 with a negative beam) is symmetric
+  about the broadside line, so the table is built at `180 - a` for
+  azimuths 91 to 180 and at `540 - a` for 181 to 269.
+- The transmit lookup takes the **magnitude** of the beam bearing, for
+  that same rhombic; the receive lookup does not.
+
+`areacheck` covers this with one case per family, a different family at
+each end, over a grid whose 25 points reach every quadrant — so the table
+is read at 25 different bearings. Six of those cases go dark the moment
+the two bearings are swapped, and the isotrope, inverted-cone and
+multi-frequency cases do not, which is what says each case reaches the
+branch it is meant to.

@@ -141,6 +141,23 @@ impl Default for GainTable {
 }
 
 
+/// An area-coverage gain table: `/Careaant/`'s `iarray360`.
+///
+/// One frequency, 360 azimuths by 91 elevation angles, held as
+/// hundredths of a decibel in an `INTEGER*2`. These values never travel
+/// through `gainNN.dat`: `ANTCALC`'s area branch writes only the two
+/// header lines and stores the numbers straight into the COMMON, and
+/// `DECRED`'s read-back is commented out. So they carry `NINT(gain*100)`
+/// and none of the file's `f7.3` rounding.
+#[derive(Debug, Clone)]
+pub struct AreaGainTable {
+    /// Azimuth 0-359 by elevation 0-90 degrees.
+    pub gains: Vec<[i16; ELEVS]>,
+    /// `aeff(1,iat)`: one efficiency for the whole table, because the
+    /// table holds one frequency.
+    pub eff: R,
+}
+
 /// One antenna as `DECRED` holds it after reading a `gainNN.dat` back:
 /// the `/cantenna/` slot plus the transmit power of `/pantenna/`.
 #[derive(Debug, Clone)]
@@ -151,8 +168,14 @@ pub struct InstalledAntenna {
     pub xfqs: R,
     pub xfqe: R,
     /// The gain table, holding what the engine reads back from the
-    /// file — every value rounded through the file's fixed formats.
+    /// file — every value rounded through the file's fixed formats. For
+    /// an area antenna only the header fields carry anything, because
+    /// that is all the file holds.
     pub table: GainTable,
+    /// The 360-azimuth table, present when the card is an area antenna.
+    /// The reference's flag for this is the header's off-azimuth field
+    /// reading -999.
+    pub area: Option<AreaGainTable>,
     /// `pwrdba`: 30 + 10 log10(kW), transmit cards only.
     pub pwrdba: R,
 }
@@ -162,6 +185,12 @@ pub struct InstalledAntenna {
 #[derive(Debug, Clone, Default)]
 pub struct AntennaSet {
     pub ants: Vec<InstalledAntenna>,
+    /// `BTRD` of COMMON /DON/: bearing transmitter to receiver, degrees.
+    /// An area antenna is cut along this bearing per path, so the driver
+    /// refreshes both of these at every grid point, as `GEOM` does.
+    pub btrd: R,
+    /// `BRTD`: bearing receiver to transmitter, degrees.
+    pub brtd: R,
 }
 
 /// Rounds through the gain file's `f7.3` field: `ANTCALC` writes the
@@ -176,6 +205,21 @@ fn through_f6_2(v: R) -> R {
     ((f64::from(v) * 100.0).round() / 100.0) as R
 }
 
+/// The header line's `f7.2`, which the main beam bearing goes through.
+fn through_f7_2(v: R) -> R {
+    ((f64::from(v) * 100.0).round() / 100.0) as R
+}
+
+/// `DECRED`'s transmit power: 30 + 10 log10(kW), and a non-positive
+/// power becomes one kilowatt. A receive card carries no power.
+fn pwrdba_of(iat: i32, power_kw: R) -> R {
+    if iat != 1 {
+        return 0.0;
+    }
+    let kw = if power_kw <= 0.0 { 1.0 } else { power_kw };
+    30.0 + 10.0 * kw.log10()
+}
+
 impl AntennaSet {
     /// Installs one computed table as `DECRED` would read it back.
     pub fn install(&mut self, iat: i32, min_freq: i32, max_freq: i32, mut table: GainTable, power_kw: R) {
@@ -187,23 +231,43 @@ impl AntennaSet {
         for slot in table.eff.iter_mut() {
             *slot = through_f6_2(*slot);
         }
-        let mut kw = power_kw;
-        let pwrdba = if iat == 1 {
-            // DECRED: a non-positive transmit power becomes 1 kW.
-            if kw <= 0.0 {
-                kw = 1.0;
-            }
-            30.0 + 10.0 * kw.log10()
-        } else {
-            0.0
-        };
         self.ants.push(InstalledAntenna {
             iat,
             xfqs: min_freq as R,
             xfqe: max_freq as R,
             table,
-            pwrdba,
+            area: None,
+            pwrdba: pwrdba_of(iat, power_kw),
         });
+    }
+
+    /// Installs an area antenna: the header `DECRED` reads back and the
+    /// 360-azimuth table `ANTCALC` left in the COMMON.
+    ///
+    /// The reference's area lookup picks the bearing from the antenna's
+    /// position in the list rather than from the end it serves, and its
+    /// table only has room for two, so this refuses a third.
+    pub fn install_area(
+        &mut self,
+        iat: i32,
+        min_freq: i32,
+        max_freq: i32,
+        header: GainTable,
+        area: AreaGainTable,
+        power_kw: R,
+    ) -> Result<(), String> {
+        if self.ants.len() >= 2 {
+            return Err("an area run holds at most two antennas".to_string());
+        }
+        self.ants.push(InstalledAntenna {
+            iat,
+            xfqs: min_freq as R,
+            xfqe: max_freq as R,
+            table: header,
+            area: Some(area),
+            pwrdba: pwrdba_of(iat, power_kw),
+        });
+        Ok(())
     }
 
     /// The deck every prediction used before antennas were wired in:
@@ -223,10 +287,33 @@ impl AntennaSet {
     /// `GAIN` with `ITR > 0`: the first antenna serving this end whose
     /// frequency range contains `fmc`, interpolated at the elevation.
     /// No match returns zero gain and efficiency.
+    ///
+    /// An area antenna takes the other branch: it is one frequency over
+    /// 360 azimuths, so the lookup interpolates in bearing instead of
+    /// frequency. Which bearing is decided by the antenna's **position**
+    /// in the list, not by the end it serves — the source tests the loop
+    /// index `iat` against 1 and 2 while every other test in the same
+    /// routine goes through `iats(iat)`. A deck listing the receive card
+    /// first would therefore cut the receive pattern along the
+    /// transmitter's bearing. Only the first two positions exist:
+    /// `iarray360` is dimensioned for two antennas and a third leaves the
+    /// off-azimuth unset, which is why [`AntennaSet::install_area`]
+    /// refuses one.
     pub fn gain(&self, itr: i32, delta_rad: R, fmc: R) -> (R, R) {
-        for a in &self.ants {
+        for (slot, a) in self.ants.iter().enumerate() {
             if a.iat == itr && a.xfqs <= fmc && fmc <= a.xfqe {
-                return gain_lookup(&a.table, fmc, delta_rad);
+                let Some(area) = &a.area else {
+                    return gain_lookup(&a.table, fmc, delta_rad);
+                };
+                // A negative main beam marks a non-terminated rhombic,
+                // whose table was built over the folded azimuths; the
+                // receive branch does not take the magnitude.
+                let ofaz = if slot == 0 {
+                    self.btrd - a.table.beam_main.abs()
+                } else {
+                    self.brtd - a.table.beam_main
+                };
+                return area_gain_lookup(area, ofaz, delta_rad);
             }
         }
         (0.0, 0.0)
@@ -704,6 +791,253 @@ pub fn point_to_point_table(s: &AntennaSetup) -> Result<GainTable, Unsupported> 
     Ok(table)
 }
 
+/// The curtain's normalising gain at one frequency, as `ANTCAL` reads it
+/// out of `gnorm` — the same storage the definition file filled as
+/// `gainmaxb`.
+fn curtain_gnorm(file: &AntennaFile, freq: R) -> R {
+    let ifq = freq as usize;
+    if ifq < 30 {
+        file.gainmaxb[ifq - 1] + (freq - ifq as R) * (file.gainmaxb[ifq] - file.gainmaxb[ifq - 1])
+    } else {
+        file.gainmaxb[29]
+    }
+}
+
+/// The azimuth a non-terminated rhombic's table is computed at.
+///
+/// Such a pattern is symmetric about the broadside line, so `ANTCALC`
+/// computes the front half and mirrors it: azimuth `a` in 91 to 180 is
+/// evaluated at `180 - a`, and in 181 to 269 at `540 - a`, both of which
+/// land in the half the model can compute.
+fn rhombic_azimuth(iazim: usize) -> R {
+    let a = iazim as i32;
+    if (91..=180).contains(&a) {
+        (180 - a) as R
+    } else if (181..=269).contains(&a) {
+        (180 - a + 360) as R
+    } else {
+        a as R
+    }
+}
+
+/// `ANTSAVE`: one gain into the area table, clamped to 300 dB either way
+/// and stored as hundredths of a decibel.
+fn area_store(gain: R) -> i16 {
+    let g = gain.clamp(-300.0, 300.0);
+    nint(g * 100.0) as i16
+}
+
+/// Builds the area-coverage table for one card: `ANTCALC`'s other branch.
+///
+/// One frequency, 360 azimuths by 91 elevation angles. `ANTCALC` takes
+/// this branch when the run asks for a single frequency and the input
+/// file asks for area coverage; a multi-frequency area run uses
+/// [`point_to_point_table`] cut along the transmitter-to-plot-centre
+/// bearing instead.
+///
+/// Two differences from the point-to-point branch are easy to miss. The
+/// pattern models are initialised once, at this one frequency, rather
+/// than per frequency. And the elevation angles are converted with
+/// `.0174533` where the point-to-point branch writes `.01745329`, so the
+/// two branches ask for slightly different angles.
+pub fn area_table(s: &AntennaSetup, freq: R) -> Result<(GainTable, AreaGainTable), Unsupported> {
+    let file = s.file;
+    let mut parm = file.parm;
+    let jant = file.jant();
+
+    // The card's last field doubles as the receive isotrope's gain, the
+    // same as point-to-point: the test is above the branch.
+    let mut design_freq = s.design_freq;
+    if s.end == AntennaEnd::Receive && s.power_field != 0.0 {
+        design_freq = s.power_field;
+    }
+    if jant == 0 {
+        parm[0] = design_freq;
+    }
+
+    // All `ANTCALC` writes to `gainNN.dat` here are these two lines, and
+    // the -999 in the off-azimuth field is what tells `GAIN` to take the
+    // area branch.
+    let header = GainTable {
+        fs: s.min_freq as R,
+        fe: s.max_freq as R,
+        beam_main: through_f7_2(s.beam_deg),
+        offazim: -999.0,
+        cond: parm[3],
+        diel: parm[2],
+        ..Default::default()
+    };
+
+    // parm(5) is the operating frequency, set before the family branch.
+    parm[4] = freq;
+    let mut gains = vec![[0i16; ELEVS]; 360];
+    let mut eff = 0.0 as R;
+
+    match jant {
+        0 | 10 | 11 => {
+            let giso = max_gain(file, &parm, freq)?;
+            if jant == 11 {
+                eff = parm[2];
+            }
+            let mut column = [0i16; ELEVS];
+            for (ielev, slot) in column.iter_mut().enumerate() {
+                *slot = area_store(antcal(file, &parm, giso, freq, ielev as R)?);
+            }
+            // Azimuth-independent: the reference computes this same
+            // column at all 360 bearings.
+            gains.iter_mut().for_each(|row| *row = column);
+        }
+        1..=9 => {
+            let giso = super::ccir::setmaxgain(file, &mut parm, freq, design_freq)
+                .expect("types 1-9 always have a max-gain mode");
+            let ant = super::ccir::antinit2(file, &parm);
+            let folded = jant == 7 && s.beam_deg < -1.0;
+            for (iazim, row) in gains.iter_mut().enumerate() {
+                let azim = if folded {
+                    rhombic_azimuth(iazim)
+                } else {
+                    iazim as R
+                };
+                for (ielev, slot) in row.iter_mut().enumerate() {
+                    *slot = area_store(ant.ccirgain(ielev as R, azim, giso));
+                }
+            }
+        }
+        12 => {
+            let gn = curtain_gnorm(file, freq);
+            for (iazim, row) in gains.iter_mut().enumerate() {
+                for (ielev, slot) in row.iter_mut().enumerate() {
+                    let mut g = super::ccir::curtain::gain(&parm, iazim as R, ielev as R, gn);
+                    if g < -30.0 {
+                        g = -30.0;
+                    }
+                    *slot = area_store(g);
+                }
+            }
+        }
+        13 => {
+            eff = parm[2];
+            for (iazim, row) in gains.iter_mut().enumerate() {
+                for (ielev, slot) in row.iter_mut().enumerate() {
+                    *slot = area_store(file.type13[iazim][ielev] + parm[0]);
+                }
+            }
+        }
+        14 => {
+            // The table's records are per whole MHz and the area
+            // frequency is not whole, so the two neighbouring records
+            // are blended. A frequency below 1 MHz would ask for record
+            // zero, which no `ANTENNA` card admits.
+            let ifreq = (freq as usize).max(1);
+            let (eff1, gains1) = file.type14[ifreq - 1];
+            let (eff2, gains2) = file.type14[(ifreq + 1).min(30) - 1];
+            let fract = freq - ifreq as R;
+            eff = eff1 + (eff2 - eff1) * fract;
+            let mut column = [0i16; ELEVS];
+            for (ielev, slot) in column.iter_mut().enumerate() {
+                *slot = area_store(
+                    parm[0] + gains1[ielev] + (gains2[ielev] - gains1[ielev]) * fract,
+                );
+            }
+            // Azimuth-independent: the reference computes this same
+            // column at all 360 bearings.
+            gains.iter_mut().for_each(|row| *row = column);
+        }
+        21..=30 => {
+            let indx = jant - 20;
+            let ip = super::ioncap::ioninit(indx, &parm);
+            let mut st = super::ioncap::IoncapState::default();
+            // One call at six degrees before the loop, for the
+            // efficiency. It also primes the model's saved state.
+            super::ioncap::iongain(&mut st, indx, 0.0, &ip, 6.0 * 0.017_453_3, freq);
+            for (iazim, row) in gains.iter_mut().enumerate() {
+                for (ielev, slot) in row.iter_mut().enumerate() {
+                    let delev = ielev as R * 0.017_453_3;
+                    let (rain, e) =
+                        super::ioncap::iongain(&mut st, indx, iazim as R, &ip, delev, freq);
+                    *slot = area_store(rain);
+                    eff = e;
+                }
+            }
+        }
+        31..=47 => {
+            let indx = jant - 30;
+            let mp = super::hfmufes::mufesint(indx, &parm);
+            let mut st = super::hfmufes::MufesState::default();
+            // The priming call passes KAS = 1, which computes the
+            // impedances; every call in the loop passes 2, which reuses
+            // them. The point-to-point branch counts KAS up per
+            // elevation instead.
+            super::hfmufes::mufesgan(&mut st, indx, 1, 0.0, &mp, 6.0 * 0.017_453_3, freq);
+            for (iazim, row) in gains.iter_mut().enumerate() {
+                for (ielev, slot) in row.iter_mut().enumerate() {
+                    let delev = ielev as R * 0.017_453_3;
+                    let (rain, e) =
+                        super::hfmufes::mufesgan(&mut st, indx, 2, iazim as R, &mp, delev, freq);
+                    *slot = area_store(rain);
+                    eff = e;
+                }
+            }
+        }
+        48 => {
+            let mut column = [0i16; ELEVS];
+            for (ielev, slot) in column.iter_mut().enumerate() {
+                *slot = area_store(invcon(freq, ielev as R));
+            }
+            // Azimuth-independent: the reference computes this same
+            // column at all 360 bearings.
+            gains.iter_mut().for_each(|row| *row = column);
+        }
+        _ => {
+            return Err(Unsupported {
+                jant,
+                family: "Harris",
+            })
+        }
+    }
+
+    Ok((header, AreaGainTable { gains, eff }))
+}
+
+/// `GAIN`'s area branch: the gain at one bearing and elevation angle.
+///
+/// The bearing interpolates between two whole degrees of the table, the
+/// elevation between two whole degrees as well, and the result comes back
+/// from hundredths of a decibel. A bearing of exactly 360 degrees is the
+/// one value this mishandles: the source folds the index back to 1 but
+/// leaves the fraction at 360, so the interpolation becomes a very long
+/// extrapolation. `BTRD` reaching exactly 360.0 is what it would take.
+pub fn area_gain_lookup(table: &AreaGainTable, ofaz_deg: R, delta_rad: R) -> (R, R) {
+    let mut ofaz = ofaz_deg;
+    if ofaz < 0.0 {
+        ofaz += 360.0;
+    }
+    let mut i = ofaz as i32 + 1;
+    if i > 360 {
+        i = 1;
+    }
+    let mut ip1 = i + 1;
+    if ip1 > 360 {
+        ip1 = 1;
+    }
+    let xazim = ofaz - (i - 1) as R;
+    let deltd = delta_rad.to_degrees();
+    let j = ((deltd + 1.0) as i32).clamp(1, ELEVS as i32);
+    let jp1 = (j + 1).min(ELEVS as i32);
+    let xdelta = deltd - (j - 1) as R;
+
+    let (i0, i1) = ((i - 1) as usize, (ip1 - 1) as usize);
+    let (j0, j1) = ((j - 1) as usize, (jp1 - 1) as usize);
+    let xx = R::from(table.gains[i0][j0]);
+    let yx = R::from(table.gains[i1][j0]);
+    let xy = R::from(table.gains[i0][j1]);
+    let yy = R::from(table.gains[i1][j1]);
+    let rx = xx + xazim * (yx - xx);
+    let ry = xy + xazim * (yy - xy);
+    let rain = rx + xdelta * (ry - rx);
+    (rain / 100.0, table.eff)
+}
+
 /// `antcal`: one gain, for the types whose pattern is a table.
 fn antcal(
     file: &AntennaFile,
@@ -1101,6 +1435,78 @@ mod tests {
         let (gain, eff) = gain_lookup(&table, 10.5, 0.0);
         assert!((gain - 15.0).abs() < 1e-4, "got {gain}");
         assert!((eff - 2.0).abs() < 1e-4, "got {eff}");
+    }
+
+    #[test]
+    fn the_area_lookup_interpolates_in_bearing_and_elevation() {
+        let mut gains = vec![[0i16; ELEVS]; 360];
+        // 10 dB at bearing 100, 20 dB at 101, flat in elevation.
+        gains[100] = [1000; ELEVS];
+        gains[101] = [2000; ELEVS];
+        let table = AreaGainTable { gains, eff: 2.5 };
+        let (gain, eff) = area_gain_lookup(&table, 100.5, 0.0);
+        assert!((gain - 15.0).abs() < 1e-4, "got {gain}");
+        assert_eq!(eff, 2.5);
+        // A negative bearing folds into the table's range.
+        let (gain, _) = area_gain_lookup(&table, -259.5, 0.0);
+        assert!((gain - 15.0).abs() < 1e-4, "got {gain}");
+    }
+
+    #[test]
+    fn the_area_lookup_wraps_from_the_last_bearing_to_the_first() {
+        let mut gains = vec![[0i16; ELEVS]; 360];
+        gains[359] = [400; ELEVS];
+        gains[0] = [800; ELEVS];
+        let table = AreaGainTable { gains, eff: 0.0 };
+        let (gain, _) = area_gain_lookup(&table, 359.5, 0.0);
+        assert!((gain - 6.0).abs() < 1e-4, "got {gain}");
+    }
+
+    #[test]
+    fn an_area_isotrope_holds_its_gain_at_every_bearing() {
+        let file = read_antenna(&tree(), "default/isotrope").expect("isotrope");
+        let (header, table) = area_table(
+            &AntennaSetup {
+                file: &file,
+                end: AntennaEnd::Transmit,
+                min_freq: 2,
+                max_freq: 30,
+                design_freq: 2.5,
+                beam_deg: 0.0,
+                power_field: 0.1,
+                azimuth_deg: 57.0,
+            },
+            11.85,
+        )
+        .expect("area table");
+        // -999 in the off-azimuth field is the flag GAIN reads.
+        assert_eq!(header.offazim, -999.0);
+        assert_eq!(table.gains.len(), 360);
+        assert!(table.gains.iter().all(|row| row.iter().all(|g| *g == 250)));
+        let (gain, _) = area_gain_lookup(&table, 123.4, 0.0);
+        assert!((gain - 2.5).abs() < 1e-4, "got {gain}");
+    }
+
+    #[test]
+    fn a_rhombics_back_half_mirrors_its_front_half() {
+        // The pattern is symmetric about the broadside line, so the
+        // table is computed at 180 - a for the azimuths behind it.
+        assert_eq!(rhombic_azimuth(0), 0.0);
+        assert_eq!(rhombic_azimuth(90), 90.0);
+        assert_eq!(rhombic_azimuth(91), 89.0);
+        assert_eq!(rhombic_azimuth(180), 0.0);
+        assert_eq!(rhombic_azimuth(181), 359.0);
+        assert_eq!(rhombic_azimuth(269), 271.0);
+        assert_eq!(rhombic_azimuth(270), 270.0);
+        assert_eq!(rhombic_azimuth(359), 359.0);
+    }
+
+    #[test]
+    fn the_area_store_rounds_to_hundredths_and_clamps_at_300_db() {
+        assert_eq!(area_store(2.5), 250);
+        assert_eq!(area_store(-0.005), -1);
+        assert_eq!(area_store(400.0), 30000);
+        assert_eq!(area_store(-400.0), -30000);
     }
 
     #[test]
