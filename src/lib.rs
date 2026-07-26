@@ -14,6 +14,7 @@
 //! - [`compare`] measures how far two listings differ, field by field.
 //! - [`spread`] pairs the engine's day-to-day spread claims with measured days.
 //! - [`geomag`] reads the GFZ Kp record, so days can be split by storm state.
+//! - [`irtam`] converts real-time IRTAM foF2 maps into VOACAP coefficient files.
 //!
 //! All of it survives the port: the same parser and comparator that measure
 //! compiler-to-compiler spread today will measure Rust-to-Fortran spread later.
@@ -21,6 +22,7 @@
 pub mod compare;
 pub mod deck;
 pub mod geomag;
+pub mod irtam;
 pub mod itu;
 pub mod listing;
 pub mod runner;

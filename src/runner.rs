@@ -121,6 +121,43 @@ impl IsolatedRoot {
     pub fn path(&self) -> &Path {
         &self.path
     }
+
+    /// Replaces one file in the private tree with the given bytes.
+    ///
+    /// A stock tree links whole directories (`coeffs` especially) into the
+    /// read-only share directory, so the parent directory is first turned
+    /// into a real directory of per-entry links; only then can one entry be
+    /// swapped without touching the shared installation.
+    pub fn replace_file(&self, relative: &str, bytes: &[u8]) -> io::Result<()> {
+        let target = self.path.join(relative);
+        if let Some(parent) = target.parent() {
+            materialize_dir(parent)?;
+        }
+        let _ = fs::remove_file(&target);
+        fs::write(&target, bytes)
+    }
+}
+
+/// If `dir` is a symlink to a directory, replaces it with a real directory
+/// containing a symlink per entry of the original target.
+fn materialize_dir(dir: &Path) -> io::Result<()> {
+    let meta = fs::symlink_metadata(dir)?;
+    if !meta.file_type().is_symlink() {
+        return Ok(());
+    }
+    let mut target = fs::read_link(dir)?;
+    if target.is_relative() {
+        if let Some(parent) = dir.parent() {
+            target = parent.join(target);
+        }
+    }
+    fs::remove_file(dir)?;
+    fs::create_dir(dir)?;
+    for entry in fs::read_dir(&target)? {
+        let entry = entry?;
+        std::os::unix::fs::symlink(entry.path(), dir.join(entry.file_name()))?;
+    }
+    Ok(())
 }
 
 impl Drop for IsolatedRoot {
@@ -336,6 +373,44 @@ mod tests {
         assert_ne!(a.path(), b.path());
         assert!(a.path().join("run").is_dir());
         assert!(b.path().join("run").is_dir());
+    }
+
+    #[test]
+    fn replace_file_materialises_a_linked_directory_without_touching_the_share() {
+        // Simulate a stock tree: root/coeffs is a symlink to a shared dir.
+        let base = env::temp_dir().join("propcore-replace-test");
+        let share = base.join("share");
+        let root_dir = base.join("root");
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&share).expect("share");
+        fs::create_dir_all(&root_dir).expect("root");
+        fs::write(share.join("fof2CCIR.daw"), b"climatology").expect("shared file");
+        fs::write(share.join("coeff01w.bin"), b"other").expect("other file");
+        std::os::unix::fs::symlink(&share, root_dir.join("coeffs")).expect("link");
+
+        let root = IsolatedRoot {
+            path: root_dir.clone(),
+        };
+        root.replace_file("coeffs/fof2CCIR.daw", b"irtam")
+            .expect("replace");
+
+        assert_eq!(
+            fs::read(root_dir.join("coeffs/fof2CCIR.daw")).expect("patched"),
+            b"irtam"
+        );
+        // The neighbours still resolve through their links.
+        assert_eq!(
+            fs::read(root_dir.join("coeffs/coeff01w.bin")).expect("neighbour"),
+            b"other"
+        );
+        // The shared installation is untouched.
+        assert_eq!(
+            fs::read(share.join("fof2CCIR.daw")).expect("shared"),
+            b"climatology"
+        );
+        // Forget the root so Drop does not delete the whole test base twice.
+        std::mem::forget(root);
+        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]
