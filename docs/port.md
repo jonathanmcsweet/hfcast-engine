@@ -1,10 +1,15 @@
 # The VOACAP port — method and status
 
 The engine is being translated from Fortran 77 (`vendor/voacapl`, the
-maintained ITS VOACAP) to Rust, module `propcore::engine`. Scope: the
-point-to-point prediction path the app exercises — method 30, isotropic
-antennas, single power, sporadic-E on. Area coverage, antenna pattern files
-and the interactive front end are out of scope.
+maintained ITS VOACAP) to Rust, module `propcore::engine`.
+
+The first target was the point-to-point path this app exercises —
+method 30, isotropic antennas, single power — and that is finished and
+bit-identical. The goal since 2026-07-26 is every code path of the
+`voacapl` program, so the port can be a library others depend on;
+`docs/roadmap.md` holds the remaining stages. The interactive front
+end, plotting, and the sibling engines ICEPAC and REC533 stay out of
+scope.
 
 Method 30 internally means `MSPEC = 121` (`decred.for`): the short-path
 systems model below 7000 km, the long-path model beyond 10000 km, and
@@ -106,14 +111,14 @@ Status over the 73 definition files in the tree (`antcheck`):
 | ------------------ | -------------- | ----: | ------ |
 | isotrope           | 0              |     3 | yes    |
 | gain tables        | 10, 11, 13, 14 |     8 | yes    |
+| NOSC               | 48             |     1 | yes    |
 | CCIR               | 1-9            |    34 | no     |
 | NTIA curtain array | 12             |     1 | no     |
 | IONCAP             | 21-30          |    10 | no     |
 | HFMUFES            | 31-47          |    14 | no     |
-| NOSC               | 48             |     1 | no     |
 | Harris             | 90+            |     2 | no     |
 
-The ported families match on every cell: 30,426 compared. Unported
+The ported families match on every cell: 33,192 compared. Unported
 families return an error rather than a number, so the report lists
 remaining work instead of passing silently.
 

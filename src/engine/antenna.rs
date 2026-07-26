@@ -22,7 +22,7 @@
 //! | 14 | gain table over 30 frequencies | yes |
 //! | 21-30 | IONCAP (`ioninit`, `iongain`) | no |
 //! | 31-47 | HFMUFES (`mufesint`, `mufesgan`) | no |
-//! | 48 | NOSC (`invcon`) | no |
+//! | 48 | NOSC (`invcon`) | yes |
 //! | 90+ | Harris (`harris`) | no |
 //!
 //! The unported families return [`Unsupported`] rather than a wrong
@@ -508,10 +508,15 @@ pub fn point_to_point_table(s: &AntennaSetup) -> Result<GainTable, Unsupported> 
             })
         }
         48 => {
-            return Err(Unsupported {
-                jant,
-                family: "NOSC",
-            })
+            // The inverted cone is a measured table and takes neither
+            // the maximum gain nor an efficiency.
+            for ifreq in lo..=hi {
+                let freq = ifreq as R;
+                let row = &mut table.gains[(ifreq - 1) as usize];
+                for (ielev, slot) in row.iter_mut().enumerate() {
+                    *slot = invcon(freq, ielev as R);
+                }
+            }
         }
         _ => {
             return Err(Unsupported {
@@ -574,6 +579,103 @@ fn antcal(
             family: "pattern model",
         }),
     }
+}
+
+/// `invcon`'s frequency axis, in MHz.
+const CONE_FREQS: [R; 22] = [
+    2.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 20.0,
+    22.0, 24.0, 26.0, 28.0, 30.0,
+];
+
+/// `invcon`'s elevation axis, in degrees.
+const CONE_ELEVS: [R; 13] = [
+    0.0, 5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 35.0, 40.0, 45.0, 50.0, 55.0, 90.0,
+];
+
+/// The NOSC inverted cone's measured gain, one row per elevation angle
+/// of [`CONE_ELEVS`], each across the frequencies of [`CONE_FREQS`].
+const CONE: [[R; 22]; 13] = [
+    [-20.0; 22],
+    [
+        -9.0, -7.0, -8.2, -8.6, -8.8, -8.3, -7.7, -7.7, -8.3, -8.3, -8.0, -8.0, -8.8, -10.0, -10.0,
+        -10.0, -10.0, -10.0, -10.0, -10.0, -10.0, -10.0,
+    ],
+    [
+        -5.0, -3.0, -3.5, -3.8, -3.9, -4.0, -4.1, -3.9, -4.7, -5.1, -4.9, -4.7, -6.4, -7.0, -6.5,
+        -6.0, -6.4, -7.6, -8.9, -10.0, -10.0, -10.0,
+    ],
+    [
+        -2.1, -0.1, -0.7, -1.0, -1.3, -1.4, -1.5, -1.7, -2.0, -2.6, -2.6, -2.9, -4.7, -4.7, -4.0,
+        -3.9, -4.7, -5.6, -6.7, -8.0, -10.0, -10.0,
+    ],
+    [
+        -0.7, 1.3, 0.8, 0.4, 0.1, -0.7, -2.2, -2.3, -1.7, -2.4, -5.1, -6.7, -5.0, -3.8, -3.5, -3.7,
+        -4.3, -5.1, -5.7, -6.7, -8.3, -10.0,
+    ],
+    [
+        -0.5, 1.5, 1.4, 1.2, 0.3, -1.0, -4.2, -4.7, -3.1, -2.9, -6.6, -6.9, -4.0, -3.2, -3.7, -4.2,
+        -4.8, -5.3, -5.6, -6.1, -7.6, -9.0,
+    ],
+    [
+        -0.3, 1.7, 1.6, 1.5, 1.2, -1.6, -5.5, -7.2, -6.0, -5.0, -8.0, -8.5, -3.5, -2.7, -4.0, -4.7,
+        -5.3, -5.7, -6.0, -6.9, -8.1, -10.0,
+    ],
+    [
+        -0.4, 1.5, 1.5, 1.5, 1.5, -2.2, -7.0, -11.5, -7.5, -5.8, -10.4, -12.0, -2.5, -2.0, -4.3,
+        -5.3, -6.3, -6.9, -7.4, -8.0, -9.0, -10.0,
+    ],
+    [
+        -0.5, 1.5, 1.5, 1.5, 1.3, -3.0, -8.4, -10.6, -6.7, -5.2, -9.8, -14.0, -2.4, -2.4, -5.0,
+        -6.2, -7.0, -7.8, -8.3, -10.0, -10.0, -10.0,
+    ],
+    [
+        -0.8, 1.2, 1.3, 1.2, 0.3, -4.1, -10.5, -11.3, -5.9, -5.0, -8.5, -17.0, -7.5, -6.0, -6.4,
+        -6.9, -7.6, -8.3, -10.0, -10.0, -10.0, -10.0,
+    ],
+    [
+        -1.5, 0.5, 0.4, 0.1, -1.0, -5.4, -12.1, -10.3, -6.1, -5.2, -8.5, -17.0, -15.0, -10.3, -8.5,
+        -8.0, -8.1, -8.8, -10.0, -10.0, -10.0, -10.0,
+    ],
+    [
+        -2.2, -0.2, -0.5, -1.0, -2.2, -7.3, -12.0, -8.5, -5.6, -5.2, -7.5, -15.5, -20.0, -15.0,
+        -10.5, -8.9, -8.9, -10.0, -10.0, -10.0, -10.0, -10.0,
+    ],
+    [-40.0; 22],
+];
+
+/// `invcon`: the NOSC inverted-cone antenna, type 48.
+///
+/// A measured table interpolated in frequency and elevation. The source
+/// searches each axis from its second entry for the first bound at or
+/// above the wanted value, and leaves the index unset if the value is
+/// past the end of the axis — a frequency above 30 MHz or an elevation
+/// above 90 degrees would read an uninitialised local. Neither is
+/// reachable from an `ANTENNA` card, and the fall-back here is the last
+/// interval.
+pub fn invcon(freq: R, elev_deg: R) -> R {
+    let interp = |a: R, b: R, c: R| a * (1.0 - c) + b * c;
+    let weight = |a: R, b: R, c: R| (a - b) / (c - b);
+
+    let ian = CONE_ELEVS
+        .iter()
+        .enumerate()
+        .skip(1)
+        .find(|(_, bound)| elev_deg <= **bound)
+        .map(|(i, _)| i)
+        .unwrap_or(CONE_ELEVS.len() - 1);
+    let ifr = CONE_FREQS
+        .iter()
+        .enumerate()
+        .skip(1)
+        .find(|(_, bound)| freq <= **bound)
+        .map(|(i, _)| i)
+        .unwrap_or(CONE_FREQS.len() - 1);
+
+    let fwt = weight(freq, CONE_FREQS[ifr], CONE_FREQS[ifr - 1]);
+    let awt = weight(elev_deg, CONE_ELEVS[ian], CONE_ELEVS[ian - 1]);
+    let g1 = interp(CONE[ian][ifr], CONE[ian - 1][ifr], awt);
+    let g2 = interp(CONE[ian][ifr - 1], CONE[ian - 1][ifr - 1], awt);
+    interp(g1, g2, fwt)
 }
 
 /// `GAIN`'s interpolation: gain and efficiency at a frequency and
@@ -803,6 +905,16 @@ mod tests {
         })
         .expect_err("CCIR is not ported");
         assert_eq!(err.jant, 1);
+    }
+
+    #[test]
+    fn the_inverted_cone_reads_its_table_at_the_grid_points() {
+        // The table's own corners, where no interpolation happens.
+        assert_eq!(invcon(2.0, 0.0), -20.0);
+        assert_eq!(invcon(4.0, 5.0), -7.0);
+        assert_eq!(invcon(30.0, 90.0), -40.0);
+        // Halfway between 4 and 5 MHz at 10 degrees: -3.0 and -3.5.
+        assert!((invcon(4.5, 10.0) - -3.25).abs() < 1e-4);
     }
 
     #[test]
