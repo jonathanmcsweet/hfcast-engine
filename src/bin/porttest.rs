@@ -8,7 +8,7 @@
 //! a disagreement in the *first* stage that contains it, not as a mystery
 //! at the end of the pipeline.
 //!
-//! Usage: `porttest [--cases N]`
+//! Usage: `porttest [--cases N] [--only ID] [--seed N] [--fuzz N [--from N]]`
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -30,6 +30,7 @@ use propcore::engine::sigdis::sigdis;
 use propcore::engine::geometry::{path_geometry, PathGeometry};
 use propcore::engine::magnetic::magvar;
 use propcore::runner::{run_deck_with_env, variant_bin, IsolatedRoot};
+use propcore::fuzz::fuzz_cases;
 use propcore::sweep::sweep_cases;
 
 /// One worst-case tracker per compared field.
@@ -583,12 +584,39 @@ fn main() -> ExitCode {
         .position(|a| a == "--only")
         .and_then(|i| argv.get(i + 1))
         .cloned();
-    let cases: Vec<_> = sweep_cases()
-        .into_iter()
-        .filter(|c| only.as_ref().is_none_or(|o| c.id.contains(o.as_str())))
-        .take(case_limit)
-        .collect();
-    println!("# Port stage check: {} sweep cases\n", cases.len());
+    // `fuzz` reports a case index when the whole-engine listings
+    // disagree, but the listing only says which cell is wrong. Running
+    // that same case through the stage traces says which stage made it
+    // wrong, so the index is accepted here too.
+    let number = |name: &str| -> Option<u64> {
+        argv.iter()
+            .position(|a| a == name)
+            .and_then(|i| argv.get(i + 1))
+            .and_then(|v| v.parse::<u64>().ok())
+    };
+    let seed = number("--seed");
+    // `--fuzz N` runs N generated cases through the stage traces. The
+    // whole-engine check cannot see a difference the listing does not
+    // print, so the generated corpus needs a pass at this level too.
+    let fuzz_count = number("--fuzz");
+    let from = number("--from").unwrap_or(0);
+    let cases: Vec<_> = match (seed, fuzz_count) {
+        (Some(index), _) => fuzz_cases(index, 1),
+        (None, Some(n)) => fuzz_cases(from, n),
+        (None, None) => sweep_cases()
+            .into_iter()
+            .filter(|c| only.as_ref().is_none_or(|o| c.id.contains(o.as_str())))
+            .take(case_limit)
+            .collect(),
+    };
+    match (seed, fuzz_count) {
+        (Some(index), _) => println!("# Port stage check: generated case {index}\n"),
+        (None, Some(n)) => println!(
+            "# Port stage check: {n} generated cases, indices {from}..{}\n",
+            from + n - 1
+        ),
+        (None, None) => println!("# Port stage check: {} sweep cases\n", cases.len()),
+    }
 
     let mut worst = [
         Worst::new("distance (km)"),
@@ -1053,6 +1081,17 @@ fn main() -> ExitCode {
         for (slot, f) in base_frel.iter_mut().zip(&case.freqs_mhz) {
             *slot = *f as f32;
         }
+        // The FPROB card's critical-frequency multipliers. The fourth
+        // is sporadic E, and driving it from the case is what makes an
+        // Es-off deck comparable: with the multiplier at zero every
+        // control point has foEs = 0, so CURMUF skips them all and
+        // zeroes the Es layer.
+        let psc = [
+            1.0,
+            1.0,
+            1.0,
+            if case.sporadic_e { 1.0 } else { 0.0 },
+        ];
         for (((vir, f2h), esh), (lech, mufh)) in virs
             .iter()
             .zip(&f2s)
@@ -1074,7 +1113,7 @@ fn main() -> ExitCode {
                 case.month,
                 red.ssn as f32,
                 f2h.gmt as f32,
-                &[1.0, 1.0, 1.0, 1.0],
+                &psc,
             );
             if f2h.points.len() != params.len() {
                 eprintln!(
@@ -1100,7 +1139,7 @@ fn main() -> ExitCode {
                 }
             }
 
-            let es = esind(&set, &ab, &rust.points, &mags, &[1.0, 1.0, 1.0, 1.0]);
+            let es = esind(&set, &ab, &rust.points, &mags, &psc);
             if esh.points.len() != es.len() {
                 eprintln!(
                     "{}: ESIND dumped {} points, Rust computed {}",
@@ -1177,15 +1216,20 @@ fn main() -> ExitCode {
             for (worst, (r, t)) in muf_worst.iter_mut().zip(muf_fields.iter().zip(scalars)) {
                 worst.update((r - t).abs(), &case.id);
             }
-            for (layer, traced) in hour.layers.iter().zip(&mufh.points) {
+            for (index, (layer, traced)) in hour.layers.iter().zip(&mufh.points).enumerate() {
                 if traced.len() != 11 {
                     structural += 1;
                     continue;
                 }
                 if traced[7] as i32 != layer.nhopmf {
+                    // Layers are 1 E, 2 F1, 3 F2, 4 Es, as in /MUFS/.
                     eprintln!(
-                        "{}: layer hop count {} vs {}",
-                        case.id, traced[7], layer.nhopmf
+                        "{}: hour {} layer {} hop count {} vs {}",
+                        case.id,
+                        vir.gmt,
+                        index + 1,
+                        traced[7],
+                        layer.nhopmf
                     );
                     structural += 1;
                     continue;

@@ -28,7 +28,20 @@ scratch files, deployment anywhere Rust runs, and code a person can read.
    cases and compares every dumped value with the Rust stage, reporting the
    worst difference per field. A porting mistake surfaces in the first
    stage that contains it.
-2. **The tolerance envelope.** The finished engine must stay inside
+2. **Randomized decks.** `fuzz` generates valid decks from a seed and
+   requires the two engines to print identical listings. The sweep only
+   holds combinations somebody chose; this covers the rest, cycles
+   through six distance bands so short and near-antipodal paths are
+   always represented, and reports a case index that reproduces any
+   failure exactly (`--seed N`). Refusing the same case counts as
+   agreement: the reference stops on some inputs and the port stops on
+   the same ones. **Result (2026-07-26): 600 cases identical, 2,031,840
+   cells and 100,872 mode labels.** `porttest --seed N` runs one
+   generated case through the stage traces and `--fuzz N` runs a batch,
+   because a difference the listing does not print is invisible to the
+   whole-engine check: that is how the sporadic-E-off disagreement
+   below was found.
+3. **The tolerance envelope.** The finished engine must stay inside
    `sensitivity.md` on the full sweep: no further from the `-O2` reference
    than IEEE-conformant rebuilds are from each other (worst case 1 dB SNR,
    zero structural disagreements). **Result (2026-07-26, `portcheck`): the
@@ -73,6 +86,17 @@ geometry trace only matches this way.
 
 Working order is data flow, top to bottom. Each stage lands with its trace
 instrumentation, its `porttest` comparison, and unit tests.
+
+## Sporadic E off
+
+The `FPROB` card multiplies each critical frequency, and its fourth
+value is sporadic E. At zero every control point has `foEs = 0`, so
+`CURMUF` skips all of them, leaves its running minimum at the initial
+1000 and takes the branch that zeroes the whole Es layer. The engine
+honours this; the stage harness used to pass all four multipliers as 1
+regardless of the deck, so an Es-off case compared two different
+questions and disagreed about the Es layer's MUF hop count. The sweep
+fixes the flag on, which is why only generated cases exposed it.
 
 ## Mode-loop notes (`engine::modes`)
 

@@ -13,6 +13,8 @@
 
 use std::path::Path;
 
+use crate::deck::DeckCase;
+
 use super::coefficients::{redmap, CoefficientSet, FoF2Model};
 use super::con::{MagneticPole, D2R, R};
 use super::geometry::path_geometry;
@@ -46,6 +48,30 @@ pub struct RunInputs {
     pub noise_dbw: i32,
     pub watts: R,
     pub sporadic_e: bool,
+}
+
+/// Asks the engine the same question the deck card asks.
+///
+/// The harness describes a case once, as a [`DeckCase`], and both
+/// engines are driven from that one description. Building the Rust
+/// inputs separately would let the two drift apart and turn a
+/// comparison into a comparison of two different questions.
+impl From<&DeckCase> for RunInputs {
+    fn from(c: &DeckCase) -> Self {
+        Self {
+            from_lat_deg: c.from_lat,
+            from_lon_deg: c.from_lon,
+            to_lat_deg: c.to_lat,
+            to_lon_deg: c.to_lon,
+            month: c.month,
+            ssn: c.ssn as R,
+            freqs_mhz: c.freqs_mhz.iter().map(|f| *f as R).collect(),
+            required_snr_db: c.required_snr_db as R,
+            noise_dbw: c.noise_dbw as i32,
+            watts: c.watts as R,
+            sporadic_e: c.sporadic_e,
+        }
+    }
 }
 
 /// One hour's outputs: the MUF block and the thirteen `/SON/` slots

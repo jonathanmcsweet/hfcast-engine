@@ -10,6 +10,8 @@
 //! - [`deck`] writes VOACAP's fixed-width input deck.
 //! - [`listing`] reads every numeric field back out of a method 30 listing.
 //! - [`sweep`] enumerates input cases covering the model's regimes.
+//! - [`fuzz`] generates valid decks from a seed, for combinations the
+//!   hand-built sweep does not contain.
 //! - [`runner`] drives a chosen `voacapl` binary.
 //! - [`compare`] measures how far two listings differ, field by field.
 //! - [`spread`] pairs the engine's day-to-day spread claims with measured days.
@@ -22,6 +24,7 @@
 pub mod compare;
 pub mod deck;
 pub mod engine;
+pub mod fuzz;
 pub mod geomag;
 pub mod irtam;
 pub mod itu;
