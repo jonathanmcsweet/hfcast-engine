@@ -54,6 +54,52 @@ scratch files, deployment anywhere Rust runs, and code a person can read.
    port is bit-identical at the listing level — 463,104 printed cells and
    23,040 mode labels over the 96 sweep cases with zero differences.**
 
+## Host limits and toolchain
+
+Nothing is on `PATH`. Cargo is `~/.cargo/bin/cargo`, run from
+`propcore/`. `dprint` is `./node_modules/.bin/dprint` at the repository
+root. There is no `node`, `npm` or `pnpm` on `PATH`: the only Node is the
+editor server's, at `/home/dev/.vscodium-server/bin/<hash>/node`, and it
+needs `unset ELECTRON_RUN_AS_NODE VSCODE_ESM_ENTRYPOINT` first or it
+starts the extension host instead of running the script.
+
+The host has **2 GB of RAM, no swap, and 16 CPUs**. Any tool that sizes a
+pool from core count is killed by the kernel, reporting a bare `Killed`
+or exit code 137 and nothing else — this has cost time in both the
+Fortran builds and the Node bundler. Give every parallel step an explicit
+count: `--jobs 3` to the harnesses, `JOBS=4` to the build scripts. Three
+concurrent harness jobs is the measured comfortable figure; each one runs
+a Fortran binary and copies a tree.
+
+A foreground `sleep` is blocked. Wait on a condition instead.
+
+## The harnesses
+
+Two builds of the reference are needed once, into
+`vendor/voacapl-variants/`:
+
+```
+propcore/tools/build-variants.sh   # O0 O1 O2 O3 fastmath — O2 is the reference
+propcore/tools/build-trace.sh      # the instrumented build the stage traces read
+```
+
+Then, from `propcore/`, with `cargo` as above:
+
+| harness     | what it proves                                        | flags                                                                                                                       |
+| ----------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `porttest`  | each stage's intermediates against the trace build    | `--cases N` `--only ID` `--seed N` `--fuzz N [--from N]`                                                                    |
+| `portcheck` | whole listings over the 96 sweep cases                | `--cases N`                                                                                                                 |
+| `fuzz`      | whole listings over generated decks                   | `--cases N` `--from N` `--jobs J` `--seed N` `--show N` `--method M` `--coeffs URSI88` `--fprob a,b,c,d` `--botlines a,b,c` |
+| `antcheck`  | antenna gain tables against the reference's own files | `--only NAME` `--verbose`                                                                                                   |
+| `lufcheck`  | `OUTMUF`'s table from a method-26 deck                | `--cases N` `--from N` `--jobs J`                                                                                           |
+| `mufcheck`  | methods 1, 3 and 7 tables                             | `--method 1\|3\|7` `--cases N` `--from N` `--jobs J`                                                                        |
+| `areacheck` | area grid coordinates against the reference's grid    | `--jobs J`                                                                                                                  |
+
+`fuzz`'s `--method`, `--coeffs`, `--fprob` and `--botlines` are applied
+after a case is generated, so the corpus is the same set of paths with
+one card changed. That is deliberate: a difference is then attributable
+to the card and not to a different path.
+
 ## Precision policy
 
 The Fortran computes in 4-byte REAL, so the port uses `f32` (`con::R`) on
@@ -258,19 +304,81 @@ computes one, so the cell reads zero either way.
 `fuzz --method M` runs the corpus with a different `METHOD` card.
 Methods 16 to 22 are identical to the reference over 60 cases each.
 
-## Running the harnesses at the same time
+## Traps: how a passing or failing verdict has been wrong
 
-Each harness copies the `itshfbc` tree per case so runs cannot see each
-other's files. The copy was named after the case alone, so two
-harnesses working through the same corpus picked the same directory —
-and `IsolatedRoot::create` starts by deleting it. That did not fail:
-it truncated one run's reference listing, and the missing cells were
-reported as differences. A concurrent sweep of eight methods showed
-false differences in three of them that vanished when each was run
-alone. The tree name now carries the process id.
+Every one of these produced a confident wrong answer at least once. Check
+them before recording a verdict.
 
-Verdicts recorded before that fix came from harnesses run one at a
-time, which was never affected.
+**A green verdict from a deck that cannot reach the branch proves
+nothing.** `MPATH` returns its floor value past 7000 km only for card
+method 30, and every other systems method computes multipath at any
+distance. Method 30 could not expose the port applying that cutoff
+everywhere, because between 7000 and 10000 km its smoothing takes the
+multipath probability from whichever pass it chose and the long pass
+never computes one — so the cell reads zero whether the port is right or
+wrong. The port was wrong there through several passing sweeps. Before
+trusting a result, ask what input would make the branch visible in a
+printed cell, and whether the corpus contains it.
+
+**The listing does not print everything.** A difference in a value the
+listing never shows is invisible to `portcheck` and `fuzz`. That is what
+`porttest --seed N` and `porttest --fuzz N` are for, and how the
+sporadic-E-off disagreement was found: the two engines printed the same
+table while disagreeing about the Es layer's MUF hop count.
+
+**Formatted output rounds half to even.** The Fortran runtime's `F`
+editing rounds a value landing exactly on a printing boundary to the even
+digit: 327.25 in an `F7.1` field prints as 327.2, not 327.3. A comparison
+rounding half away from zero reports a difference that is not there.
+Use `round_ties_even`. Note that `ANINT` inside the model does round half
+away from zero, so the two rules coexist in one program.
+
+**Split-on-whitespace parsing breaks on a full field.** A MUF of
+1000.00, which is what the sporadic-E slot holds when no control point
+has an Es layer, fills its `F7.2` field completely and leaves no space
+before the next. `parse_outmuf` silently returned zero rows for method 3
+this way. Read these tables by column. The formats are:
+
+```
+OUTMUF  (1H ,2X,2F6.1,   then F7.2 per column
+OUTLAY  (' ',F4.1,F6.1,2(4F6.1,2F6.0,F6.1,2X))  continued (11X,2(...))
+OUTPAR  2(1X,F5.1,A1),2F6.1,F6.2,2F6.1,F7.1,3F6.1,F7.1,3F5.1,F6.2,
+        2(F7.1,F6.1),F6.1,A1
+```
+
+**Concurrent harnesses shared their scratch trees.** Each harness copies
+the `itshfbc` tree per case so runs cannot see each other's files, but
+the copy was named after the case alone, so two harnesses working the
+same corpus picked the same directory — and `IsolatedRoot::create` starts
+by deleting it. It did not fail: it truncated one run's reference listing
+and the missing cells were reported as differences. A concurrent sweep of
+eight methods showed false differences in three that vanished when each
+ran alone. The tree name now carries the process id. Verdicts recorded
+before that fix came from harnesses run one at a time, which was never
+affected.
+
+**Fortran binds an exponent before a multiplication.** `aa * rl**2` is
+`aa` times the square; flattening it to `(aa * rl) * rl` rounds
+differently and moved three printed digits in the CCIR antenna family.
+Keep the source's association.
+
+**Single-precision arguments are widened, not passed exact.** A routine
+computing in double precision whose arguments live in a single-precision
+COMMON block receives a value already rounded to `f32`. Passing the exact
+double instead moved an azimuth by one unit in the last place and flipped
+borderline digits. `DAZEL0` and `DAZEL1` both need the round-then-widen.
+
+**Values that travel through a file carry the file's decimals.** The
+engine computes with the gain it read back from `gainNN.dat`, not the
+gain it computed, so `AntennaSet` rounds every table value through the
+file's `f7.3` and `f6.2` formats.
+
+**State survives between hours and between calls.** `/SON/`, `/REFLX/`,
+`/ZON/`, `/allMODE/` and `/MODES/` persist across hours and are read
+stale. `FSECV` carries from each hour into the next, which is why an area
+run's single hour is not the same computation as that hour inside a
+24-hour run. Some antenna locals survive between calls on gfortran's
+stack without being in a `SAVE` statement.
 
 ## The COEFFS and FPROB cards
 
@@ -386,3 +494,42 @@ names and `inmuf` reads the `jmode` one. A bug, kept as written.
 table and compares GMT, LMT, FOT, HPF, the sporadic-E MUF, the circuit
 MUF and the LUF at the two decimals the table prints. 96 cases over
 all six distance bands — 2304 hours, 16,128 cells — are identical.
+
+## Area coverage: how to drive the reference
+
+An area run is the program's **second invocation mode** and does not read
+a card deck at all, which is why it looked untestable at first. It is:
+
+```
+voacapl <itshfbc-root> area calc default/<name>.voa
+```
+
+run with the working directory set to the root. The input is a keyed text
+file — one `Keyword :values` line per setting, not fixed-width columns —
+placed at `<root>/areadata/default/<name>.voa`. The reference writes its
+results beside it as `<name>.vg1`. `runner::run_area` does all of this and
+returns the grid file's text; `src/bin/areacheck.rs::area_file` shows a
+complete working input file. A 9 by 9 grid runs in 0.03 seconds, so the
+comparison loop is fast and a grid can be large.
+
+The grid file prints each point's own latitude and longitude before the
+27 predicted columns, which is what let the geometry be verified ahead of
+everything else: two `I3` indices, then latitude in columns 6 to 16 and
+longitude in 16 to 26. Its header carries the grid dimensions in the same
+columns the rows use for their indices, so a data row is recognised by
+having coordinates that parse.
+
+`engine::area` is `GRIDXY` and `DAZEL1` plus the driver's two corrections
+to each receiver point. `areacheck` compares 325 points over five grids —
+the distributed rectangle, a centre-on-origin grid, a southern centre,
+one reaching over a pole, one past the antipode — all exact.
+
+Three things about this mode are recorded at the code and matter to the
+rest of the stage. The `AREA` card's last field picks the projection:
+zero gives the great-circle mesh (`IPROJ = 7`) and anything else the
+latitude and longitude mesh (`IPROJ = 8`), which `GRIDXY` does not test
+for and so takes its plain branch. The azimuth is scaled by the literal
+`.0174533` the source writes rather than by `/CON/`'s degree conversion,
+which differs in its last digits. And this driver compares the path
+length against `GCDLNG` with `.GT.` where the point-to-point driver uses
+`.GE.`.
