@@ -43,7 +43,7 @@
 //! | `redmap.for` coefficient loading | [`coefficients`] | yes |
 //! | `geotim/virtim/versy/noisy/ef1var/timvar/f2var/esind` layer parameters | [`ionosphere`] | yes |
 //! | `esreg/esmod` sporadic E losses | — | with the systems model |
-//! | `ionset/curmuf` MUF | — | not yet |
+//! | `ionset/lecden/gethp/f2dis/curmuf` MUF | [`muf`] | yes |
 //! | `luffy` + relatives, systems model | — | not yet |
 //! | `noisy/genois/anois1` noise | — | not yet |
 //! | `setluf/outlin` output fields | — | not yet |
@@ -53,3 +53,4 @@ pub mod con;
 pub mod geometry;
 pub mod ionosphere;
 pub mod magnetic;
+pub mod muf;

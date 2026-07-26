@@ -17,6 +17,7 @@ use propcore::deck::build_deck;
 use propcore::engine::coefficients::{redmap, FoF2Model};
 use propcore::engine::con::MagneticPole;
 use propcore::engine::ionosphere::{cofion, esind, layer_parameters, virtim, LayerParams};
+use propcore::engine::muf::{curmuf, ionset, IonoState};
 use propcore::engine::geometry::{path_geometry, PathGeometry};
 use propcore::engine::magnetic::magvar;
 use propcore::runner::{run_deck_with_env, variant_bin, IsolatedRoot};
@@ -232,6 +233,39 @@ fn main() -> ExitCode {
         Worst::new("Es upper decile (MHz)"),
         Worst::new("Es height (km)"),
     ];
+    // FSECV is dumped too but not compared: its value on no-F1 hours is
+    // whatever the previous hour's LUFFY lecden calls left behind (not
+    // yet ported), and nothing in the method-30 path ever reads it — the
+    // only reader is the ionogram plotter (ITRUN = 2).
+    let mut lec_worst = [
+        Worst::new("F1 critical after lecden (MHz)"),
+        Worst::new("F1 semithickness after lecden (km)"),
+        Worst::new("F1 height after lecden (km)"),
+        Worst::new("profile height (km)"),
+        Worst::new("profile density (MHz^2)"),
+    ];
+    let mut muf_worst = [
+        Worst::new("E MUF (MHz)"),
+        Worst::new("F1 MUF (MHz)"),
+        Worst::new("F2 MUF (MHz)"),
+        Worst::new("Es MUF (MHz)"),
+        Worst::new("circuit MUF (MHz)"),
+        Worst::new("FOT (MHz)"),
+        Worst::new("HPF (MHz)"),
+        Worst::new("MUF takeoff angle (deg)"),
+    ];
+    let mut muf_layer_worst = [
+        Worst::new("layer sig lower"),
+        Worst::new("layer sig upper"),
+        Worst::new("layer angle (deg)"),
+        Worst::new("layer virtual height (km)"),
+        Worst::new("layer true height (km)"),
+        Worst::new("layer vertical frequency (MHz)"),
+        Worst::new("layer loss factor"),
+        Worst::new("layer MUF lower decile (MHz)"),
+        Worst::new("layer MUF median (MHz)"),
+        Worst::new("layer MUF upper decile (MHz)"),
+    ];
     let mut structural = 0usize;
     let mut compared = 0usize;
     let mut mag_points = 0usize;
@@ -239,6 +273,8 @@ fn main() -> ExitCode {
     let mut ab_points = 0usize;
     let mut iono_points = 0usize;
     let mut es_points = 0usize;
+    let mut lec_points = 0usize;
+    let mut muf_hours = 0usize;
 
     for case in &cases {
         let deck = match build_deck(case) {
@@ -421,9 +457,42 @@ fn main() -> ExitCode {
             structural += 1;
             continue;
         }
+        let lec_dump = std::fs::read_to_string(trace_dir.join("lecden.txt")).unwrap_or_default();
+        let lecs_all = parse_hour_traces(&lec_dump, "LEC");
+        // LUFFY calls LECDEN again later in the hour; the first dump per
+        // hour is the CURMUF one this stage compares.
+        let mut lecs: Vec<&HourTrace> = Vec::new();
+        for l in &lecs_all {
+            if lecs.last().map(|p| p.gmt) != Some(l.gmt) {
+                lecs.push(l);
+            }
+        }
+        let muf_dump = std::fs::read_to_string(trace_dir.join("curmuf.txt")).unwrap_or_default();
+        let mufs = parse_hour_traces(&muf_dump, "MUF");
+        if mufs.len() != virs.len() || lecs.len() != virs.len() {
+            eprintln!(
+                "{}: {} VIRTIM dumps but {} CURMUF and {} LECDEN dumps",
+                case.id,
+                virs.len(),
+                mufs.len(),
+                lecs.len()
+            );
+            structural += 1;
+            continue;
+        }
         let cof = cofion(&set);
         let mags: Vec<_> = rust.points.iter().map(|p| magvar(p.lat, p.lon)).collect();
-        for ((vir, f2h), esh) in virs.iter().zip(&f2s).zip(&ess) {
+        let clats: Vec<f32> = rust.points.iter().map(|p| p.lat).collect();
+        // FSECV lives in a COMMON block and carries across hours. The
+        // carry here is partial — LUFFY's own lecden calls (next stage)
+        // also write it — which is one reason FSECV is not compared.
+        let mut fsecv_carry = [0.0f32; 3];
+        for (((vir, f2h), esh), (lech, mufh)) in virs
+            .iter()
+            .zip(&f2s)
+            .zip(&ess)
+            .zip(lecs.iter().zip(&mufs))
+        {
             let gmt = vir.gmt as f32;
             let ab = virtim(&cof, &set.ikim, gmt);
             for (ported, traced) in ab.iter().zip(&vir.values) {
@@ -492,6 +561,115 @@ fn main() -> ExitCode {
                     worst.update((r - t).abs(), &case.id);
                 }
             }
+
+            // The MUF stage: ionset + curmuf (which runs lecden inside).
+            let mut state = IonoState::from_layers(&params);
+            state.fsecv = fsecv_carry;
+            ionset(&mut state);
+            let mut es_state = es.clone();
+            let clcks: Vec<f32> = params.iter().map(|p| p.clck).collect();
+            let hour = curmuf(
+                &mut state,
+                &mut es_state,
+                &set.f2d,
+                &clats,
+                &clcks,
+                rust.gcd,
+                rust.gcd_km,
+                0.1,
+                red.ssn as f32,
+            );
+            fsecv_carry = state.fsecv;
+            let scalars = &mufh.values;
+            if scalars.len() != 10 || mufh.points.len() != 4 {
+                eprintln!("{}: malformed CURMUF dump", case.id);
+                structural += 1;
+                continue;
+            }
+            if scalars[9] as usize != hour.ks + 1 || scalars[8] as i32 != hour.modmuf {
+                eprintln!(
+                    "{}: CURMUF chose ks {} mode {} but Rust chose {} {}",
+                    case.id,
+                    scalars[9],
+                    scalars[8],
+                    hour.ks + 1,
+                    hour.modmuf
+                );
+                structural += 1;
+                continue;
+            }
+            muf_hours += 1;
+            let muf_fields = [
+                f64::from(hour.emuf),
+                f64::from(hour.f1muf),
+                f64::from(hour.f2muf),
+                f64::from(hour.esmuf),
+                f64::from(hour.allmuf),
+                f64::from(hour.fot),
+                f64::from(hour.hpf),
+                f64::from(hour.angmuf),
+            ];
+            for (worst, (r, t)) in muf_worst.iter_mut().zip(muf_fields.iter().zip(scalars)) {
+                worst.update((r - t).abs(), &case.id);
+            }
+            for (layer, traced) in hour.layers.iter().zip(&mufh.points) {
+                if traced.len() != 11 {
+                    structural += 1;
+                    continue;
+                }
+                if traced[7] as i32 != layer.nhopmf {
+                    eprintln!(
+                        "{}: layer hop count {} vs {}",
+                        case.id, traced[7], layer.nhopmf
+                    );
+                    structural += 1;
+                    continue;
+                }
+                let fields = [
+                    f64::from(layer.sigl),
+                    f64::from(layer.sigu),
+                    f64::from(layer.delmuf),
+                    f64::from(layer.hpmuf),
+                    f64::from(layer.htmuf),
+                    f64::from(layer.fvmuf),
+                    f64::from(layer.afmuf),
+                    f64::from(layer.yfot),
+                    f64::from(layer.ymuf),
+                    f64::from(layer.yhpf),
+                ];
+                let traced_fields = [
+                    traced[0], traced[1], traced[2], traced[3], traced[4], traced[5], traced[6],
+                    traced[8], traced[9], traced[10],
+                ];
+                for (worst, (r, t)) in muf_layer_worst
+                    .iter_mut()
+                    .zip(fields.iter().zip(&traced_fields))
+                {
+                    worst.update((r - t).abs(), &case.id);
+                }
+            }
+
+            // The profile from the CURMUF-time LECDEN call.
+            let lv = &lech.values;
+            if lv.len() != 104 {
+                eprintln!("{}: malformed LECDEN dump ({} values)", case.id, lv.len());
+                structural += 1;
+                continue;
+            }
+            lec_points += 1;
+            let ks = hour.ks;
+            let f1_fields = [
+                f64::from(state.fi[ks][1]),
+                f64::from(state.yi[ks][1]),
+                f64::from(state.hi[ks][1]),
+            ];
+            for (worst, (r, t)) in lec_worst.iter_mut().zip(f1_fields.iter().zip(&lv[0..3])) {
+                worst.update((r - t).abs(), &case.id);
+            }
+            for i in 0..50 {
+                lec_worst[3].update((f64::from(state.htr[i]) - lv[4 + i]).abs(), &case.id);
+                lec_worst[4].update((f64::from(state.fnsq[i]) - lv[54 + i]).abs(), &case.id);
+            }
         }
     }
 
@@ -538,6 +716,14 @@ fn main() -> ExitCode {
     println!("| field | worst difference | case |");
     println!("| --- | --: | --- |");
     for w in &es_worst {
+        println!("| {} | {:.2e} | {} |", w.name, w.value, w.case);
+    }
+
+    println!("\n## Stage: MUF (ionset, lecden, gethp, f2dis, curmuf)\n");
+    println!("Compared {muf_hours} hours and {lec_points} density profiles.\n");
+    println!("| field | worst difference | case |");
+    println!("| --- | --: | --- |");
+    for w in muf_worst.iter().chain(&muf_layer_worst).chain(&lec_worst) {
         println!("| {} | {:.2e} | {} |", w.name, w.value, w.case);
     }
 

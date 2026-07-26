@@ -54,7 +54,7 @@ geometry trace only matches this way.
 | map evaluation, layer parameters      | `geotim`, `virtim`, `versy`, `noisy`, `ef1var`, `timvar`, `f2var` | `engine::ionosphere`   | 733k AB values, 9.8k point-hours         |
 | sporadic E parameters                 | `esind`                                                           | `engine::ionosphere`   | 9.8k point-hours                         |
 | sporadic E losses                     | `esreg`, `esmod`                                                  | —                      | (with the systems model)                 |
-| MUF                                   | `ionset`, `curmuf`                                                | —                      |                                          |
+| MUF                                   | `ionset`, `lecden`, `gethp`, `f2dis`, `curmuf`                    | `engine::muf`          | 2.3k hours, 20 fields + profiles         |
 | systems model (modes, losses, signal) | `luffy` and relatives                                             | —                      |                                          |
 | noise                                 | `noisy`, `genois`, `anois1`                                       | —                      |                                          |
 | output fields                         | `setluf`, `outlin`                                                | —                      |                                          |
