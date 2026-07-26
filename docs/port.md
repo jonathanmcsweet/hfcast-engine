@@ -62,8 +62,8 @@ geometry trace only matches this way.
 | MUF                                   | `ionset`, `lecden`, `gethp`, `f2dis`, `curmuf`                    | `engine::muf`          | 2.3k hours, 20 fields + profiles         |
 | ionogram, reflectrix, deviative loss  | `sang`, `selmod`, `genion`, `fobby`, `alosfv`                     | `engine::ionogram`     | 4.6k area calls incl. exact reflectrix   |
 | signal distribution, absorption       | `syssy`, `xlin`, `prbmuf`, `sigdis`                               | `engine::sigdis`       | 3.2k calls, 20 fields                    |
+| noise                                 | `anois1`, `genfam`, `genois`                                      | `engine::noise`        | 70k calls, 13 fields                     |
 | systems model (modes, losses, signal) | `setlng`, `luffy` and relatives                                   | —                      |                                          |
-| noise                                 | `noisy`, `genois`, `anois1`                                       | —                      |                                          |
 | output fields                         | `setluf`, `outlin`                                                | —                      |                                          |
 
 Working order is data flow, top to bottom. Each stage lands with its trace

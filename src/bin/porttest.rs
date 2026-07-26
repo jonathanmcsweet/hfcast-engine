@@ -17,7 +17,10 @@ use propcore::deck::build_deck;
 use propcore::engine::coefficients::{redmap, FoF2Model};
 use propcore::engine::con::MagneticPole;
 use propcore::engine::ionosphere::{cofion, esind, layer_parameters, virtim, LayerParams};
+use propcore::engine::con::D2R;
 use propcore::engine::ionogram::{alosfv, fobby, genion, sang, selmod};
+use propcore::engine::ionosphere::geotim;
+use propcore::engine::noise::{anois1, genois};
 use propcore::engine::muf::{curmuf, ionset, lecden, IonoState};
 use propcore::engine::sigdis::sigdis;
 use propcore::engine::geometry::{path_geometry, PathGeometry};
@@ -291,6 +294,24 @@ fn main() -> ExitCode {
         Worst::new("layer MUF median (MHz)"),
         Worst::new("layer MUF upper decile (MHz)"),
     ];
+    let mut noi_worst: Vec<Worst> = [
+        "combined noise (dBW)",
+        "noise upper decile",
+        "noise lower decile",
+        "noise error median",
+        "noise error upper",
+        "noise error lower",
+        "atmospheric (dBW)",
+        "galactic (dBW)",
+        "man-made (dBW)",
+        "3 MHz noise (ZNOISE)",
+        "receiver efficiency",
+        "1 MHz block noise (ATNU)",
+        "1 MHz neighbour noise (ATNY)",
+    ]
+    .iter()
+    .map(|n| Worst::new(n))
+    .collect();
     let mut sig_worst: Vec<Worst> = [
         "DSL",
         "ASM",
@@ -334,6 +355,7 @@ fn main() -> ExitCode {
     let mut muf_hours = 0usize;
     let mut ion_calls = 0usize;
     let mut sig_calls = 0usize;
+    let mut noi_calls = 0usize;
 
     for case in &cases {
         let deck = match build_deck(case) {
@@ -542,6 +564,8 @@ fn main() -> ExitCode {
         let fobs = parse_hour_traces(&fob_dump, "FOB");
         let sig_dump = std::fs::read_to_string(trace_dir.join("sigdis.txt")).unwrap_or_default();
         let sigs = parse_hour_traces(&sig_dump, "SIG");
+        let noi_dump = std::fs::read_to_string(trace_dir.join("genois.txt")).unwrap_or_default();
+        let nois = parse_hour_traces(&noi_dump, "NOI");
         if mufs.len() != virs.len() || lecs.len() != virs.len() {
             eprintln!(
                 "{}: {} VIRTIM dumps but {} CURMUF and {} LECDEN dumps",
@@ -561,6 +585,7 @@ fn main() -> ExitCode {
         let mut fsecv_carry = [0.0f32; 3];
         let mut ion_index = 0usize;
         let mut sig_index = 0usize;
+        let mut noi_index = 0usize;
         let nang = sang(rust.gcd_km, 0.1);
         for (((vir, f2h), esh), (lech, mufh)) in virs
             .iter()
@@ -819,6 +844,69 @@ fn main() -> ExitCode {
             }
             fsecv_carry = state.fsecv;
 
+            // The noise stage: GENOIS runs per frequency (twice each) in
+            // the LUFFY loop; every dump of this hour is compared at its
+            // own dumped frequency.
+            let times = geotim(
+                vir.gmt as i32,
+                1,
+                case.from_lon as f32 * D2R,
+                case.to_lon as f32 * D2R,
+            );
+            let an = anois1(
+                &set,
+                times.gmtr,
+                case.to_lat as f32 * D2R,
+                case.to_lon as f32 * D2R,
+                case.to_lon as f32,
+            );
+            while noi_index < nois.len() && nois[noi_index].gmt == vir.gmt {
+                let noih = &nois[noi_index];
+                noi_index += 1;
+                if noih.h2 as usize != an.kj
+                    || noih.h3 as usize != an.jk
+                    || noih.values.len() != 16
+                {
+                    eprintln!(
+                        "{}: GENOIS blocks {} {} where Rust chose {} {}",
+                        case.id, noih.h2, noih.h3, an.kj, an.jk
+                    );
+                    structural += 1;
+                    continue;
+                }
+                noi_calls += 1;
+                let freq = noih.values[0] as f32;
+                let nr = genois(
+                    &set,
+                    &an,
+                    freq,
+                    case.to_lat as f32 * D2R,
+                    state.fi[state.kfx - 1][2],
+                    case.noise_dbw as i32,
+                );
+                let fields = [
+                    f64::from(nr.rcnse),
+                    f64::from(nr.du),
+                    f64::from(nr.dl),
+                    f64::from(nr.sigm),
+                    f64::from(nr.sygu),
+                    f64::from(nr.sygl),
+                    f64::from(nr.atnos),
+                    f64::from(nr.gnos),
+                    f64::from(nr.xnois),
+                    f64::from(nr.znoise),
+                    f64::from(nr.eff),
+                    f64::from(an.atnu),
+                    f64::from(an.atny),
+                ];
+                for (worst, (r, t)) in noi_worst
+                    .iter_mut()
+                    .zip(fields.iter().zip(&noih.values[1..14]))
+                {
+                    worst.update((r - t).abs(), &case.id);
+                }
+            }
+
             // SIGDIS runs once per LUFFY pass: twice in the smoothing
             // band, once otherwise. Its inputs are identical between the
             // passes, so one Rust evaluation compares against each dump.
@@ -960,6 +1048,14 @@ fn main() -> ExitCode {
     println!("| field | worst difference | case |");
     println!("| --- | --: | --- |");
     for w in &sig_worst {
+        println!("| {} | {:.2e} | {} |", w.name, w.value, w.case);
+    }
+
+    println!("\n## Stage: noise (anois1, genfam, genois)\n");
+    println!("Compared {noi_calls} calls.\n");
+    println!("| field | worst difference | case |");
+    println!("| --- | --: | --- |");
+    for w in &noi_worst {
         println!("| {} | {:.2e} | {} |", w.name, w.value, w.case);
     }
 
