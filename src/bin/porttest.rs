@@ -1068,14 +1068,15 @@ fn main() -> ExitCode {
         let nang = sang(rust.gcd_km, 0.1);
         // The mode loop's persistent COMMON blocks, one per case.
         let mut lp = ModeLoopState::default();
-        let pwrkw = (case.watts / 1000.0) as f32;
+        // The sweep is isotropic at both ends; the fuzz corpus covers
+        // directional antennas through the whole-engine check instead.
+        let ants = propcore::engine::antenna::AntennaSet::isotropes(case.watts as f32);
         let deck_params = DeckParams {
             amind: 0.1,
             rsn: case.required_snr_db as f32,
             lufp: 90,
             pmp: 3.0,
             dmp: 0.1,
-            pwrdb: 30.0 + 10.0 * pwrkw.log10(),
         };
         let mut base_frel = [0.0f32; 12];
         for (slot, f) in base_frel.iter_mut().zip(&case.freqs_mhz) {
@@ -1298,6 +1299,7 @@ fn main() -> ExitCode {
             let fof2_end = state.fi[state.kfx - 1][2];
             let noise_for = |f: f32| {
                 genois(
+                    ants.gain(2, 0.0, f).1,
                     &set,
                     &an,
                     f,
@@ -1476,6 +1478,7 @@ fn main() -> ExitCode {
                 geog.apply_sigdis(sd);
                 let ctx = PassCtx {
                     state: &state,
+                    ants: &ants,
                     fs: &fs,
                     hs: &hs,
                     geog: &geog,
@@ -1523,6 +1526,7 @@ fn main() -> ExitCode {
                 let sd = sd_last.as_ref().expect("two passes ran");
                 let ctx = PassCtx {
                     state: &state,
+                    ants: &ants,
                     fs: &fs,
                     hs: &hs,
                     geog: &geog,
@@ -1594,6 +1598,7 @@ fn main() -> ExitCode {
                 noi_calls += 1;
                 let freq = noih.values[0] as f32;
                 let nr = genois(
+                    ants.gain(2, 0.0, freq).1,
                     &set,
                     &an,
                     freq,

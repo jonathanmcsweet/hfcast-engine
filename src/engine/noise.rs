@@ -185,6 +185,7 @@ fn component(level: R, du: R, dl: R) -> (f64, f64, f64, f64) {
 /// (positive: dB below 1 W at 3 MHz; zero or negative: environment
 /// index).
 pub fn genois(
+    reff: R,
     set: &CoefficientSet,
     anois: &Anois,
     freq: R,
@@ -249,8 +250,9 @@ pub fn genois(
     let au = au1 + au2 + au3;
     let al = al1 + al2 + al3;
 
-    // The isotrope receiver antenna: gain 0, efficiency 0.
-    let eff: R = 0.0;
+    // GENOIS asks GAIN for the receiver antenna's efficiency at zero
+    // elevation; the caller passes it in.
+    let eff: R = reff;
 
     // Switch to dB above 1 W and power-sum for the Caruana check.
     atnos -= 204.0;
@@ -371,7 +373,7 @@ mod tests {
             kj: 4,
             jk: 3,
         };
-        let loud = genois(&set, &anois, 10.0, 0.5, 15.0, 125);
+        let loud = genois(0.0, &set, &anois, 10.0, 0.5, 15.0, 125);
         // 204-125+13.22 - 27.7*log10(10) = 64.5 dB>kTb, i.e. -139.5 dBW.
         assert!(
             (f64::from(loud.rcnse) + 139.0).abs() < 5.0,
@@ -380,7 +382,7 @@ mod tests {
         );
         assert!(loud.du > 0.0 && loud.dl > 0.0);
         // Above foF2 the galactic component joins.
-        let with_gal = genois(&set, &anois, 25.0, 0.5, 15.0, 125);
+        let with_gal = genois(0.0, &set, &anois, 25.0, 0.5, 15.0, 125);
         assert!(with_gal.gnos != 0.0);
     }
 

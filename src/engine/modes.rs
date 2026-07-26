@@ -37,11 +37,6 @@ const DELOPT: R = 3.0;
 const GMIN: R = 3.0;
 const YMIN: R = 0.1;
 
-/// The isotrope's gain and antenna efficiency (`GAIN` with `ITR > 0`
-/// interpolates an all-zero table).
-const ISO_GAIN: R = 0.0;
-const ISO_EFF: R = 0.0;
-
 /// Deck-level system parameters the mode loop needs.
 #[derive(Debug, Clone, Copy)]
 pub struct DeckParams {
@@ -54,8 +49,6 @@ pub struct DeckParams {
     /// Multipath power tolerance, dB, and maximum tolerable time delay.
     pub pmp: R,
     pub dmp: R,
-    /// Transmit power, dBW (`PWRDB` is constant for one full-band antenna).
-    pub pwrdb: R,
 }
 
 /// The `/GEOG/` block: per-sample-area scalars (5 slots).
@@ -424,6 +417,8 @@ impl Default for ModeLoopState {
 /// Immutable per-pass context for the frequency loop.
 pub struct PassCtx<'a> {
     pub state: &'a IonoState,
+    /// The installed antennas (`/cantenna/`), for `GAIN` and `PWRDB`.
+    pub ants: &'a super::antenna::AntennaSet,
     pub fs: &'a [[R; 3]; 5],
     pub hs: &'a [R; 5],
     pub geog: &'a Geog,
@@ -1105,9 +1100,11 @@ fn regmod(
             }
         }
         zon.grlos[im] = ground_loss_avg(ctx, del, freq, ctx.state.km);
-        zon.tgain[im] = ISO_GAIN;
-        zon.rgain[im] = ISO_GAIN;
-        zon.eff[im] = ISO_EFF;
+        let (tgain, _teff) = ctx.ants.gain(1, del, freq);
+        let (rgain, reff) = ctx.ants.gain(2, del, freq);
+        zon.tgain[im] = tgain;
+        zon.rgain[im] = rgain;
+        zon.eff[im] = reff;
         // Only two hops carry the obscuration.
         let hops = hop.min(2.0);
         let mut xtlos = zon.fslos[im]
@@ -1162,8 +1159,9 @@ fn regmod(
         zon.tllow[im] = (ctx.sig.dsl + hops * (obfl - zon.obf[im]) + hop * (xlsl - xls)).min(25.0);
         zon.tlhgh[im] = (ctx.sig.dsu + hops * (zon.obf[im] - obfu) + hop * (xls - xlsu)).min(25.0);
         zon.tloss[im] = xtlos;
-        zon.fldst[im] = 107.2 + ctx.deck.pwrdb + 20.0 * freq.log10() - xtlos - zon.rgain[im];
-        zon.sigpow[im] = ctx.deck.pwrdb - xtlos;
+        zon.fldst[im] =
+            107.2 + ctx.ants.pwrdb(freq) + 20.0 * freq.log10() - xtlos - zon.rgain[im];
+        zon.sigpow[im] = ctx.ants.pwrdb(freq) - xtlos;
         zon.sn[im] = zon.sigpow[im] - noise.rcnse - zon.eff[im];
         zon.b[im] = modes.delmod[im];
         zon.nmode[im] = ismod as i32;
@@ -1493,15 +1491,15 @@ fn esmod(
         zon.tllow[i] = (ctx.sig.dsl + hop * (refl - refm)).min(25.0);
         zon.tlhgh[i] = (ctx.sig.dsu + hop * (refm - refu)).min(25.0);
         let sgrlos = ground_loss_avg(ctx, del, freq, ctx.state.km);
-        let stgain = ISO_GAIN;
-        let srgain = ISO_GAIN;
-        zon.eff[i] = ISO_EFF;
+        let (stgain, _steff) = ctx.ants.gain(1, del, freq);
+        let (srgain, sreff) = ctx.ants.gain(2, del, freq);
+        zon.eff[i] = sreff;
         // Note the ADX double-count: SABPS already contains it and the
         // sum below adds it once more, as the source does.
         let xtlos = sflos + hop * (sabps + refm + adx) + (hop - 1.0) * sgrlos - srgain - stgain
             + ctx.sig.asm;
-        zon.fldst[i] = 107.2 + ctx.deck.pwrdb + 20.0 * freq.log10() - xtlos - srgain;
-        zon.sigpow[i] = ctx.deck.pwrdb - xtlos;
+        zon.fldst[i] = 107.2 + ctx.ants.pwrdb(freq) + 20.0 * freq.log10() - xtlos - srgain;
+        zon.sigpow[i] = ctx.ants.pwrdb(freq) - xtlos;
         let pros2 = prbmuf(muf, freq, muf.layers[3].ymuf, muf.layers[3].ymuf, 4);
         zon.obf[i] = 8.9136 * pros2.powf(-0.7);
         zon.adv[i] = 0.0;
@@ -1512,7 +1510,7 @@ fn esmod(
         zon.rgain[i] = srgain;
         zon.tgain[i] = stgain;
         zon.hn[i] = hop;
-        zon.sigpow[i] = ctx.deck.pwrdb - xtlos;
+        zon.sigpow[i] = ctx.ants.pwrdb(freq) - xtlos;
         zon.sn[i] = zon.sigpow[i] - noise.rcnse - zon.eff[i];
         zon.hp[i] = ctx.hs[k];
         zon.b[i] = adel;
@@ -1565,7 +1563,14 @@ const TME: [R; 10] = [
 /// Port of `RELBIL`: reliability per mode, selection of the most
 /// reliable, power-summed combination and the required power gain.
 /// Writes the frequency's `/SON/` slot.
-fn relbil(lp: &mut ModeLoopState, ifx: usize, noise: &NoiseResult, deck: &DeckParams, freq: R) {
+fn relbil(
+    lp: &mut ModeLoopState,
+    ifx: usize,
+    noise: &NoiseResult,
+    deck: &DeckParams,
+    ants: &super::antenna::AntennaSet,
+    freq: R,
+) {
     const XEPS: R = 0.05;
     let inum = lp.all.nmmod;
     if inum == 0 {
@@ -1730,7 +1735,7 @@ fn relbil(lp: &mut ModeLoopState, ifx: usize, noise: &NoiseResult, deck: &DeckPa
     lp.son[ifx].dblos = lp.all.tloss[ir];
     // The 2014 change: with summed signal powers the transmission loss
     // is recalculated from the summed power.
-    lp.son[ifx].dblos = deck.pwrdb - lp.son[ifx].dbw;
+    lp.son[ifx].dblos = ants.pwrdb(freq) - lp.son[ifx].dbw;
     lp.son[ifx].cprob = lp.all.prob[ir];
     lp.son[ifx].mode_layer = is;
     lp.son[ifx].nhp = lp.all.hn[ir] as i32;
@@ -1952,9 +1957,12 @@ fn settxr(lp: &mut ModeLoopState, ctx: &PassCtx, muf: &MufHour, freq: R, itxrcp:
                 y += gain_ground(del, freq, ctx.geog.sigpat[ig], ctx.geog.epspat[ig]);
             }
             rfx.grlosx[ia] = y / ctx.state.km as R;
-            rfx.tgainx[ia] = ISO_GAIN;
+            // GAIN(JJ, ...): JJ is 1 at the transmit end, 2 at the
+            // receive end of the long path.
+            let (g, teff) = ctx.ants.gain(jj as i32 + 1, del, freq);
+            rfx.tgainx[ia] = g;
             if jj == 1 {
-                efflp[ia] = ISO_EFF;
+                efflp[ia] = teff;
             }
             let sphet = RZ * cdel / (RZ + rfx.htflx[ia]);
             let cphet = (1.0 - sphet * sphet).max(0.00000001).sqrt();
@@ -2269,8 +2277,9 @@ fn lngpat(
     lp.all.adv[0] = adv1;
     lp.all.abps[0] = abps1;
     lp.all.obf[0] = obf1;
-    lp.all.sigpow[0] = ctx.deck.pwrdb - tlosl;
-    lp.all.fldst[0] = 107.2 + ctx.deck.pwrdb + 20.0 * freq.log10() - tlosl - lp.all.rgain[0];
+    lp.all.sigpow[0] = ctx.ants.pwrdb(freq) - tlosl;
+    lp.all.fldst[0] =
+        107.2 + ctx.ants.pwrdb(freq) + 20.0 * freq.log10() - tlosl - lp.all.rgain[0];
     lp.all.sn[0] = lp.all.sigpow[0] - noise.rcnse - lp.all.eff[0];
     // Decile adjustments per mode type, averaged when the two ends
     // reflect from different layers.
@@ -2534,7 +2543,7 @@ pub fn luffy_freq_loop(
             dbg.amd = Some(lp.all.clone());
         }
         // The second GENOIS call recomputes the identical values; reuse.
-        relbil(lp, ifx, &noise, &ctx.deck, freq);
+        relbil(lp, ifx, &noise, &ctx.deck, ctx.ants, freq);
         // LINBOT(14) is always on for method 30, so SERPRB always runs.
         serprb(lp, ifx, &noise, ctx.sig, &ctx.deck);
         if !ctx.long {
@@ -2655,13 +2664,14 @@ pub fn luffy_smooth(
             };
             let smooth = sspld + 10.0 * (disint * (delx - 1.0) + 1.0).log10();
             lp.all.sigpow[0] = smooth + lp.all.tllow[0];
-            lp.all.tloss[0] = ctx.deck.pwrdb - lp.all.sigpow[0];
+            lp.all.tloss[0] = ctx.ants.pwrdb(freq) - lp.all.sigpow[0];
             lp.all.sn[0] = lp.all.sigpow[0] - rcnse - lp.all.eff[0];
-            lp.all.fldst[0] =
-                107.2 + ctx.deck.pwrdb + 20.0 * freq.log10() - lp.all.tloss[0] - lp.all.rgain[0];
+            lp.all.fldst[0] = 107.2 + ctx.ants.pwrdb(freq) + 20.0 * freq.log10()
+                - lp.all.tloss[0]
+                - lp.all.rgain[0];
             lp.all.nmmod = 1;
             let noise = noise_for(freq);
-            relbil(lp, ifx, &noise, &ctx.deck, freq);
+            relbil(lp, ifx, &noise, &ctx.deck, ctx.ants, freq);
             serprb(lp, ifx, &noise, ctx.sig, &ctx.deck);
         }
         out.push(Some(SmoothDebug {

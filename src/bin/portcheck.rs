@@ -89,19 +89,7 @@ fn main() -> ExitCode {
                 return ExitCode::FAILURE;
             }
         };
-        let inputs = RunInputs {
-            from_lat_deg: case.from_lat,
-            from_lon_deg: case.from_lon,
-            to_lat_deg: case.to_lat,
-            to_lon_deg: case.to_lon,
-            month: case.month,
-            ssn: case.ssn as f32,
-            freqs_mhz: case.freqs_mhz.iter().map(|f| *f as f32).collect(),
-            required_snr_db: case.required_snr_db as f32,
-            noise_dbw: case.noise_dbw as i32,
-            watts: case.watts as f32,
-            sporadic_e: case.sporadic_e,
-        };
+        let inputs = RunInputs::from(case);
         let hours = match run(root.path(), &inputs) {
             Ok(h) => h,
             Err(e) => {

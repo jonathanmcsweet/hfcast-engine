@@ -40,8 +40,9 @@ scratch files, deployment anywhere Rust runs, and code a person can read.
    always represented, and reports a case index that reproduces any
    failure exactly (`--seed N`). Refusing the same case counts as
    agreement: the reference stops on some inputs and the port stops on
-   the same ones. **Result (2026-07-26): 600 cases identical, 2,031,840
-   cells and 100,872 mode labels.** `porttest --seed N` runs one
+   the same ones. **Result (2026-07-26): 600 isotrope cases identical
+   (2,031,840 cells), then 300 cases with directional antennas drawn
+   from every computable family, also identical (1,011,360 cells).** `porttest --seed N` runs one
    generated case through the stage traces and `--fuzz N` runs a batch,
    because a difference the listing does not print is invisible to the
    whole-engine check: that is how the sporadic-E-off disagreement
@@ -174,10 +175,16 @@ is cut along is deliberately not the path azimuth
 power in kW, except on a receive card where a non-zero value is reused
 as the isotrope's gain.
 
-Not yet wired into the prediction: the engine still treats both ends as
-the 0 dB isotrope. Feeding [`gain_lookup`] into the mode loop is the
-step that makes a directional antenna change an answer, and it needs
-the CCIR family first so there is something directional to feed it.
+Antennas are wired into the prediction: `AntennaSet` holds what
+`DECRED` holds after reading the gain files back — every table value
+rounded through the file's `f7.3` and `f6.2` formats, because the
+engine computes with the file's decimals, not the unrounded gain. The
+mode loop asks it at every `GAIN` call site (`regmod`, `esmod`,
+`settxr`, `genois`) and `PWRDB(freq)` picks the matching transmit
+card's power. The fuzz corpus draws directional antennas from every
+computable family at both ends with random beam headings; 300 cases
+are identical to the reference — 1,011,360 printed cells — and the
+isotrope sweep is unchanged.
 
 ## Sporadic E off
 

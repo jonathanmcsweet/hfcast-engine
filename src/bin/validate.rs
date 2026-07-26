@@ -264,6 +264,8 @@ fn run_path(
         required_snr_db: REQUIRED_SNR_DB,
         noise_dbw: NOISE_DBW,
         freqs_mhz: vec![path.freq_mhz],
+        tx_antenna: None,
+        rx_antenna: None,
         sporadic_e,
     };
 

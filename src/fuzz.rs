@@ -14,7 +14,7 @@
 //! whether the port matches it, and mixing the two would make failures
 //! hard to read.
 
-use crate::deck::{DeckCase, FREQ_SLOTS};
+use crate::deck::{AntennaChoice, DeckCase, FREQ_SLOTS};
 
 /// Mean Earth radius, used only to place the second endpoint.
 ///
@@ -172,8 +172,47 @@ pub fn fuzz_case(index: u64) -> DeckCase {
         required_snr_db: rng.int(0, 90) as f64,
         noise_dbw: rng.int(100, 170) as f64,
         sporadic_e: rng.chance(0.5),
+        tx_antenna: pick_antenna(&mut rng),
+        rx_antenna: pick_antenna(&mut rng),
         freqs_mhz,
     }
+}
+
+/// Antennas a case can draw, spanning every computable family: the
+/// CCIR curtain and log-periodics, the gain tables, IONCAP and
+/// HFMUFES patterns and the NOSC cone. Harris types are absent because
+/// the reference cannot compute them either.
+const ANTENNAS: &[&str] = &[
+    "default/ccir.001",
+    "default/ccir.010",
+    "default/ccir.019",
+    "default/swwhip.voa",
+    "samples/sample.05",
+    "samples/sample.10",
+    "samples/sample.13",
+    "samples/sample.14",
+    "samples/sample.12",
+    "samples/sample.21",
+    "samples/sample.24",
+    "samples/sample.27",
+    "samples/sample.31",
+    "samples/sample.34",
+    "samples/sample.36",
+    "samples/sample.43",
+    "samples/sample.48",
+];
+
+/// Half the cases stay isotropic; the rest draw an antenna and a beam.
+fn pick_antenna(rng: &mut Rng) -> Option<AntennaChoice> {
+    if rng.chance(0.5) {
+        return None;
+    }
+    let file = ANTENNAS[rng.int(0, ANTENNAS.len() as i64 - 1) as usize];
+    Some(AntennaChoice {
+        file: file.to_string(),
+        design_freq: 0.0,
+        beam_deg: (rng.int(0, 359) as f64 * 10.0).round() / 10.0,
+    })
 }
 
 /// Cases `from` up to but not including `from + count`.

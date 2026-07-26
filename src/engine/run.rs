@@ -22,6 +22,9 @@ use super::ionogram::{alosfv, fobby, genion, sang, selmod};
 use super::ionosphere::{
     alatd, cofion, esind, geotim, ground_constants, layer_parameters, virtim,
 };
+use super::antenna::{
+    dazel0, point_to_point_table, read_antenna, AntennaEnd, AntennaSet, AntennaSetup,
+};
 use super::magnetic::magvar;
 use super::modes::{
     es_slots, luffy_freq_loop, luffy_smooth, outbod_sentinels, setlng, setluf, DeckParams, Geog,
@@ -30,6 +33,31 @@ use super::modes::{
 use super::muf::{curmuf, ionset, lecden, IonoState};
 use super::noise::{anois1, genois};
 use super::sigdis::{sigdis, SignalDistribution};
+
+/// One `ANTENNA` card's fields, minus the end and power.
+#[derive(Debug, Clone)]
+pub struct AntennaCardSpec {
+    /// Path under `<itshfbc>/antennas`, e.g. `samples/sample.21`.
+    pub file: String,
+    pub design_freq: R,
+    pub beam_deg: R,
+    pub min_freq: i32,
+    pub max_freq: i32,
+}
+
+impl AntennaCardSpec {
+    /// The default card every prediction used before antennas were
+    /// wired in.
+    pub fn isotrope() -> Self {
+        Self {
+            file: "default/isotrope".to_string(),
+            design_freq: 0.0,
+            beam_deg: 0.0,
+            min_freq: 2,
+            max_freq: 30,
+        }
+    }
+}
 
 /// Everything a prediction needs; the deck-card equivalents.
 #[derive(Debug, Clone)]
@@ -48,6 +76,12 @@ pub struct RunInputs {
     pub noise_dbw: i32,
     pub watts: R,
     pub sporadic_e: bool,
+    /// `None` is the isotrope card at that end.
+    pub tx_antenna: Option<AntennaCardSpec>,
+    pub rx_antenna: Option<AntennaCardSpec>,
+    /// The receive card's last field: a non-zero value becomes the
+    /// receive isotrope's gain.
+    pub rx_gain_field: R,
 }
 
 /// Asks the engine the same question the deck card asks.
@@ -70,8 +104,72 @@ impl From<&DeckCase> for RunInputs {
             noise_dbw: c.noise_dbw as i32,
             watts: c.watts as R,
             sporadic_e: c.sporadic_e,
+            tx_antenna: c.tx_antenna.as_ref().map(|a| AntennaCardSpec {
+                file: a.file.clone(),
+                design_freq: a.design_freq as R,
+                beam_deg: a.beam_deg as R,
+                min_freq: 2,
+                max_freq: 30,
+            }),
+            rx_antenna: c.rx_antenna.as_ref().map(|a| AntennaCardSpec {
+                file: a.file.clone(),
+                design_freq: a.design_freq as R,
+                beam_deg: a.beam_deg as R,
+                min_freq: 2,
+                max_freq: 30,
+            }),
+            rx_gain_field: 0.0,
         }
     }
+}
+
+/// `ANTCALC` for one run: computes both ends' gain tables from their
+/// definition files and installs them as `DECRED` reads them back.
+fn build_antennas(itshfbc: &Path, inp: &RunInputs) -> Result<AntennaSet, String> {
+    let pwrkw = inp.watts / 1000.0;
+    let (taz, _) = dazel0(
+        inp.from_lat_deg as R,
+        inp.from_lon_deg as R,
+        inp.to_lat_deg as R,
+        inp.to_lon_deg as R,
+    );
+    let (raz, _) = dazel0(
+        inp.to_lat_deg as R,
+        inp.to_lon_deg as R,
+        inp.from_lat_deg as R,
+        inp.from_lon_deg as R,
+    );
+    let iso = AntennaCardSpec::isotrope();
+    let tx = inp.tx_antenna.as_ref().unwrap_or(&iso);
+    let rx = inp.rx_antenna.as_ref().unwrap_or(&iso);
+    let mut ants = AntennaSet::default();
+    let txf = read_antenna(itshfbc, &tx.file)?;
+    let tx_table = point_to_point_table(&AntennaSetup {
+        file: &txf,
+        end: AntennaEnd::Transmit,
+        min_freq: tx.min_freq,
+        max_freq: tx.max_freq,
+        design_freq: tx.design_freq,
+        beam_deg: tx.beam_deg,
+        power_field: pwrkw,
+        azimuth_deg: taz,
+    })
+    .map_err(|e| e.to_string())?;
+    ants.install(1, tx.min_freq, tx.max_freq, tx_table, pwrkw);
+    let rxf = read_antenna(itshfbc, &rx.file)?;
+    let rx_table = point_to_point_table(&AntennaSetup {
+        file: &rxf,
+        end: AntennaEnd::Receive,
+        min_freq: rx.min_freq,
+        max_freq: rx.max_freq,
+        design_freq: rx.design_freq,
+        beam_deg: rx.beam_deg,
+        power_field: inp.rx_gain_field,
+        azimuth_deg: raz,
+    })
+    .map_err(|e| e.to_string())?;
+    ants.install(2, rx.min_freq, rx.max_freq, rx_table, 0.0);
+    Ok(ants)
 }
 
 /// One hour's outputs: the MUF block and the thirteen `/SON/` slots
@@ -113,14 +211,13 @@ pub fn run(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<HourPrediction>, Strin
     let glats: Vec<R> = geo.points.iter().map(|p| p.gmlat).collect();
     let psc = [1.0, 1.0, 1.0, if inp.sporadic_e { 1.0 } else { 0.0 }];
     let nang = sang(geo.gcd_km, 0.1);
-    let pwrkw = inp.watts / 1000.0;
+    let ants = build_antennas(itshfbc, inp)?;
     let deck = DeckParams {
         amind: 0.1,
         rsn: inp.required_snr_db,
         lufp: 90,
         pmp: 3.0,
         dmp: 0.1,
-        pwrdb: 30.0 + 10.0 * pwrkw.log10(),
     };
     let mut base_frel = [0.0 as R; 12];
     for (slot, f) in base_frel.iter_mut().zip(&inp.freqs_mhz) {
@@ -166,8 +263,10 @@ pub fn run(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<HourPrediction>, Strin
         let times = geotim(jt, 1, from_lon_rad, to_lon_rad);
         let an = anois1(&set, times.gmtr, to_lat_rad, to_lon_rad, inp.to_lon_deg as R);
         let fof2_end = state.fi[state.kfx - 1][2];
-        let noise_for =
-            |f: R| genois(&set, &an, f, to_lat_rad, fof2_end, inp.noise_dbw);
+        let noise_for = |f: R| {
+            let reff = ants.gain(2, 0.0, f).1;
+            genois(reff, &set, &an, f, to_lat_rad, fof2_end, inp.noise_dbw)
+        };
 
         // The LUFFY passes for MSPEC = 121.
         let jmode = selmod(&state);
@@ -238,6 +337,7 @@ pub fn run(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<HourPrediction>, Strin
             geog.apply_sigdis(sd);
             let ctx = PassCtx {
                 state: &state,
+                ants: &ants,
                 fs: &fs,
                 hs: &hs,
                 geog: &geog,
@@ -255,6 +355,7 @@ pub fn run(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<HourPrediction>, Strin
             let sd = sd_last.as_ref().expect("two passes ran");
             let ctx = PassCtx {
                 state: &state,
+                ants: &ants,
                 fs: &fs,
                 hs: &hs,
                 geog: &geog,

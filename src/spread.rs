@@ -117,6 +117,8 @@ pub fn gather(dir: &Path) -> Result<MonthSpread, String> {
             required_snr_db: 24.0,
             noise_dbw: 145.0,
             freqs_mhz: vec![path.freq_mhz],
+            tx_antenna: None,
+            rx_antenna: None,
             sporadic_e: SPORADIC_E,
         };
         let deck = build_deck(&case).map_err(|e| e.to_string())?;

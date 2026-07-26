@@ -140,6 +140,111 @@ impl Default for GainTable {
     }
 }
 
+
+/// One antenna as `DECRED` holds it after reading a `gainNN.dat` back:
+/// the `/cantenna/` slot plus the transmit power of `/pantenna/`.
+#[derive(Debug, Clone)]
+pub struct InstalledAntenna {
+    /// 1 transmit, 2 receive (`iats`).
+    pub iat: i32,
+    /// The card's frequency range (`xfqs`, `xfqe`).
+    pub xfqs: R,
+    pub xfqe: R,
+    /// The gain table, holding what the engine reads back from the
+    /// file — every value rounded through the file's fixed formats.
+    pub table: GainTable,
+    /// `pwrdba`: 30 + 10 log10(kW), transmit cards only.
+    pub pwrdba: R,
+}
+
+/// The installed antennas of one run: what `/cantenna/` holds while
+/// the engine predicts.
+#[derive(Debug, Clone, Default)]
+pub struct AntennaSet {
+    pub ants: Vec<InstalledAntenna>,
+}
+
+/// Rounds through the gain file's `f7.3` field: `ANTCALC` writes the
+/// table to `run/gainNN.dat` and `DECRED` reads it back, so the engine
+/// computes with the file's three decimals, not the unrounded gain.
+fn through_f7_3(v: R) -> R {
+    ((f64::from(v) * 1000.0).round() / 1000.0) as R
+}
+
+/// The efficiency column's `f6.2`.
+fn through_f6_2(v: R) -> R {
+    ((f64::from(v) * 100.0).round() / 100.0) as R
+}
+
+impl AntennaSet {
+    /// Installs one computed table as `DECRED` would read it back.
+    pub fn install(&mut self, iat: i32, min_freq: i32, max_freq: i32, mut table: GainTable, power_kw: R) {
+        for row in table.gains.iter_mut() {
+            for slot in row.iter_mut() {
+                *slot = through_f7_3(*slot);
+            }
+        }
+        for slot in table.eff.iter_mut() {
+            *slot = through_f6_2(*slot);
+        }
+        let mut kw = power_kw;
+        let pwrdba = if iat == 1 {
+            // DECRED: a non-positive transmit power becomes 1 kW.
+            if kw <= 0.0 {
+                kw = 1.0;
+            }
+            30.0 + 10.0 * kw.log10()
+        } else {
+            0.0
+        };
+        self.ants.push(InstalledAntenna {
+            iat,
+            xfqs: min_freq as R,
+            xfqe: max_freq as R,
+            table,
+            pwrdba,
+        });
+    }
+
+    /// The deck every prediction used before antennas were wired in:
+    /// a transmit and a receive isotrope over 2-30 MHz.
+    pub fn isotropes(watts: R) -> Self {
+        let mut set = Self::default();
+        let table = GainTable {
+            fs: 2.0,
+            fe: 30.0,
+            ..Default::default()
+        };
+        set.install(1, 2, 30, table.clone(), watts / 1000.0);
+        set.install(2, 2, 30, table, 0.0);
+        set
+    }
+
+    /// `GAIN` with `ITR > 0`: the first antenna serving this end whose
+    /// frequency range contains `fmc`, interpolated at the elevation.
+    /// No match returns zero gain and efficiency.
+    pub fn gain(&self, itr: i32, delta_rad: R, fmc: R) -> (R, R) {
+        for a in &self.ants {
+            if a.iat == itr && a.xfqs <= fmc && fmc <= a.xfqe {
+                return gain_lookup(&a.table, fmc, delta_rad);
+            }
+        }
+        (0.0, 0.0)
+    }
+
+    /// `PWRDB(FREQ)`: the matching transmit antenna's power in dBW,
+    /// 30 (one kilowatt) if none matches.
+    pub fn pwrdb(&self, freq: R) -> R {
+        let f = freq.clamp(2.0, 30.0);
+        for a in &self.ants {
+            if a.iat == 1 && a.xfqs <= f && f <= a.xfqe {
+                return a.pwrdba;
+            }
+        }
+        30.0
+    }
+}
+
 /// One `ANTENNA` card, plus the path azimuth the pattern is cut along.
 #[derive(Debug, Clone)]
 pub struct AntennaSetup<'a> {

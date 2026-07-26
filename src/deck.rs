@@ -15,12 +15,18 @@ use std::fmt;
 /// Frequency slots on one FREQUENCY card.
 pub const FREQ_SLOTS: usize = 11;
 
-/// Isotropic at both ends.
-///
-/// Antenna gain enters the result as a per-slot offset, so varying it would add
-/// a dimension to the sweep without exercising any more of the model's
-/// arithmetic.
+/// Isotropic at both ends unless the case names an antenna.
 const ANTENNA_FILE: &str = "default/isotrope";
+
+/// A directional antenna on one end's `ANTENNA` card.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AntennaChoice {
+    /// Path under `<itshfbc>/antennas`, at most the card's 21 columns.
+    pub file: String,
+    pub design_freq: f64,
+    /// Main beam bearing, degrees.
+    pub beam_deg: f64,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DeckCase {
@@ -42,6 +48,9 @@ pub struct DeckCase {
     pub noise_dbw: f64,
     /// Frequencies in MHz, ascending, at most [`FREQ_SLOTS`] of them.
     pub freqs_mhz: Vec<f64>,
+    /// Directional antennas; `None` is the isotrope.
+    pub tx_antenna: Option<AntennaChoice>,
+    pub rx_antenna: Option<AntennaChoice>,
     /// Enables VOACAP's sporadic-E layer (the FPROB card's fourth value).
     ///
     /// Standard practice runs with it off, because VOACAP's sporadic-E model
@@ -140,6 +149,19 @@ pub fn build_deck(c: &DeckCase) -> Result<String, DeckError> {
     // VOACAP takes transmit power in kilowatts.
     let kw = c.watts / 1000.0;
 
+    let tx_file = c.tx_antenna.as_ref().map(|a| a.file.as_str()).unwrap_or(ANTENNA_FILE);
+    let rx_file = c.rx_antenna.as_ref().map(|a| a.file.as_str()).unwrap_or(ANTENNA_FILE);
+    let tx_design = c.tx_antenna.as_ref().map(|a| a.design_freq).unwrap_or(0.0);
+    let rx_design = c.rx_antenna.as_ref().map(|a| a.design_freq).unwrap_or(0.0);
+    let tx_beam = c.tx_antenna.as_ref().map(|a| a.beam_deg).unwrap_or(0.0);
+    let rx_beam = c.rx_antenna.as_ref().map(|a| a.beam_deg).unwrap_or(0.0);
+    if tx_file.len() > 21 || rx_file.len() > 21 {
+        return Err(DeckError::FieldOverflow {
+            value: if tx_file.len() > 21 { tx_file } else { rx_file }.to_string(),
+            width: 21,
+        });
+    }
+
     let lines = vec![
         "LINEMAX      55       number of lines-per-page".to_string(),
         "COEFFS    CCIR".to_string(),
@@ -185,9 +207,9 @@ pub fn build_deck(c: &DeckCase) -> Result<String, DeckError> {
             field("1", 5)?,
             field("2", 5)?,
             field("30", 5)?,
-            field("0.000", 10)?,
-            antenna_ref(ANTENNA_FILE),
-            field("0.0", 5)?,
+            field(&format!("{tx_design:.3}"), 10)?,
+            antenna_ref(tx_file),
+            field(&format!("{tx_beam:.1}"), 5)?,
             field(&format!("{kw:.4}"), 10)?
         ),
         format!(
@@ -196,9 +218,9 @@ pub fn build_deck(c: &DeckCase) -> Result<String, DeckError> {
             field("2", 5)?,
             field("2", 5)?,
             field("30", 5)?,
-            field("0.000", 10)?,
-            antenna_ref(ANTENNA_FILE),
-            field("0.0", 5)?,
+            field(&format!("{rx_design:.3}"), 10)?,
+            antenna_ref(rx_file),
+            field(&format!("{rx_beam:.1}"), 5)?,
             field("0.0000", 10)?
         ),
         format!("FREQUENCY {freq_card}"),
@@ -230,6 +252,8 @@ mod tests {
             required_snr_db: 24.0,
             noise_dbw: 145.0,
             freqs_mhz: vec![6.07, 7.2, 9.7, 11.85],
+            tx_antenna: None,
+            rx_antenna: None,
             sporadic_e: false,
         }
     }
