@@ -55,6 +55,7 @@ pub mod ccir;
 pub mod coefficients;
 pub mod con;
 pub mod geometry;
+pub mod hfmufes;
 pub mod ioncap;
 pub mod ionogram;
 pub mod ionosphere;

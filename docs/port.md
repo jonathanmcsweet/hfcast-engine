@@ -118,9 +118,28 @@ Status over the 73 definition files in the tree (`antcheck`):
 | HFMUFES      | 31-47          |    14 | no     |
 | Harris       | 90+            |     2 | no     |
 
-The ported families match on every cell: 157,662 compared. Unported
+The ported families match on every cell: 196,386 compared — 71 of
+the 73 definition files. The two Harris files (types 90+) cannot be
+computed by anyone: the reference shells out to an external
+`anttypNN` program that is not in the distribution and STOPs without
+it ("Fatal error in subroutine harris"), so both engines refusing
+those files is agreement. Unported
 families return an error rather than a number, so the report lists
 remaining work instead of passing silently.
+
+The HFMUFES family (`engine::hfmufes`) is the deepest: each pattern
+computes its input impedance from cosine-integral expressions and
+complex mutual-impedance matrices, with Gauss-Jordan inversion for
+the Yagi and log-periodic currents and 48-point Gaussian integration
+for the tilted dipole and radial-ground monopole. Matching it
+bit-for-bit required reproducing the reference's complex arithmetic
+exactly: `CABS` is `hypotf`, division is Smith's algorithm as gfortran
+inlines it, `CSQRT` is glibc's algorithm. Two Fortran facts are
+modelled explicitly: only six locals are in the `SAVE` statement, but
+the Yagi and log-periodic currents also survive between calls on
+gfortran's stack by accident (`MufesState` carries them honestly);
+and the log-periodic's ground-reflection sum reads a DO index one
+past its loop, so that term is always zero.
 
 The CCIR family (`engine::ccir`) surfaced the porting rule that cost
 the most this stage: Fortran's exponent binds before multiplication,

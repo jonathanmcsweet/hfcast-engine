@@ -21,9 +21,9 @@
 //! | 13 | gain table over 360 azimuths | yes |
 //! | 14 | gain table over 30 frequencies | yes |
 //! | 21-30 | IONCAP (`ioninit`, `iongain`) | yes |
-//! | 31-47 | HFMUFES (`mufesint`, `mufesgan`) | no |
+//! | 31-47 | HFMUFES (`mufesint`, `mufesgan`) | yes |
 //! | 48 | NOSC (`invcon`) | yes |
-//! | 90+ | Harris (`harris`) | no |
+//! | 90+ | Harris (external program; the reference STOPs too) | no |
 //!
 //! The unported families return [`Unsupported`] rather than a wrong
 //! number, so `antcheck` reports them as pending instead of passing.
@@ -549,10 +549,22 @@ pub fn point_to_point_table(s: &AntennaSetup) -> Result<GainTable, Unsupported> 
             }
         }
         31..=47 => {
-            return Err(Unsupported {
-                jant,
-                family: "HFMUFES",
-            })
+            let indx = jant - 30;
+            let mp = super::hfmufes::mufesint(indx, &parm);
+            let mut st = super::hfmufes::MufesState::default();
+            for ifreq in lo..=hi {
+                let freq = ifreq as R;
+                for ielev in 0..ELEVS {
+                    let delev = ielev as R * 0.017_453_29;
+                    // KAS counts calls per frequency: 0 and 1 compute
+                    // the impedances, later elevations reuse them.
+                    let kas = ielev as i32;
+                    let (rain, eff) =
+                        super::hfmufes::mufesgan(&mut st, indx, kas, offazim, &mp, delev, freq);
+                    table.gains[(ifreq - 1) as usize][ielev] = rain;
+                    table.eff[(ifreq - 1) as usize] = eff;
+                }
+            }
         }
         48 => {
             // The inverted cone is a measured table and takes neither
@@ -945,7 +957,10 @@ mod tests {
 
     #[test]
     fn unported_families_say_so_instead_of_answering() {
-        let file = read_antenna(&tree(), "samples/sample.31").expect("sample.31");
+        // Harris types need an external program that is not in the
+        // distribution; the reference STOPs on them too, so refusing
+        // is the faithful answer.
+        let file = read_antenna(&tree(), "samples/sample.90").expect("sample.90");
         let err = point_to_point_table(&AntennaSetup {
             file: &file,
             end: AntennaEnd::Transmit,
@@ -956,8 +971,8 @@ mod tests {
             power_field: 0.1,
             azimuth_deg: 57.0,
         })
-        .expect_err("HFMUFES is not ported yet");
-        assert_eq!(err.jant, 31);
+        .expect_err("Harris cannot be computed");
+        assert_eq!(err.jant, 90);
     }
 
     #[test]
