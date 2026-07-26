@@ -112,15 +112,28 @@ Status over the 73 definition files in the tree (`antcheck`):
 | isotrope           | 0              |     3 | yes    |
 | gain tables        | 10, 11, 13, 14 |     8 | yes    |
 | NOSC               | 48             |     1 | yes    |
+| IONCAP             | 21-30          |    10 | yes    |
 | CCIR               | 1-9            |    34 | no     |
 | NTIA curtain array | 12             |     1 | no     |
-| IONCAP             | 21-30          |    10 | no     |
 | HFMUFES            | 31-47          |    14 | no     |
 | Harris             | 90+            |     2 | no     |
 
-The ported families match on every cell: 33,192 compared. Unported
+The ported families match on every cell: 60,852 compared. Unported
 families return an error rather than a number, so the report lists
 remaining work instead of passing silently.
+
+The IONCAP family (`engine::ioncap`) added two findings. The curtain
+pattern compares its elevation against the integer literal `0001` —
+one radian, not the intended `.0001` — so every elevation above about
+33 degrees takes the floor gain, plus the elements-per-bay count that
+`SOK` still holds on that path. And `ionGAIN2`'s locals are `SAVE`d,
+with one read before it is written: the zero-elevation exit jumps to
+the efficiency dispatch, whose monopole arm reads the height left over
+from the previous call (`IoncapState` carries it). Getting the family
+to match also required `DAZEL0` to take `REAL*4` inputs: a coordinate
+arrives already rounded to single precision and is then widened, and
+passing the exact double instead moved the azimuth one ULP and flipped
+borderline printed digits.
 
 Two things the module records. `DAZEL0` is the antenna half's own
 geometry — double precision, 6370 km Earth — so the azimuth a pattern

@@ -25,9 +25,10 @@ use propcore::engine::antenna::{
 use propcore::runner::{itshfbc_dir, run_deck, variant_bin, IsolatedRoot};
 
 /// The circuit every probe deck uses. Only the azimuth from these two
-/// points reaches the pattern, so one circuit is enough.
-const FROM: (f64, f64) = (35.8, -5.9);
-const TO: (f64, f64) = (44.9, 20.5);
+/// points reaches the pattern, so one circuit is enough. Held as `f32`
+/// because that is how the engine reads them off the card.
+const FROM: (f32, f32) = (35.8, -5.9);
+const TO: (f32, f32) = (44.9, 20.5);
 
 /// The card's frequency range, in whole MHz.
 const MIN_FREQ: i32 = 2;
@@ -49,6 +50,7 @@ enum Verdict {
     Differed {
         worst: f64,
         cells: usize,
+        differing: usize,
         first: String,
     },
     /// The family is not ported yet.
@@ -126,11 +128,20 @@ fn main() -> ExitCode {
 
     if !differed.is_empty() {
         println!("## Differences\n");
-        println!("| antenna | type | worst | first differing cell |");
-        println!("| --- | --: | --: | --- |");
+        println!("| antenna | type | differing | worst | first differing cell |");
+        println!("| --- | --: | --: | --: | --- |");
         for o in &differed {
-            if let Verdict::Differed { worst, first, .. } = &o.verdict {
-                println!("| {} | {} | {} | {} |", o.name, o.jant, worst, first);
+            if let Verdict::Differed {
+                worst,
+                differing,
+                first,
+                ..
+            } = &o.verdict
+            {
+                println!(
+                    "| {} | {} | {} | {} | {} |",
+                    o.name, o.jant, differing, worst, first
+                );
             }
         }
         println!();
@@ -279,7 +290,7 @@ fn check_one(reference: &Path, tree: &Path, name: &str) -> Outcome {
 /// The bracketed antenna field is exactly 21 columns; the fields around
 /// it are the same fixed widths `propcore::deck` writes.
 fn probe_deck(antenna: &str) -> String {
-    let lat = |v: f64, width: usize| {
+    let lat = |v: f32, width: usize| {
         format!(
             "{:>width$.2}{}",
             v.abs(),
@@ -287,7 +298,7 @@ fn probe_deck(antenna: &str) -> String {
             width = width
         )
     };
-    let lon = |v: f64| {
+    let lon = |v: f32| {
         format!(
             "{:>9.2}{}",
             v.abs(),
@@ -389,6 +400,7 @@ fn compare(expected: &GainTable, ported: &GainTable) -> Verdict {
     let mut worst = 0.0f64;
     let mut first: Option<String> = None;
     let mut cells = 0usize;
+    let differing = std::cell::Cell::new(0usize);
 
     let note = |label: String,
                 a: f32,
@@ -404,8 +416,11 @@ fn compare(expected: &GainTable, ported: &GainTable) -> Verdict {
         if diff > *worst {
             *worst = diff;
         }
-        if diff != 0.0 && first.is_none() {
-            *first = Some(format!("{label}: reference {reference}, port {port}"));
+        if diff != 0.0 {
+            differing.set(differing.get() + 1);
+            if first.is_none() {
+                *first = Some(format!("{label}: reference {reference}, port {port}"));
+            }
         }
     };
 
@@ -451,6 +466,7 @@ fn compare(expected: &GainTable, ported: &GainTable) -> Verdict {
         Some(first) => Verdict::Differed {
             worst,
             cells,
+            differing: differing.get(),
             first,
         },
     }

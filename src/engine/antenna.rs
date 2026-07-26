@@ -20,7 +20,7 @@
 //! | 12 | NTIA curtain arrays (`curtain`) | no |
 //! | 13 | gain table over 360 azimuths | yes |
 //! | 14 | gain table over 30 frequencies | yes |
-//! | 21-30 | IONCAP (`ioninit`, `iongain`) | no |
+//! | 21-30 | IONCAP (`ioninit`, `iongain`) | yes |
 //! | 31-47 | HFMUFES (`mufesint`, `mufesgan`) | no |
 //! | 48 | NOSC (`invcon`) | yes |
 //! | 90+ | Harris (`harris`) | no |
@@ -496,10 +496,26 @@ pub fn point_to_point_table(s: &AntennaSetup) -> Result<GainTable, Unsupported> 
             })
         }
         21..=30 => {
-            return Err(Unsupported {
-                jant,
-                family: "IONCAP",
-            })
+            let indx = jant - 20;
+            let ip = super::ioncap::ioninit(indx, &parm);
+            // The reference's SAVE state persists for the whole
+            // program, so with several IONCAP cards in one deck the
+            // stale-X quirk crosses antennas. One antenna per table
+            // build starts clean, which matches a single-card deck.
+            let mut ion_state = super::ioncap::IoncapState::default();
+            for ifreq in lo..=hi {
+                let freq = ifreq as R;
+                let row = (ifreq - 1) as usize;
+                for ielev in 0..ELEVS {
+                    // ANTCALC's own degree-to-radian constant, shorter
+                    // than the engine's D2R.
+                    let delev = ielev as R * 0.017_453_29;
+                    let (rain, eff) =
+                        super::ioncap::iongain(&mut ion_state, indx, offazim, &ip, delev, freq);
+                    table.gains[row][ielev] = rain;
+                    table.eff[row] = eff;
+                }
+            }
         }
         31..=47 => {
             return Err(Unsupported {
@@ -719,15 +735,21 @@ pub fn gain_lookup(table: &GainTable, fmc: R, delta_rad: R) -> (R, R) {
 /// precision and uses a 6370 km Earth, so the azimuth a pattern is cut
 /// along is not bit-identical to the path azimuth the propagation model
 /// uses. Both are reproduced as they are.
-pub fn dazel0(tlat: f64, tlon: f64, rlat: f64, rlon: f64) -> (R, R) {
+///
+/// The arguments are `R` because the source's are `REAL*4`: a
+/// coordinate arrives already rounded to single precision and is then
+/// widened. Accepting `f64` here once flipped the last printed digit of
+/// borderline gain cells, because 35.80 as an `f32` is 35.799999
+/// widened, not 35.8.
+pub fn dazel0(tlat: R, tlon: R, rlat: R, rlon: R) -> (R, R) {
     const RERTH: f64 = 6370.0;
     const DTOR: f64 = 0.01745329252;
     const RTOD: f64 = 57.29577951;
 
-    let mut tlats = tlat;
-    let mut rlats = rlat;
-    let rlons = rlon;
-    let tlons = tlon;
+    let mut tlats = f64::from(tlat);
+    let mut rlats = f64::from(rlat);
+    let rlons = f64::from(rlon);
+    let tlons = f64::from(tlon);
     if tlats <= -90.0 {
         tlats = -89.999;
     }

@@ -54,6 +54,7 @@ pub mod antenna;
 pub mod coefficients;
 pub mod con;
 pub mod geometry;
+pub mod ioncap;
 pub mod ionogram;
 pub mod ionosphere;
 pub mod magnetic;

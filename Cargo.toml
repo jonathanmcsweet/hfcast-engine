@@ -1,6 +1,6 @@
 [package]
 name = "propcore"
-version = "0.20.1"
+version = "0.21.0"
 edition = "2021"
 description = "Characterisation and validation harness for porting the HF propagation engine"
 publish = false
