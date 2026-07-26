@@ -1072,6 +1072,7 @@ fn main() -> ExitCode {
         // directional antennas through the whole-engine check instead.
         let ants = propcore::engine::antenna::AntennaSet::isotropes(case.watts as f32);
         let deck_params = DeckParams {
+            method: case.method,
             amind: 0.1,
             rsn: case.required_snr_db as f32,
             lufp: 90,

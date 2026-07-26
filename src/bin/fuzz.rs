@@ -13,13 +13,13 @@
 //! a difference, and is reported as one.
 //!
 //! Usage: `cargo run --release --bin fuzz [--cases N] [--from N]
-//! [--jobs J] [--seed N] [--show N]`
+//! [--jobs J] [--seed N] [--show N] [--method M]`
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::process::ExitCode;
 
 use propcore::deck::{build_deck, DeckCase};
-use propcore::engine::run::{listing_text, run, RunInputs};
+use propcore::engine::run::{body_lines, listing_text, run, RunInputs};
 use propcore::fuzz::{band_for, fuzz_cases};
 use propcore::listing::{parse_listing, ParsedListing};
 use propcore::runner::{map_limit, run_deck, variant_bin, IsolatedRoot};
@@ -103,18 +103,27 @@ fn main() -> ExitCode {
         std::panic::set_hook(Box::new(|_| {}));
     }
 
-    let cases = match single {
+    let mut cases = match single {
         Some(index) => fuzz_cases(index, 1),
         None => fuzz_cases(from, count),
     };
+    // `--method M` asks the same question of another systems method:
+    // the same decks with a different `METHOD` card, so the model that
+    // runs and the lines that print change but the corpus does not.
+    let method = number("--method", 30) as u32;
+    for case in cases.iter_mut() {
+        case.method = method;
+    }
+    let cases = cases;
 
     if let Some(index) = single {
         return single_case(&reference, &cases[0], index, show);
     }
 
     println!(
-        "# Randomized whole-engine check: {} cases, indices {}..{}\n",
+        "# Randomized whole-engine check: {} cases, method {}, indices {}..{}\n",
         cases.len(),
+        method,
         from,
         from + count - 1
     );
@@ -324,7 +333,7 @@ fn check_case(reference: &std::path::Path, case: &DeckCase) -> Outcome {
         },
         (Ok(text), Ok(hours)) => {
             let a = parse_listing(&text);
-            let b = parse_listing(&listing_text(&hours));
+            let b = parse_listing(&listing_text(&hours, &body_lines(case.method)));
             let (cells, compared) = cell_diffs(&a, &b);
             let modes = mode_diffs(&a, &b);
             if cells.is_empty() && modes.is_empty() {

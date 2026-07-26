@@ -49,6 +49,10 @@ pub struct DeckParams {
     /// Multipath power tolerance, dB, and maximum tolerable time delay.
     pub pmp: R,
     pub dmp: R,
+    /// The `METHOD` card's first field, before `DECRED` rewrites 30 to
+    /// 20 with `MSPEC = 121`. `MPATH` is the only computation that
+    /// reads it.
+    pub method: u32,
 }
 
 /// The `/GEOG/` block: per-sample-area scalars (5 slots).
@@ -1833,7 +1837,11 @@ fn mpath(lp: &mut ModeLoopState, ifx: usize, deck: &DeckParams, gcdkm: R) {
     if deck.dmp <= 0.0 || deck.pmp <= 0.0 {
         return;
     }
-    if gcdkm > 7000.0 {
+    // `IF(method.eq.20 .and. mspec.eq.121 .and. gcdkm.gt.7000.)`:
+    // multipath is declared invalid past 7000 km for card method 30
+    // alone, because that is where its two models blend. The other
+    // systems methods compute it at any distance.
+    if deck.method == 30 && gcdkm > 7000.0 {
         return;
     }
     if lp.all.nmmod == 0 {

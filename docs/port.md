@@ -219,6 +219,35 @@ case); `OUTBOD` overwrites the MUF slot with "NA" sentinels above
 area and `GHOP` as a single shared scalar; and `PWRDB` answers per
 frequency from the transmit card whose band covers it.
 
+## Systems methods other than 30 (`ITRUN = 7`)
+
+Card methods 16 to 25 run the same systems chain as method 30 and
+differ in which model runs and which lines print. `SETOUT` fills a
+26-slot mask from the method number and `OUTBOD` walks lines 1 to 22 in
+order, printing the ones the mask selects, so the port renders the same
+rows from one `body_lines(method)` mask. Line 22, `DBM`, is the signal
+power plus 30 and only method 25 prints it. Method 23 takes its lines
+from `TOPLINES` and `BOTLINES` cards instead, and selects nothing
+without them.
+
+Which model runs: `DECRED` rewrites card method 30 to method 20 with
+`MSPEC = 121`, and that is the only combination that runs both models
+between 7000 and 10000 km and blends them. Method 21 forces the long
+model at any distance, methods 22 and 25 force the short one, and every
+other systems method takes the short model below `GCDLNG` (10000 km)
+and the long one at or beyond it.
+
+One computation reads the method directly: `MPATH` returns its floor
+value past 7000 km only for `METHOD = 20` with `MSPEC = 121` — card
+method 30 — because that is where its two models blend. Every other
+systems method computes multipath at any distance. Method 30 hid this:
+between 7000 and 10000 km its smoothing restores the multipath
+probability from whichever pass it chose, and the long pass never
+computes one, so the cell reads zero either way.
+
+`fuzz --method M` runs the corpus with a different `METHOD` card.
+Methods 16 to 22 are identical to the reference over 60 cases each.
+
 ## The LUF passes (`run_luf`)
 
 Card methods 26 to 29 are `ITRUN = 8`: instead of the deck's

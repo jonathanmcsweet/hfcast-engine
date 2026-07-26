@@ -82,6 +82,9 @@ pub struct RunInputs {
     /// The receive card's last field: a non-zero value becomes the
     /// receive isotrope's gain.
     pub rx_gain_field: R,
+    /// The `METHOD` card's first field, before `DECRED` rewrites 30 to
+    /// 20. It selects which model runs and which lines print.
+    pub method: u32,
 }
 
 /// Asks the engine the same question the deck card asks.
@@ -119,6 +122,7 @@ impl From<&DeckCase> for RunInputs {
                 max_freq: 30,
             }),
             rx_gain_field: 0.0,
+            method: c.method,
         }
     }
 }
@@ -217,6 +221,7 @@ pub fn run_luf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<LufHour>, String> 
         lufp: 90,
         pmp: 3.0,
         dmp: 0.1,
+        method: inp.method,
     };
     let from_lon_rad = inp.from_lon_deg as R * D2R;
     let to_lon_rad = inp.to_lon_deg as R * D2R;
@@ -380,6 +385,7 @@ pub fn run(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<HourPrediction>, Strin
         lufp: 90,
         pmp: 3.0,
         dmp: 0.1,
+        method: inp.method,
     };
     let mut base_frel = [0.0 as R; 12];
     for (slot, f) in base_frel.iter_mut().zip(&inp.freqs_mhz) {
@@ -430,13 +436,39 @@ pub fn run(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<HourPrediction>, Strin
             genois(reff, &set, &an, f, to_lat_rad, fof2_end, inp.noise_dbw)
         };
 
-        // The LUFFY passes for MSPEC = 121.
+        // The LUFFY passes. Card method 30 is the only one `DECRED`
+        // gives `MSPEC = 121`, so it is the only one that runs both
+        // models between 7000 and 10000 km and blends them. Method 21
+        // forces the long model at any distance and method 22 the
+        // short one; every other systems method takes the short model
+        // below `GCDLNG` and the long one at or beyond it.
         let jmode = selmod(&state);
         struct PassPlan {
             long: bool,
             areas: Vec<usize>,
         }
-        let plans: Vec<PassPlan> = if geo.gcd_km > 10000.0 {
+        let long_areas = |kfx: usize| -> Vec<usize> {
+            if kfx > 1 {
+                vec![0, kfx - 1]
+            } else {
+                vec![0]
+            }
+        };
+        let plans: Vec<PassPlan> = if inp.method != 30 {
+            let long = match inp.method {
+                21 => true,
+                22 | 25 => false,
+                _ => geo.gcd_km >= 10000.0,
+            };
+            vec![PassPlan {
+                long,
+                areas: if long {
+                    long_areas(state.kfx)
+                } else {
+                    vec![jmode]
+                },
+            }]
+        } else if geo.gcd_km > 10000.0 {
             vec![PassPlan {
                 long: true,
                 areas: if state.kfx > 1 {
@@ -537,6 +569,7 @@ pub fn run(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<HourPrediction>, Strin
             };
             luffy_smooth(&mut lp, &ctx, &noise_for, &frel, &saves);
         }
+        let last_long = plans.last().map(|p| p.long).unwrap_or(false);
         let xluf = setluf(&lp.son, &frel, deck.lufp);
         outbod_sentinels(&mut lp.son, hour.allmuf);
         out.push(HourPrediction {
@@ -548,7 +581,10 @@ pub fn run(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<HourPrediction>, Strin
             xluf,
             frel,
             son: lp.son,
-            long_model: geo.gcd_km >= 7000.0,
+            // `JLONG`, as the last pass left it: the MODE row prints
+            // hop count and layer for the short model, and the two end
+            // layers for the long one.
+            long_model: last_long,
         });
         fsecv_carry = state.fsecv;
     }
@@ -619,10 +655,47 @@ fn row(label: &str, muf_field: String, fields: Vec<String>, jfreq: i32) -> Strin
     line
 }
 
-/// Renders the hours as the method-30 listing body `OUTBOD` prints
-/// (the FREQ line and the 21 bottom rows per hour), for comparison via
-/// `listing::parse_listing`.
-pub fn listing_text(hours: &[HourPrediction]) -> String {
+/// `SETOUT`'s body-line selection: which of `OUTBOD2`'s 22 lines the
+/// method prints, in the order `OUTBOD` prints them. `DECRED` rewrites
+/// card method 30 to method 20 first, so both select the same 21 lines.
+///
+/// Method 23 selects nothing here: its lines come from `TOPLINES` and
+/// `BOTLINES` cards, and with no cards `SETOUT` leaves every line off.
+pub fn body_lines(method: u32) -> [bool; 22] {
+    let method = if method == 30 { 20 } else { method };
+    let mut bot = [false; 22];
+    let mut set = |lines: &[usize]| {
+        for &l in lines {
+            bot[l - 1] = true;
+        }
+    };
+    match method {
+        // The three methods that do not print consecutive lines.
+        17 => set(&[1, 2, 5, 7, 10, 12]),
+        18 => set(&[1, 2, 5, 7, 10, 14]),
+        24 => set(&[12]),
+        23 => {}
+        _ => {
+            let nbod = match method {
+                16 => 13,
+                19 => 5,
+                20..=22 => 21,
+                25 => 22,
+                // Every other method prints the mode line alone; the
+                // ones that print nothing here have their own output
+                // routine instead of `OUTBOD`.
+                _ => 1,
+            };
+            set(&(1..=nbod).collect::<Vec<_>>());
+        }
+    }
+    bot
+}
+
+/// Renders the hours as the listing body `OUTBOD` prints: the FREQ line
+/// and the rows `lines` selects, for comparison via
+/// `listing::parse_listing`. [`body_lines`] gives a method's selection.
+pub fn listing_text(hours: &[HourPrediction], lines: &[bool; 22]) -> String {
     let mut out = String::new();
     for h in hours {
         // The FREQ line: hour, the MUF, the eleven card frequencies.
@@ -664,20 +737,23 @@ pub fn listing_text(hours: &[HourPrediction]) -> String {
                 format!(" {:2}{}", s.nhp, laytyp(s.mode_layer))
             }
         };
-        out.push_str(&row(
-            "MODE  ",
-            mode_field(muf),
-            slots.iter().map(|&i| mode_field(&h.son[i])).collect(),
-            jfreq,
-        ));
-        out.push('\n');
+        if lines[0] {
+            out.push_str(&row(
+                "MODE  ",
+                mode_field(muf),
+                slots.iter().map(|&i| mode_field(&h.son[i])).collect(),
+                jfreq,
+            ));
+            out.push('\n');
+        }
 
         // The numeric rows, in OUTBOD's order and formats.
         type Field = (
             &'static str,
             fn(&Son) -> String,
         );
-        let rows: [Field; 20] = [
+        // `OUTBOD2` lines 2 to 22; line 1 is the MODE row above.
+        let rows: [Field; 21] = [
             ("TANGLE", |s| f5_1(s.angle)),
             ("DELAY ", |s| f5_1(s.delay)),
             ("V HITE", |s| i5(s.vhigh)),
@@ -698,8 +774,12 @@ pub fn listing_text(hours: &[HourPrediction]) -> String {
             ("TGAIN ", |s| f5_1(s.gaint)),
             ("RGAIN ", |s| f5_1(s.gainr)),
             ("SNRxx ", |s| i5(s.snxx)),
+            ("DBM   ", |s| i5(s.dbw + 30.0)),
         ];
-        for (label, field) in rows {
+        for (line, (label, field)) in rows.into_iter().enumerate() {
+            if !lines[line + 1] {
+                continue;
+            }
             out.push_str(&row(
                 label,
                 field(muf),
@@ -729,6 +809,30 @@ mod tests {
     }
 
     #[test]
+    fn setout_selects_the_lines_each_method_prints() {
+        let on = |m: u32| -> Vec<usize> {
+            body_lines(m)
+                .iter()
+                .enumerate()
+                .filter(|(_, v)| **v)
+                .map(|(i, _)| i + 1)
+                .collect()
+        };
+        // Card method 30 is method 20 after DECRED rewrites it.
+        assert_eq!(on(30), on(20));
+        assert_eq!(on(20), (1..=21).collect::<Vec<_>>());
+        assert_eq!(on(16), (1..=13).collect::<Vec<_>>());
+        assert_eq!(on(17), vec![1, 2, 5, 7, 10, 12]);
+        assert_eq!(on(18), vec![1, 2, 5, 7, 10, 14]);
+        assert_eq!(on(19), (1..=5).collect::<Vec<_>>());
+        assert_eq!(on(24), vec![12]);
+        assert_eq!(on(25), (1..=22).collect::<Vec<_>>());
+        // Method 23 prints what its TOPLINES and BOTLINES cards say,
+        // and nothing without them.
+        assert!(on(23).is_empty());
+    }
+
+    #[test]
     fn listing_lines_have_the_parser_geometry() {
         let mut son = [Son::default(); 13];
         son[0].nhp = 1;
@@ -745,7 +849,7 @@ mod tests {
             son,
             long_model: false,
         };
-        let text = listing_text(&[h]);
+        let text = listing_text(&[h], &body_lines(30));
         let parsed = crate::listing::parse_listing(&text);
         let rel: Vec<_> = parsed
             .numeric

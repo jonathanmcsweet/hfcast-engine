@@ -15,7 +15,7 @@ use std::process::ExitCode;
 
 use propcore::compare::{compare_listings, Comparison};
 use propcore::deck::build_deck;
-use propcore::engine::run::{listing_text, run, RunInputs};
+use propcore::engine::run::{body_lines, listing_text, run, RunInputs};
 use propcore::listing::parse_listing;
 use propcore::runner::{run_deck, variant_bin, IsolatedRoot};
 use propcore::sweep::sweep_cases;
@@ -97,7 +97,7 @@ fn main() -> ExitCode {
                 return ExitCode::FAILURE;
             }
         };
-        let ported = parse_listing(&listing_text(&hours));
+        let ported = parse_listing(&listing_text(&hours, &body_lines(case.method)));
         merged.merge(compare_listings(&fortran, &ported));
         compared += 1;
     }
