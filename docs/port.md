@@ -45,18 +45,19 @@ geometry trace only matches this way.
 
 ## Stage status
 
-| stage                                 | Fortran                               | Rust                   | verified against trace                   |
-| ------------------------------------- | ------------------------------------- | ---------------------- | ---------------------------------------- |
-| constants, magnetic pole              | `blkdat`, `set_magnetic_pole`         | `engine::con`          | via geometry                             |
-| path geometry, control points         | `geom.for`                            | `engine::geometry`     | worst 3e-4 km / 1.3e-5 deg over 96 cases |
-| magnetic field at control points      | `magvar.for`, `magfin.for`            | `engine::magnetic`     | worst 5e-8 over 408 control points       |
-| coefficient loading                   | `redmap.for`                          | `engine::coefficients` | 819k elements, worst at print precision  |
-| map evaluation (foF2, M3000, etc.)    | `geotim`, `virtim`, `timvar`, `f2var` | —                      |                                          |
-| sporadic E                            | `esind`, `esreg`, `esmod`             | —                      |                                          |
-| MUF                                   | `ionset`, `curmuf`                    | —                      |                                          |
-| systems model (modes, losses, signal) | `luffy` and relatives                 | —                      |                                          |
-| noise                                 | `noisy`, `genois`, `anois1`           | —                      |                                          |
-| output fields                         | `setluf`, `outlin`                    | —                      |                                          |
+| stage                                 | Fortran                                                           | Rust                   | verified against trace                   |
+| ------------------------------------- | ----------------------------------------------------------------- | ---------------------- | ---------------------------------------- |
+| constants, magnetic pole              | `blkdat`, `set_magnetic_pole`                                     | `engine::con`          | via geometry                             |
+| path geometry, control points         | `geom.for`                                                        | `engine::geometry`     | worst 3e-4 km / 1.3e-5 deg over 96 cases |
+| magnetic field at control points      | `magvar.for`, `magfin.for`                                        | `engine::magnetic`     | worst 5e-8 over 408 control points       |
+| coefficient loading                   | `redmap.for`                                                      | `engine::coefficients` | 819k elements, worst at print precision  |
+| map evaluation, layer parameters      | `geotim`, `virtim`, `versy`, `noisy`, `ef1var`, `timvar`, `f2var` | `engine::ionosphere`   | 733k AB values, 9.8k point-hours         |
+| sporadic E parameters                 | `esind`                                                           | `engine::ionosphere`   | 9.8k point-hours                         |
+| sporadic E losses                     | `esreg`, `esmod`                                                  | —                      | (with the systems model)                 |
+| MUF                                   | `ionset`, `curmuf`                                                | —                      |                                          |
+| systems model (modes, losses, signal) | `luffy` and relatives                                             | —                      |                                          |
+| noise                                 | `noisy`, `genois`, `anois1`                                       | —                      |                                          |
+| output fields                         | `setluf`, `outlin`                                                | —                      |                                          |
 
 Working order is data flow, top to bottom. Each stage lands with its trace
 instrumentation, its `porttest` comparison, and unit tests.

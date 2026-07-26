@@ -16,6 +16,7 @@ use std::process::ExitCode;
 use propcore::deck::build_deck;
 use propcore::engine::coefficients::{redmap, FoF2Model};
 use propcore::engine::con::MagneticPole;
+use propcore::engine::ionosphere::{cofion, esind, layer_parameters, virtim, LayerParams};
 use propcore::engine::geometry::{path_geometry, PathGeometry};
 use propcore::engine::magnetic::magvar;
 use propcore::runner::{run_deck_with_env, variant_bin, IsolatedRoot};
@@ -79,6 +80,54 @@ fn parse_geom_trace(text: &str) -> Vec<GeomTrace> {
         }
     }
     out
+}
+
+/// One dumped hour: the header value(s) and the numbers that follow, as
+/// written by the VIRTIM trace (`VIR gmt` + 318 values) or the F2VAR
+/// trace (`F2V gmt km` + one `PT` line of 16 values per control point).
+struct HourTrace {
+    gmt: f64,
+    values: Vec<f64>,
+    points: Vec<Vec<f64>>,
+}
+
+fn parse_hour_traces(text: &str, header: &str) -> Vec<HourTrace> {
+    let mut out: Vec<HourTrace> = Vec::new();
+    for line in text.lines() {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        match fields.first() {
+            Some(&h) if h == header => out.push(HourTrace {
+                gmt: fields.get(1).and_then(|v| v.parse().ok()).unwrap_or(f64::NAN),
+                values: Vec::new(),
+                points: Vec::new(),
+            }),
+            Some(&"PT") => {
+                if let Some(current) = out.last_mut() {
+                    current
+                        .points
+                        .push(fields[1..].iter().map(|v| v.parse().unwrap_or(f64::NAN)).collect());
+                }
+            }
+            Some(_) => {
+                if let Some(current) = out.last_mut() {
+                    for f in &fields {
+                        current.values.push(f.parse().unwrap_or(f64::NAN));
+                    }
+                }
+            }
+            None => {}
+        }
+    }
+    out
+}
+
+/// The 16 dumped layer fields in trace order.
+fn layer_fields(p: &LayerParams) -> [f64; 16] {
+    [
+        p.fi[0], p.fi[1], p.fi[2], p.yi[0], p.yi[1], p.yi[2], p.hi[0], p.hi[1], p.hi[2], p.f2m3,
+        p.hpf2, p.rat, p.abiy, p.clck, p.zenang, p.zenmax,
+    ]
+    .map(f64::from)
 }
 
 /// The Fortran side of one REDMAP call, parsed from the trace dump: the
@@ -158,10 +207,38 @@ fn main() -> ExitCode {
         Worst::new("east longitude (rad)"),
     ];
     let mut red_worst: Vec<Worst> = Vec::new();
+    let mut ab_worst = Worst::new("AB time-evaluated coefficient");
+    let mut iono_worst = [
+        Worst::new("foE (MHz)"),
+        Worst::new("foF1 (MHz)"),
+        Worst::new("foF2 (MHz)"),
+        Worst::new("E semithickness (km)"),
+        Worst::new("F1 semithickness (km)"),
+        Worst::new("F2 semithickness (km)"),
+        Worst::new("E height (km)"),
+        Worst::new("F1 height (km)"),
+        Worst::new("F2 height (km)"),
+        Worst::new("M(3000)F2"),
+        Worst::new("hpF2 (km)"),
+        Worst::new("height/semithickness ratio"),
+        Worst::new("absorption index"),
+        Worst::new("local time (h)"),
+        Worst::new("zenith angle (deg)"),
+        Worst::new("max F1 zenith (deg)"),
+    ];
+    let mut es_worst = [
+        Worst::new("Es lower decile (MHz)"),
+        Worst::new("Es median (MHz)"),
+        Worst::new("Es upper decile (MHz)"),
+        Worst::new("Es height (km)"),
+    ];
     let mut structural = 0usize;
     let mut compared = 0usize;
     let mut mag_points = 0usize;
     let mut red_points = 0usize;
+    let mut ab_points = 0usize;
+    let mut iono_points = 0usize;
+    let mut es_points = 0usize;
 
     for case in &cases {
         let deck = match build_deck(case) {
@@ -315,6 +392,107 @@ fn main() -> ExitCode {
             }
             red_points += trace_values.len();
         }
+
+        // The ionosphere stage: one VIRTIM dump and one F2VAR dump per
+        // hour, in the engine's hour order.
+        let vir_dump = std::fs::read_to_string(trace_dir.join("virtim.txt")).unwrap_or_default();
+        let f2_dump = std::fs::read_to_string(trace_dir.join("f2var.txt")).unwrap_or_default();
+        let virs = parse_hour_traces(&vir_dump, "VIR");
+        let f2s = parse_hour_traces(&f2_dump, "F2V");
+        if virs.is_empty() || virs.len() != f2s.len() {
+            eprintln!(
+                "{}: {} VIRTIM dumps but {} F2VAR dumps",
+                case.id,
+                virs.len(),
+                f2s.len()
+            );
+            structural += 1;
+            continue;
+        }
+        let es_dump = std::fs::read_to_string(trace_dir.join("esind.txt")).unwrap_or_default();
+        let ess = parse_hour_traces(&es_dump, "ESI");
+        if ess.len() != virs.len() {
+            eprintln!(
+                "{}: {} VIRTIM dumps but {} ESIND dumps",
+                case.id,
+                virs.len(),
+                ess.len()
+            );
+            structural += 1;
+            continue;
+        }
+        let cof = cofion(&set);
+        let mags: Vec<_> = rust.points.iter().map(|p| magvar(p.lat, p.lon)).collect();
+        for ((vir, f2h), esh) in virs.iter().zip(&f2s).zip(&ess) {
+            let gmt = vir.gmt as f32;
+            let ab = virtim(&cof, &set.ikim, gmt);
+            for (ported, traced) in ab.iter().zip(&vir.values) {
+                ab_worst.update((f64::from(*ported) - traced).abs(), &case.id);
+            }
+            ab_points += vir.values.len();
+
+            let params = layer_parameters(
+                &set,
+                &ab,
+                &rust.points,
+                &mags,
+                case.month,
+                red.ssn as f32,
+                f2h.gmt as f32,
+                &[1.0, 1.0, 1.0, 1.0],
+            );
+            if f2h.points.len() != params.len() {
+                eprintln!(
+                    "{}: F2VAR dumped {} points, Rust computed {}",
+                    case.id,
+                    f2h.points.len(),
+                    params.len()
+                );
+                structural += 1;
+                continue;
+            }
+            for (ported, traced) in params.iter().zip(&f2h.points) {
+                if traced.len() != 16 {
+                    structural += 1;
+                    continue;
+                }
+                iono_points += 1;
+                for (worst, (r, t)) in iono_worst
+                    .iter_mut()
+                    .zip(layer_fields(ported).iter().zip(traced))
+                {
+                    worst.update((r - t).abs(), &case.id);
+                }
+            }
+
+            let es = esind(&set, &ab, &rust.points, &mags, &[1.0, 1.0, 1.0, 1.0]);
+            if esh.points.len() != es.len() {
+                eprintln!(
+                    "{}: ESIND dumped {} points, Rust computed {}",
+                    case.id,
+                    esh.points.len(),
+                    es.len()
+                );
+                structural += 1;
+                continue;
+            }
+            for (ported, traced) in es.iter().zip(&esh.points) {
+                if traced.len() != 4 {
+                    structural += 1;
+                    continue;
+                }
+                es_points += 1;
+                let fields = [
+                    f64::from(ported.fs[0]),
+                    f64::from(ported.fs[1]),
+                    f64::from(ported.fs[2]),
+                    f64::from(ported.hs),
+                ];
+                for (worst, (r, t)) in es_worst.iter_mut().zip(fields.iter().zip(traced)) {
+                    worst.update((r - t).abs(), &case.id);
+                }
+            }
+        }
     }
 
     println!("## Stage: geometry (geom.for)\n");
@@ -338,6 +516,28 @@ fn main() -> ExitCode {
     println!("| field | worst difference | case |");
     println!("| --- | --: | --- |");
     for w in &mag_worst {
+        println!("| {} | {:.2e} | {} |", w.name, w.value, w.case);
+    }
+
+    println!("\n## Stage: ionosphere (virtim, versy, ef1var, timvar, f2var)\n");
+    println!(
+        "Compared {ab_points} AB coefficients and {iono_points} control-point-hours.\n"
+    );
+    println!("| field | worst difference | case |");
+    println!("| --- | --: | --- |");
+    println!(
+        "| {} | {:.2e} | {} |",
+        ab_worst.name, ab_worst.value, ab_worst.case
+    );
+    for w in &iono_worst {
+        println!("| {} | {:.2e} | {} |", w.name, w.value, w.case);
+    }
+
+    println!("\n## Stage: sporadic E parameters (esind.for)\n");
+    println!("Compared {es_points} control-point-hours.\n");
+    println!("| field | worst difference | case |");
+    println!("| --- | --: | --- |");
+    for w in &es_worst {
         println!("| {} | {:.2e} | {} |", w.name, w.value, w.case);
     }
 
