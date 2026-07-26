@@ -106,12 +106,20 @@ pub struct IsolatedRoot {
 }
 
 impl IsolatedRoot {
-    /// Copies the shared tree to a private location keyed by `tag`.
+    /// Copies the shared tree to a private location keyed by `tag` and
+    /// the process id.
+    ///
+    /// The process id matters: harness binaries name their trees after
+    /// the case, and two of them running the same corpus at once would
+    /// otherwise pick the same directory — where the first act of
+    /// `create` is to delete it. That does not fail; it silently
+    /// truncates one run's reference output and reports the missing
+    /// cells as differences.
     pub fn create(tag: &str) -> io::Result<Self> {
         let base = env::var_os("PROPCORE_SCRATCH")
             .map(PathBuf::from)
             .unwrap_or_else(env::temp_dir);
-        let path = base.join(format!("propcore-itshfbc-{tag}"));
+        let path = base.join(format!("propcore-itshfbc-{}-{tag}", std::process::id()));
         // A leftover from an interrupted run would otherwise be reused.
         let _ = fs::remove_dir_all(&path);
         copy_dir_all(&itshfbc_dir(), &path)?;

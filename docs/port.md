@@ -258,6 +258,20 @@ computes one, so the cell reads zero either way.
 `fuzz --method M` runs the corpus with a different `METHOD` card.
 Methods 16 to 22 are identical to the reference over 60 cases each.
 
+## Running the harnesses at the same time
+
+Each harness copies the `itshfbc` tree per case so runs cannot see each
+other's files. The copy was named after the case alone, so two
+harnesses working through the same corpus picked the same directory —
+and `IsolatedRoot::create` starts by deleting it. That did not fail:
+it truncated one run's reference listing, and the missing cells were
+reported as differences. A concurrent sweep of eight methods showed
+false differences in three of them that vanished when each was run
+alone. The tree name now carries the process id.
+
+Verdicts recorded before that fix came from harnesses run one at a
+time, which was never affected.
+
 ## The COEFFS and FPROB cards
 
 `COEFFS` chooses the foF2 map set: `URSI88` instead of the default
