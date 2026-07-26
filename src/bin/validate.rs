@@ -52,7 +52,7 @@ use propcore::itu::{parse_report, run_case, ItuPaths};
 use propcore::listing::parse_listing;
 use propcore::runner::{map_limit, run_deck, variant_bin, IsolatedRoot};
 use propcore::stats::{correlation, fit_line, median, rms};
-use propcore::wspr::{self, WsprPath, WSPR_BANDWIDTH_HZ, WSPR_BANDWIDTH_OFFSET_DB};
+use propcore::wspr::{self, smoothed_ssn, WsprPath, WSPR_BANDWIDTH_HZ, WSPR_BANDWIDTH_OFFSET_DB};
 
 const VOACAP_VARIANT: &str = "O2";
 const CONCURRENCY: usize = 4;
@@ -147,7 +147,7 @@ fn main() -> ExitCode {
         Some(v) => v,
         None => {
             eprintln!("no smoothed sunspot number known for {}", data.month);
-            eprintln!("add it to SMOOTHED_SSN in this file");
+            eprintln!("add it to SMOOTHED_SSN in src/wspr.rs");
             return ExitCode::FAILURE;
         }
     };
@@ -379,31 +379,6 @@ fn scratch(name: &str) -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_else(std::env::temp_dir)
         .join(name)
-}
-
-/// Smoothed sunspot number (R12) per month, from NOAA SWPC's observed solar
-/// cycle indices.
-///
-/// This is deliberately a table rather than a fetch: R12 for a past month never
-/// changes once published, and a validation run should not depend on a network
-/// service being up or on which day it was run.
-const SMOOTHED_SSN: &[(&str, f64)] = &[
-    ("2019-06", 3.7),
-    ("2019-12", 1.8),
-    ("2024-12", 151.2),
-    ("2025-03", 135.9),
-    ("2025-04", 133.4),
-    ("2025-05", 128.6),
-    ("2025-06", 124.7),
-    ("2025-07", 122.5),
-    ("2025-08", 118.4),
-];
-
-fn smoothed_ssn(month: &str) -> Option<f64> {
-    SMOOTHED_SSN
-        .iter()
-        .find(|(m, _)| *m == month)
-        .map(|(_, v)| *v)
 }
 
 #[derive(Default)]

@@ -18,6 +18,19 @@ pub fn median(values: &mut [f64]) -> f64 {
     }
 }
 
+/// The value at fraction `q` of the data, so `q = 0.1` is the lower decile.
+///
+/// Sorts in place. Uses the same nearest-rank convention as the rest of the
+/// crate; an empty slice reads as zero.
+pub fn quantile(values: &mut [f64], q: f64) -> f64 {
+    if values.is_empty() {
+        return 0.0;
+    }
+    values.sort_by(|a, b| a.partial_cmp(b).expect("no NaN"));
+    let rank = (q * values.len() as f64).ceil() as usize;
+    values[rank.saturating_sub(1).min(values.len() - 1)]
+}
+
 /// Root mean square.
 pub fn rms(values: &[f64]) -> f64 {
     if values.is_empty() {
@@ -87,6 +100,14 @@ mod tests {
     #[test]
     fn median_resists_one_wild_value() {
         assert_eq!(median(&mut [1.0, 2.0, 3.0, 4.0, 1000.0]), 3.0);
+    }
+
+    #[test]
+    fn quantile_finds_the_deciles() {
+        let mut values: Vec<f64> = (1..=10).map(|n| n as f64).collect();
+        assert_eq!(quantile(&mut values, 0.1), 1.0);
+        assert_eq!(quantile(&mut values, 0.9), 9.0);
+        assert_eq!(quantile(&mut values, 0.5), 5.0);
     }
 
     #[test]

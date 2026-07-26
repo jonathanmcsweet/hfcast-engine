@@ -41,6 +41,33 @@ pub const DECODE_FLOOR_DB: f64 = -29.0;
 /// Identifies one transmitter, receiver and band.
 pub type PathKey = (String, String, i32);
 
+/// Smoothed sunspot number (R12) per month, from NOAA SWPC's observed solar
+/// cycle indices.
+///
+/// Deliberately a table rather than a fetch: R12 for a past month never
+/// changes once published, and a validation run should not depend on a
+/// network service being up or on which day it was run.
+pub const SMOOTHED_SSN: &[(&str, f64)] = &[
+    ("2015-03", 82.1),
+    ("2019-06", 3.7),
+    ("2019-12", 1.8),
+    ("2022-09", 96.5),
+    ("2024-12", 151.2),
+    ("2025-03", 135.9),
+    ("2025-04", 133.4),
+    ("2025-05", 128.6),
+    ("2025-06", 124.7),
+    ("2025-07", 122.5),
+    ("2025-08", 118.4),
+];
+
+pub fn smoothed_ssn(month: &str) -> Option<f64> {
+    SMOOTHED_SSN
+        .iter()
+        .find(|(m, _)| *m == month)
+        .map(|(_, v)| *v)
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct WsprPath {
     pub tx: String,
@@ -94,6 +121,17 @@ fn band_metres(band: i32) -> i32 {
 
 /// Median reported signal-to-noise ratio per UTC hour, indexed 0-23.
 pub type HourlySnr = [Option<f64>; 24];
+
+/// One day's reports for one path at one hour.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DailySample {
+    /// Day of the month, 1-31.
+    pub day: u8,
+    /// UTC hour, 0-23.
+    pub hour: u8,
+    pub reports: u32,
+    pub snr_median: f64,
+}
 
 #[derive(Debug, Clone)]
 pub struct WsprData {
@@ -192,6 +230,49 @@ pub fn parse_paths(text: &str) -> Vec<WsprPath> {
         .collect()
 }
 
+/// Reads `daily.csv`, one row per path, day and hour.
+pub fn parse_daily(text: &str) -> HashMap<PathKey, Vec<DailySample>> {
+    let mut out: HashMap<PathKey, Vec<DailySample>> = HashMap::new();
+    let mut lines = text.lines();
+    let Some(header) = lines.next() else {
+        return out;
+    };
+    let index = header_index(header);
+
+    for line in lines {
+        let f = split_csv(line);
+        let (Some(tx), Some(rx), Some(band), Some(day), Some(hour), Some(reports), Some(snr)) = (
+            get(&f, &index, "tx_sign"),
+            get(&f, &index, "rx_sign"),
+            number(&f, &index, "band"),
+            number(&f, &index, "day"),
+            number(&f, &index, "hour"),
+            number(&f, &index, "reports"),
+            number(&f, &index, "snr_median"),
+        ) else {
+            continue;
+        };
+        if !(1.0..=31.0).contains(&day) || !(0.0..=23.0).contains(&hour) {
+            continue;
+        }
+        out.entry((tx.to_string(), rx.to_string(), band as i32))
+            .or_default()
+            .push(DailySample {
+                day: day as u8,
+                hour: hour as u8,
+                reports: reports as u32,
+                snr_median: snr,
+            });
+    }
+
+    out
+}
+
+/// Loads `daily.csv` from a month directory.
+pub fn load_daily(dir: &Path) -> io::Result<HashMap<PathKey, Vec<DailySample>>> {
+    Ok(parse_daily(&fs::read_to_string(dir.join("daily.csv"))?))
+}
+
 pub fn parse_hourly(text: &str) -> HashMap<PathKey, HourlySnr> {
     let mut out: HashMap<PathKey, HourlySnr> = HashMap::new();
     let mut lines = text.lines();
@@ -273,6 +354,32 @@ mod tests {
         assert_eq!(day[23], Some(-12.5));
         // Hours with no reports stay empty rather than becoming zero.
         assert_eq!(day[5], None);
+    }
+
+    #[test]
+    fn parses_daily_rows_per_path() {
+        let text = concat!(
+            "\"tx_sign\",\"rx_sign\",\"band\",\"day\",\"hour\",\"reports\",\"snr_median\"\n",
+            "\"2E0DLC\",\"EA8BFK\",14,1,0,12,-18\n",
+            "\"2E0DLC\",\"EA8BFK\",14,2,0,9,-21.5\n",
+            "\"2E0DLC\",\"EA8BFK\",14,2,1,7,-15\n",
+        );
+        let daily = parse_daily(text);
+        let key = ("2E0DLC".to_string(), "EA8BFK".to_string(), 14);
+        let samples = daily.get(&key).expect("path present");
+        assert_eq!(samples.len(), 3);
+        assert_eq!(samples[1].day, 2);
+        assert_eq!(samples[1].snr_median, -21.5);
+        assert_eq!(samples[2].hour, 1);
+    }
+
+    #[test]
+    fn the_ssn_table_covers_every_fetched_month() {
+        for month in [
+            "2015-03", "2019-06", "2019-12", "2022-09", "2024-12", "2025-03", "2025-06", "2025-07",
+        ] {
+            assert!(smoothed_ssn(month).is_some(), "no SSN for {month}");
+        }
     }
 
     #[test]

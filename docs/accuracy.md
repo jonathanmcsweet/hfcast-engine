@@ -1,22 +1,23 @@
-# How accurate are the engines — measured, six months of real radio
+# How accurate are the engines — measured, eight months of real radio
 
 Every claim here is measured against WSPR reception reports: 150 paths per
-month, six months chosen to cover the extremes, about 20,600 path-hours in
-total. The method fits one offset per path (antennas and local receiver noise
+month, eight months chosen to cover the extremes of season and solar cycle. The method fits one offset per path (antennas and local receiver noise
 are unknown but constant), so what is scored is the **daily shape** of each
 circuit — when it opens, peaks and closes — not absolute level. The flat
 baseline predicts every hour as that path's own measured median; it contains no
 physics and needs a month of data for the exact path, so it is a reference, not
 a shippable competitor.
 
-| month   | season                | smoothed sunspot number |
-| ------- | --------------------- | ----------------------: |
-| 2025-06 | summer                |                   124.7 |
-| 2025-07 | summer                |                   122.5 |
-| 2025-03 | equinox               |                   135.9 |
-| 2024-12 | winter                |                   151.2 |
-| 2019-06 | summer, solar minimum |                     3.7 |
-| 2019-12 | winter, solar minimum |                     1.8 |
+| month   | season                   | smoothed sunspot number |
+| ------- | ------------------------ | ----------------------: |
+| 2025-06 | summer                   |                   124.7 |
+| 2025-07 | summer                   |                   122.5 |
+| 2025-03 | equinox                  |                   135.9 |
+| 2024-12 | winter                   |                   151.2 |
+| 2019-06 | summer, solar minimum    |                     3.7 |
+| 2019-12 | winter, solar minimum    |                     1.8 |
+| 2022-09 | equinox, rising cycle    |                    96.5 |
+| 2015-03 | equinox, declining cycle |                    82.1 |
 
 Slope is from fitting `observed = a + b × predicted` per path: 1.0 means the
 model predicts the right amount of daily variation, 0.2 means reality swings a
@@ -84,26 +85,50 @@ unchanged, to the five months it never saw:
 | 2024-12   |       3.00 |  **2.50** |          3.00 |
 | 2019-06   |       2.00 |  **1.86** |          2.00 |
 | 2019-12   |       3.00 |  **2.00** |          2.50 |
+| 2022-09   |       3.50 |  **1.74** |          2.00 |
+| 2015-03   |       3.75 |      2.63 |          2.50 |
 
 Median absolute error in dB. The corrected model beats or matches the
-with-hindsight baseline on every unseen month, across six years and the full
-solar cycle. Per-band factors improve this by only ~0.1 dB and wobble between
-months, so the global factor is the one to ship.
+with-hindsight baseline on six of the seven unseen months, across ten years
+and the full solar cycle; the one near-miss is 2015-03, 0.13 dB behind, and
+equinox months are consistently the weakest. Per-band factors improve this by
+only ~0.1 dB and wobble between months, so the global factor is the one to
+ship.
+
+## Finding 4 — the day-to-day spread is overstated too
+
+Full write-up in [reliability.md](reliability.md). The app's reliability
+number — the chance a band works on a given day — rests on the engine's
+day-to-day spread claims, and those were the last unvalidated input. Checked
+against per-day WSPR records, offset-free (deviations from each path-hour's
+own median, which no unknown antenna can shift):
+
+- The engine claims 25–30% of days fall 6 dB or more below an hour's median.
+  Measured: 5–10%.
+- Scaling the deciles — lower × 0.40, upper × 0.59, fitted on June 2025 —
+  reproduces the measured frequencies in the 3–10 dB range on five test
+  months spanning 2015–2025. Per-month fits across all eight months stay
+  within 0.30–0.45 and 0.43–0.59, so the factors are stable.
+- Beyond 10 dB the scaled model under-predicts: rare bad days (magnetic
+  storms) are worse than a bell curve allows. Reliability shown near 100%
+  should be read as "9 in 10", not certainty.
 
 ## The decision this supports
 
-**VOACAP, with its sporadic-E term enabled, with predictions shrunk toward
-their daily median by k = 0.25.** Corrected P.533 loses to corrected VOACAP on
-every test month (2.08–3.09 dB against 1.86–2.50 dB). The full
-signal-to-noise prediction and the signal-only variant perform identically, so
-the server keeps reading the field it already reads.
+**VOACAP, with its sporadic-E term enabled, its daily swing shrunk by
+k = 0.25, and its spread deciles scaled by 0.40 (lower) and 0.59 (upper).**
+Corrected P.533 loses to corrected VOACAP on every test month (2.08–3.09 dB
+against 1.74–2.63 dB). The full signal-to-noise prediction and the
+signal-only variant perform identically, so the server keeps reading the
+field it already reads.
 
 ## What this does not establish
 
 - **Absolute level.** The per-path offset removes it; predicting it needs
   known antennas.
-- **Day-to-day spread.** The correction shrinks the daily swing of the median;
-  the engine's spread deciles are untouched and unvalidated.
+- **Storm-day tails.** Deviations beyond 10 dB happen more often than the
+  scaled spread predicts; the reliability number is honest in the common
+  range and optimistic about rare deep fades.
 - **Geography.** WSPR receivers cluster in North America and Europe.
 - **The remaining factor of ~3.** Sporadic-E closed most of the gap at solar
   minimum, but reality still swings about a third of the corrected-model

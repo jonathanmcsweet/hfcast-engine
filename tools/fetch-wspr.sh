@@ -121,5 +121,25 @@ GROUP BY tx_sign, rx_sign, band, hour
 ORDER BY tx_sign, rx_sign, band, hour" > "$OUT/hourly.csv"
 echo "  $(( $(wc -l < "$OUT/hourly.csv") - 1 )) path-hours" >&2
 
+# Stage four: the same medians per individual day.
+#
+# The monthly medians above can validate the typical day. The reliability
+# number — the chance a band works on a *given* day — is a claim about the
+# spread between days, and checking it needs each day separately.
+echo "fetching daily medians" >&2
+query "
+WITH chosen AS (${CHOSEN})
+SELECT tx_sign, rx_sign, band,
+       toDayOfMonth(time) AS day,
+       toHour(time) AS hour,
+       count() AS reports,
+       round(median(snr), 2) AS snr_median
+FROM wspr.rx
+WHERE ${WHERE}
+  AND (tx_sign, rx_sign, band) IN (SELECT tx_sign, rx_sign, band FROM chosen)
+GROUP BY tx_sign, rx_sign, band, day, hour
+ORDER BY tx_sign, rx_sign, band, day, hour" > "$OUT/daily.csv"
+echo "  $(( $(wc -l < "$OUT/daily.csv") - 1 )) path-day-hours" >&2
+
 echo "$MONTH" > "$OUT/month.txt"
 echo "wrote $OUT/paths.csv, $OUT/hourly.csv, $OUT/month.txt" >&2
