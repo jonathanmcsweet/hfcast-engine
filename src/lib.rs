@@ -21,6 +21,7 @@
 
 pub mod compare;
 pub mod deck;
+pub mod engine;
 pub mod geomag;
 pub mod irtam;
 pub mod itu;

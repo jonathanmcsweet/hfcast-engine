@@ -204,12 +204,25 @@ fn copy_dir_all(src: &Path, dst: &Path) -> io::Result<()> {
 ///
 /// `root` must not be shared with a concurrently running call.
 pub fn run_deck(bin: &Path, root: &Path, deck: &str) -> Result<String, RunError> {
+    run_deck_with_env(bin, root, deck, &[])
+}
+
+/// Like [`run_deck`], with extra environment variables for the engine.
+///
+/// The trace variant reads `PROPCORE_TRACE` and dumps stage intermediates
+/// into the directory it names; the stock engine ignores it.
+pub fn run_deck_with_env(
+    bin: &Path,
+    root: &Path,
+    deck: &str,
+    env: &[(&str, &str)],
+) -> Result<String, RunError> {
     let run_dir = root.join("run");
     let input_name = "propcore.dat";
     let output_name = "propcore.out";
 
     fs::write(run_dir.join(input_name), deck)?;
-    run_to_completion(bin, root, input_name, output_name)?;
+    run_to_completion(bin, root, input_name, output_name, env)?;
     fs::read_to_string(run_dir.join(output_name)).map_err(RunError::from)
 }
 
@@ -218,8 +231,13 @@ fn run_to_completion(
     itshfbc: &Path,
     input_name: &str,
     output_name: &str,
+    env: &[(&str, &str)],
 ) -> Result<(), RunError> {
-    let mut child = Command::new(bin)
+    let mut command = Command::new(bin);
+    for (key, value) in env {
+        command.env(key, value);
+    }
+    let mut child = command
         .arg(itshfbc)
         .arg(input_name)
         .arg(output_name)
