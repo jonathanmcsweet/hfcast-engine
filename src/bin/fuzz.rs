@@ -13,7 +13,8 @@
 //! a difference, and is reported as one.
 //!
 //! Usage: `cargo run --release --bin fuzz [--cases N] [--from N]
-//! [--jobs J] [--seed N] [--show N] [--method M]`
+//! [--jobs J] [--seed N] [--show N] [--method M] [--coeffs URSI88]
+//! [--fprob a,b,c,d]`
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::process::ExitCode;
@@ -111,8 +112,19 @@ fn main() -> ExitCode {
     // the same decks with a different `METHOD` card, so the model that
     // runs and the lines that print change but the corpus does not.
     let method = number("--method", 30) as u32;
+    // `--coeffs URSI88` asks the same question of the other foF2 map
+    // set; the default is the CCIR set the corpus was built on.
+    let ursi = flag("--coeffs").map(|v| v.starts_with("URSI")).unwrap_or(false);
+    // `--fprob a,b,c,d` sets the whole card, for the critical-frequency
+    // multipliers the sporadic-E switch cannot express.
+    let fprob: Option<[f64; 4]> = flag("--fprob").and_then(|v| {
+        let parts: Vec<f64> = v.split(',').filter_map(|t| t.trim().parse().ok()).collect();
+        (parts.len() == 4).then(|| [parts[0], parts[1], parts[2], parts[3]])
+    });
     for case in cases.iter_mut() {
         case.method = method;
+        case.ursi = ursi;
+        case.fprob = fprob;
     }
     let cases = cases;
 
@@ -121,9 +133,10 @@ fn main() -> ExitCode {
     }
 
     println!(
-        "# Randomized whole-engine check: {} cases, method {}, indices {}..{}\n",
+        "# Randomized whole-engine check: {} cases, method {}, {} coefficients, indices {}..{}\n",
         cases.len(),
         method,
+        if ursi { "URSI88" } else { "CCIR" },
         from,
         from + count - 1
     );
@@ -206,7 +219,10 @@ fn single_case(reference: &std::path::Path, case: &DeckCase, index: u64, show: u
         case.watts,
         case.required_snr_db,
         case.noise_dbw,
-        if case.sporadic_e { "on" } else { "off" }
+        {
+            let p = case.fprob();
+            format!("fprob {:.2} {:.2} {:.2} {:.2}", p[0], p[1], p[2], p[3])
+        }
     );
     println!("frequencies: {:?}\n", case.freqs_mhz);
     match build_deck(case) {

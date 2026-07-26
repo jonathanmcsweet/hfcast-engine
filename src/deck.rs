@@ -38,6 +38,8 @@ pub struct DeckCase {
     pub to_lon: f64,
     /// The METHOD card's number; 30 is the smoothed systems model.
     pub method: u32,
+    /// The COEFFS card: URSI88 foF2 coefficients instead of CCIR.
+    pub ursi: bool,
     /// 1-12.
     pub month: u32,
     pub year: u32,
@@ -61,6 +63,20 @@ pub struct DeckCase {
     /// changes. `decred.for` documents the card: each critical frequency is
     /// multiplied by the value, and the fourth is Es.
     pub sporadic_e: bool,
+    /// The whole `FPROB` card when the case needs multipliers the
+    /// [`DeckCase::sporadic_e`] switch cannot express: E, F1, F2 and
+    /// sporadic E, each multiplying that layer's critical frequency.
+    /// `None` is the switch's own card.
+    pub fprob: Option<[f64; 4]>,
+}
+
+impl DeckCase {
+    /// The four `FPROB` multipliers the deck carries, whether they come
+    /// from the card or from the sporadic-E switch.
+    pub fn fprob(&self) -> [f64; 4] {
+        self.fprob
+            .unwrap_or([1.0, 1.0, 1.0, if self.sporadic_e { 1.0 } else { 0.0 }])
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -166,7 +182,11 @@ pub fn build_deck(c: &DeckCase) -> Result<String, DeckError> {
 
     let lines = vec![
         "LINEMAX      55       number of lines-per-page".to_string(),
-        "COEFFS    CCIR".to_string(),
+        if c.ursi {
+            "COEFFS    URSI88".to_string()
+        } else {
+            "COEFFS    CCIR".to_string()
+        },
         // All 24 hours, stepping by one, in UTC.
         format!(
             "TIME      {}{}{}{}",
@@ -199,10 +219,16 @@ pub fn build_deck(c: &DeckCase) -> Result<String, DeckError> {
             field("3.00", 5)?,
             field("0.10", 5)?
         ),
-        format!(
-            "FPROB      1.00 1.00 1.00 {}",
-            if c.sporadic_e { "1.00" } else { "0.00" }
-        ),
+        {
+            let p = c.fprob();
+            format!(
+                "FPROB     {}{}{}{}",
+                field(&format!("{:.2}", p[0]), 5)?,
+                field(&format!("{:.2}", p[1]), 5)?,
+                field(&format!("{:.2}", p[2]), 5)?,
+                field(&format!("{:.2}", p[3]), 5)?
+            )
+        },
         format!(
             "ANTENNA   {}{}{}{}{}{}{}{}",
             field("1", 5)?,
@@ -244,6 +270,8 @@ mod tests {
         DeckCase {
             id: "med-eu".to_string(),
             method: 30,
+            ursi: false,
+            fprob: None,
             from_lat: 35.8,
             from_lon: -5.9,
             to_lat: 44.9,

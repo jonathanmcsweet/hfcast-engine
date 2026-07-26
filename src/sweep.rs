@@ -131,6 +131,8 @@ pub fn sweep_cases() -> Vec<DeckCase> {
                     to_lat: p.to_lat,
                     to_lon: p.to_lon,
                     method: 30,
+                    ursi: false,
+                    fprob: None,
                     month,
                     year: 2026,
                     ssn,

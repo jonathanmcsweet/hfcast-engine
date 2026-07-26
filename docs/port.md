@@ -248,6 +248,22 @@ computes one, so the cell reads zero either way.
 `fuzz --method M` runs the corpus with a different `METHOD` card.
 Methods 16 to 22 are identical to the reference over 60 cases each.
 
+## The COEFFS and FPROB cards
+
+`COEFFS` chooses the foF2 map set: `URSI88` instead of the default
+CCIR, which `REDMAP` reads as a different `.daw` file. The port's
+coefficient reader already had both; the card now selects between
+them, and `fuzz --coeffs URSI88` runs the corpus through the URSI maps
+— 60 cases, identical.
+
+`FPROB` multiplies each layer's critical frequency: E, F1, F2 and
+sporadic E. The deck builder wrote only the sporadic-E switch, all
+ones with the fourth at one or zero. A case can now carry the whole
+card, and `fuzz --fprob a,b,c,d` runs the corpus with arbitrary
+multipliers — 60 cases at 0.90, 1.10, 1.05, 0.70, identical. Note that
+the engine's own default, when a deck has no `FPROB` card at all, is
+1, 1, 1, 0.7 rather than all ones.
+
 ## Ionospheric parameters (`run_par`)
 
 Card method 1 (`ITRUN = 1`) prints `OUTPAR`'s table and computes

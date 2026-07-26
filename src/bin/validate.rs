@@ -254,6 +254,8 @@ fn run_path(
     let case = DeckCase {
         id: format!("w{index}"),
         method: 30,
+        ursi: false,
+        fprob: None,
         from_lat: path.tx_lat,
         from_lon: path.tx_lon,
         to_lat: path.rx_lat,

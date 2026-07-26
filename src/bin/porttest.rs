@@ -1088,12 +1088,7 @@ fn main() -> ExitCode {
         // Es-off deck comparable: with the multiplier at zero every
         // control point has foEs = 0, so CURMUF skips them all and
         // zeroes the Es layer.
-        let psc = [
-            1.0,
-            1.0,
-            1.0,
-            if case.sporadic_e { 1.0 } else { 0.0 },
-        ];
+        let psc = case.fprob().map(|v| v as f32);
         for (((vir, f2h), esh), (lech, mufh)) in virs
             .iter()
             .zip(&f2s)

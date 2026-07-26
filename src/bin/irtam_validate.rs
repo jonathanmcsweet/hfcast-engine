@@ -141,6 +141,8 @@ fn gather(dir: &Path, cache_dir: &Path) -> Result<(String, Vec<Sample>, Vec<f64>
             to_lat: path.rx_lat,
             to_lon: path.rx_lon,
             method: 30,
+            ursi: false,
+            fprob: None,
             month,
             year,
             ssn,

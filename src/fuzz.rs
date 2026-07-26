@@ -158,6 +158,8 @@ pub fn fuzz_case(index: u64) -> DeckCase {
     DeckCase {
         id: format!("fz{index:06}"),
         method: 30,
+        ursi: false,
+        fprob: None,
         from_lat,
         from_lon,
         to_lat,

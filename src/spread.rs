@@ -111,6 +111,8 @@ pub fn gather(dir: &Path) -> Result<MonthSpread, String> {
             to_lat: path.rx_lat,
             to_lon: path.rx_lon,
             method: 30,
+            ursi: false,
+            fprob: None,
             month,
             year,
             ssn,

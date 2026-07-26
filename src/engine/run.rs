@@ -75,6 +75,9 @@ pub struct RunInputs {
     /// Man-made noise at 3 MHz, dB below 1 W (positive).
     pub noise_dbw: i32,
     pub watts: R,
+    /// Whether the deck's `FPROB` card leaves sporadic E on. Kept for
+    /// callers that describe a case that way; the engine reads
+    /// [`RunInputs::psc`].
     pub sporadic_e: bool,
     /// `None` is the isotrope card at that end.
     pub tx_antenna: Option<AntennaCardSpec>,
@@ -85,6 +88,10 @@ pub struct RunInputs {
     /// The `METHOD` card's first field, before `DECRED` rewrites 30 to
     /// 20. It selects which model runs and which lines print.
     pub method: u32,
+    /// The `COEFFS` card: the foF2 map set to read.
+    pub fof2: FoF2Model,
+    /// The `FPROB` card: the E, F1, F2 and sporadic-E multipliers.
+    pub psc: [R; 4],
 }
 
 /// Asks the engine the same question the deck card asks.
@@ -123,6 +130,12 @@ impl From<&DeckCase> for RunInputs {
             }),
             rx_gain_field: 0.0,
             method: c.method,
+            fof2: if c.ursi {
+                FoF2Model::Ursi
+            } else {
+                FoF2Model::Ccir
+            },
+            psc: c.fprob().map(|v| v as R),
         }
     }
 }
@@ -232,11 +245,11 @@ pub fn run_par(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<ParRow>, String> {
     );
     let mags: Vec<_> = geo.points.iter().map(|p| magvar(p.lat, p.lon)).collect();
     let set: CoefficientSet =
-        redmap(itshfbc, FoF2Model::Ccir, inp.month, inp.ssn).map_err(|e| e.to_string())?;
+        redmap(itshfbc, inp.fof2, inp.month, inp.ssn).map_err(|e| e.to_string())?;
     let cof = cofion(&set);
     let grounds = ground_constants(&set, &geo.points, &mags);
     let _ = alatd(&geo.points);
-    let psc = [1.0, 1.0, 1.0, if inp.sporadic_e { 1.0 } else { 0.0 }];
+    let psc = inp.psc;
 
     let mut out = Vec::with_capacity(24 * geo.points.len());
     for jt in 1..=24i32 {
@@ -309,11 +322,11 @@ pub fn run_muf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<MufHourOut>, Strin
     );
     let mags: Vec<_> = geo.points.iter().map(|p| magvar(p.lat, p.lon)).collect();
     let set: CoefficientSet =
-        redmap(itshfbc, FoF2Model::Ccir, inp.month, inp.ssn).map_err(|e| e.to_string())?;
+        redmap(itshfbc, inp.fof2, inp.month, inp.ssn).map_err(|e| e.to_string())?;
     let cof = cofion(&set);
     let _ = alatd(&geo.points);
     let clats: Vec<R> = geo.points.iter().map(|p| p.lat).collect();
-    let psc = [1.0, 1.0, 1.0, if inp.sporadic_e { 1.0 } else { 0.0 }];
+    let psc = inp.psc;
     let from_lon_rad = inp.from_lon_deg as R * D2R;
     let to_lon_rad = inp.to_lon_deg as R * D2R;
 
@@ -404,13 +417,13 @@ pub fn run_luf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<LufHour>, String> 
     );
     let mags: Vec<_> = geo.points.iter().map(|p| magvar(p.lat, p.lon)).collect();
     let set: CoefficientSet =
-        redmap(itshfbc, FoF2Model::Ccir, inp.month, inp.ssn).map_err(|e| e.to_string())?;
+        redmap(itshfbc, inp.fof2, inp.month, inp.ssn).map_err(|e| e.to_string())?;
     let cof = cofion(&set);
     let grounds = ground_constants(&set, &geo.points, &mags);
     let _ = alatd(&geo.points);
     let clats: Vec<R> = geo.points.iter().map(|p| p.lat).collect();
     let glats: Vec<R> = geo.points.iter().map(|p| p.gmlat).collect();
-    let psc = [1.0, 1.0, 1.0, if inp.sporadic_e { 1.0 } else { 0.0 }];
+    let psc = inp.psc;
     let nang = sang(geo.gcd_km, 0.1);
     let ants = build_antennas(itshfbc, inp)?;
     let deck = DeckParams {
@@ -568,13 +581,13 @@ pub fn run(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<HourPrediction>, Strin
     );
     let mags: Vec<_> = geo.points.iter().map(|p| magvar(p.lat, p.lon)).collect();
     let set: CoefficientSet =
-        redmap(itshfbc, FoF2Model::Ccir, inp.month, inp.ssn).map_err(|e| e.to_string())?;
+        redmap(itshfbc, inp.fof2, inp.month, inp.ssn).map_err(|e| e.to_string())?;
     let cof = cofion(&set);
     let grounds = ground_constants(&set, &geo.points, &mags);
     let _ = alatd(&geo.points);
     let clats: Vec<R> = geo.points.iter().map(|p| p.lat).collect();
     let glats: Vec<R> = geo.points.iter().map(|p| p.gmlat).collect();
-    let psc = [1.0, 1.0, 1.0, if inp.sporadic_e { 1.0 } else { 0.0 }];
+    let psc = inp.psc;
     let nang = sang(geo.gcd_km, 0.1);
     let ants = build_antennas(itshfbc, inp)?;
     let deck = DeckParams {
