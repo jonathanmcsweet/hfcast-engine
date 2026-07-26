@@ -6,6 +6,12 @@
 //! engine's `3.1415926`, not Rust's — the difference is real at f32 branch
 //! thresholds.
 
+// These constants must be the Fortran DATA values, digit for digit — using
+// Rust's own PI or "correcting" the precision would make this a different
+// model at f32 branch thresholds. The lints below exist to catch exactly
+// what this file does on purpose.
+#![allow(clippy::approx_constant, clippy::excessive_precision)]
+
 use std::path::{Path, PathBuf};
 
 /// The working precision of the engine, matching Fortran 4-byte REAL.
