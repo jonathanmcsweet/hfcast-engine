@@ -42,13 +42,13 @@
 //! | `magvar.for` magnetic field at control points | [`magnetic`] | yes |
 //! | `redmap.for` coefficient loading | [`coefficients`] | yes |
 //! | `geotim/virtim/versy/noisy/ef1var/timvar/f2var/esind` layer parameters | [`ionosphere`] | yes |
-//! | `esreg/esmod` sporadic E losses | — | with the systems model |
+//! | `esreg/esmod` sporadic E losses | [`modes`] | yes |
 //! | `ionset/lecden/gethp/f2dis/curmuf` MUF | [`muf`] | yes |
 //! | `sang/selmod/genion/fobby/alosfv` ionogram tables | [`ionogram`] | yes |
 //! | `syssy/xlin/prbmuf/sigdis` signal distribution | [`sigdis`] | yes |
-//! | `luffy` + relatives, systems model | — | not yet |
+//! | `luffy` mode loop, long path, smoothing | [`modes`] | yes |
 //! | `anois1/genfam/genois` noise | [`noise`] | yes |
-//! | `setluf/outlin` output fields | — | not yet |
+//! | `setluf/outlin` output fields | [`modes`] `setluf` | line output open |
 
 pub mod coefficients;
 pub mod con;
@@ -56,6 +56,7 @@ pub mod geometry;
 pub mod ionogram;
 pub mod ionosphere;
 pub mod magnetic;
+pub mod modes;
 pub mod muf;
 pub mod noise;
 pub mod sigdis;

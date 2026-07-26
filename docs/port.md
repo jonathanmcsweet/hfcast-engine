@@ -58,36 +58,38 @@ geometry trace only matches this way.
 | coefficient loading                   | `redmap.for`                                                      | `engine::coefficients` | 819k elements, worst at print precision  |
 | map evaluation, layer parameters      | `geotim`, `virtim`, `versy`, `noisy`, `ef1var`, `timvar`, `f2var` | `engine::ionosphere`   | 733k AB values, 9.8k point-hours         |
 | sporadic E parameters                 | `esind`                                                           | `engine::ionosphere`   | 9.8k point-hours                         |
-| sporadic E losses                     | `esreg`, `esmod`                                                  | —                      | (with the systems model)                 |
+| sporadic E losses                     | `esreg`, `esmod`                                                  | `engine::modes`        | with the mode loop below                 |
 | MUF                                   | `ionset`, `lecden`, `gethp`, `f2dis`, `curmuf`                    | `engine::muf`          | 2.3k hours, 20 fields + profiles         |
 | ionogram, reflectrix, deviative loss  | `sang`, `selmod`, `genion`, `fobby`, `alosfv`                     | `engine::ionogram`     | 4.6k area calls incl. exact reflectrix   |
 | signal distribution, absorption       | `syssy`, `xlin`, `prbmuf`, `sigdis`                               | `engine::sigdis`       | 3.2k calls, 20 fields                    |
 | noise                                 | `anois1`, `genfam`, `genois`                                      | `engine::noise`        | 70k calls, 13 fields                     |
 | ground constants, path latitude       | `geom.for` land-mass lookup                                       | `engine::ionosphere`   | identical sea/land at every point        |
-| systems model (modes, losses, signal) | `setlng`, `luffy` and relatives                                   | —                      |                                          |
-| output fields                         | `setluf`, `outlin`                                                | —                      |                                          |
+| mode loop (raysets, losses, Es modes) | `penang`, `findf`, `fdist`, `inmuf`, `regmod`, `esmod`, `esreg`   | `engine::modes`        | 46k reflectrix, 49k hop, 32k mode dumps  |
+| long-path model                       | `gmloss`, `settxr`, `seltxr`, `lngpat` and helpers                | `engine::modes`        | 14.4k two-end loss tables, exact rows    |
+| reliability, per-frequency outputs    | `relbil`, `serprb`, `mpath`, `setlng`, the smoothing blend        | `engine::modes`        | 31.7k slots + 8.6k smoothed, 24 fields   |
+| output fields                         | `setluf`, `outlin`                                                | `setluf` ported        | unit tests; line output open             |
 
 Working order is data flow, top to bottom. Each stage lands with its trace
 instrumentation, its `porttest` comparison, and unit tests.
 
-## Mode-loop notes (read, not yet ported)
+## Mode-loop notes (`engine::modes`)
 
-The short-path per-frequency chain inside `LUFFY` is: `PENANG`
-(penetration angles per layer) → `FINDF` (reflectrix search building the
-`/REFLX/` tables with cusp inserts, skip and maximum distances, plus a
-Martyn correction per entry) → per hop `FDIST` (up to six raysets by
-distance interpolation) → `INMUF` (inserts over-the-MUF or
-zero-distance modes; temporarily rescales the layer MUF distributions
-for higher hop counts, restoring them after) → `REGMOD` (per-mode
-losses: free space, D-E absorption with the collision-frequency term,
-deviative loss, Es obscuration via `PRBMUF`, ground loss between hops
-via `GAIN`'s Fresnel branch using the per-point ground constants,
-over-the-MUF loss, the 2006 low-MUFday extra loss; produces `/ZON/`) →
-`ESMOD`/`ESREG` (sporadic-E modes) → `ALLMODES` (accumulates into
-`/allMODE/`, up to 20 modes) → `GENOIS` → `RELBIL` (combined
-reliability) → `SERPRB`, `MPATH`, `OUTALL`. Inputs still to port:
-ground constants from `geom.for` (`NOISY` plane 7 land-mass map: sea
-5/80, land 0.001/4) and `PWRDB` (transmit power in dBW per antenna,
-30 dBW default). The long-path chain (`GMLOSS`, `SELTXR`, `SETTXR`,
-`LNGPAT`) and the 7000-10000 km smoothing blend at the end of `LUFFY`
-complete the stage.
+The `LUFFY` frequency loop is one Rust module. The short-path chain per
+frequency: `penang` (penetration angles) → `findf` (the reflectrix with
+cusp inserts and the Martyn spherical correction) → per hop `fdist` (up
+to six raysets) → `inmuf` (over-the-MUF and zero-distance inserts, with
+the temporary layer-MUF rescale) → `regmod` (per-mode losses into the
+`/ZON/` slots) → `esmod` (two sporadic-E hops) → `esreg` (slot presets
+only — its mixed-mode body is dead code behind an unconditional
+`RETURN`) → `allmodes` accumulation → `relbil`/`serprb`/`mpath`. The
+long-path chain is `findf` at both ends → `gmloss`/`settxr` → `seltxr`
+→ `lngpat` (with `convh`, `gettop`, `tabs`, `babs`). Between 7000 and
+10000 km both passes run and `luffy_smooth` applies the VOA-memo blend.
+
+Fortran facts the module preserves: `/SON/`, `/REFLX/`, `/ZON/` and
+`/allMODE/` persist across hours and are read stale (a frequency with
+no modes keeps the previous values — `ModeLoopState` carries them per
+case); `OUTBOD` overwrites the MUF slot with "NA" sentinels above
+30 MHz after each hour's output; antennas are the isotrope so `GAIN`
+reduces to constants except its Fresnel ground-reflection branch; and
+`PWRDB` is the single deck power in dBW.
