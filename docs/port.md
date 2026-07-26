@@ -63,7 +63,7 @@ geometry trace only matches this way.
 | ionogram, reflectrix, deviative loss  | `sang`, `selmod`, `genion`, `fobby`, `alosfv`                     | `engine::ionogram`     | 4.6k area calls incl. exact reflectrix   |
 | signal distribution, absorption       | `syssy`, `xlin`, `prbmuf`, `sigdis`                               | `engine::sigdis`       | 3.2k calls, 20 fields                    |
 | noise                                 | `anois1`, `genfam`, `genois`                                      | `engine::noise`        | 70k calls, 13 fields                     |
-| ground constants per point            | `geom.for` land-mass lookup                                       | —                      | (missed by the geometry stage)           |
+| ground constants, path latitude       | `geom.for` land-mass lookup                                       | `engine::ionosphere`   | identical sea/land at every point        |
 | systems model (modes, losses, signal) | `setlng`, `luffy` and relatives                                   | —                      |                                          |
 | output fields                         | `setluf`, `outlin`                                                | —                      |                                          |
 
