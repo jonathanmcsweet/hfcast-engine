@@ -21,7 +21,10 @@ to derive that criterion from measurement.
 | `src/compare.rs`          | Measures how far two listings differ, field by field      |
 | `src/itu.rs`              | Drives the ITU-R P.533 reference implementation           |
 | `src/bin/measure.rs`      | The compiler-variant experiment below                     |
+| `src/wspr.rs`             | Reads aggregated WSPR reception reports                   |
 | `src/bin/engines.rs`      | Compares VOACAP against ITU-R P.533                       |
+| `src/bin/validate.rs`     | Compares both engines against measured radio              |
+| `tools/fetch-wspr.sh`     | Downloads a month of WSPR reports, pre-aggregated         |
 | `tools/build-variants.sh` | Builds `voacapl` at several optimisation levels           |
 
 None of this is throwaway. The same parser and comparator that measure
@@ -151,6 +154,80 @@ excluded, with the exclusions counted in the report.
 comparison rests on: that hour `n` means the same thing to both engines (it
 does; offset 0 gives the smallest MUF spread), and what the mode vocabularies
 and value ranges actually look like.
+
+## Against reality
+
+The two experiments above compare code with code. This one compares both
+engines with measured radio.
+
+```sh
+tools/fetch-wspr.sh 2025-06                 # aggregated reception reports
+cargo run --release --bin validate > docs/validation.md
+```
+
+WSPR is the only large public source that records both ends of the experiment:
+every report carries the transmit power, the measured signal-to-noise ratio,
+both locations and a timestamp. June 2025 holds about 162 million of them.
+
+### Method
+
+A path is a fixed pair of stations on a fixed band, which holds the two unknown
+quantities — their antennas and the receiver's local noise — constant. One
+offset per path is fitted and removed, so what is measured is how well a model
+tracks the **daily shape** of a circuit, not its absolute level. Absolute level
+cannot be tested without knowing the antennas.
+
+A flat baseline runs alongside: predict every hour as that path's own median.
+It contains no physics, and an engine that cannot beat it is adding nothing.
+
+### What it found
+
+Full output in [docs/validation.md](docs/validation.md). 150 paths, 3,481
+path-hours.
+
+| predictor     | median error | correlation | slope | error after gain fit |
+| ------------- | -----------: | ----------: | ----: | -------------------: |
+| VOACAP        |       4.0 dB |       +0.76 | +0.22 |               1.5 dB |
+| ITU-R P.533   |       3.3 dB |       +0.58 | +0.32 |               2.0 dB |
+| flat baseline |       2.5 dB |           — |     — |                    — |
+
+Read the columns together, because separately they mislead:
+
+- **Both engines lose to a flat line on raw error.** Taken alone that reads as
+  the models being useless.
+- **But VOACAP correlates +0.76 with the truth.** It puts the peaks and troughs
+  in the right places.
+- **The slope explains the contradiction.** At +0.22, the real daily swing is
+  about a fifth of what VOACAP predicts. It gets the timing right and the
+  amplitude badly wrong, and the raw error is dominated by that overshoot.
+- **Scaled down, VOACAP is the best predictor here.** 1.5 dB residual against
+  the baseline's 2.5 dB.
+
+So the useful summary is that both models exaggerate how much a circuit varies
+through the day, VOACAP more than P.533, while VOACAP tracks _when_ things
+happen distinctly better.
+
+### Is that real, or an artefact?
+
+WSPR cannot report what it fails to decode, so weak hours read higher than they
+were or vanish entirely, which would flatten the measured swing and produce a
+low slope even from a perfect model. The report therefore repeats everything on
+the 27 paths whose weakest hour never drops below -15 dB, comfortably clear of
+the roughly -29 dB decode floor. The effect gets _stronger_ there, not weaker:
+slope +0.16, residual 1.3 dB. Censoring is not what is causing it.
+
+That does not make the models wrong by a factor of five. Other explanations
+remain open and are not tested here — the decoder's own signal-to-noise
+estimate compresses at both ends of its range, and a diurnal swing in either
+engine's noise model would inflate predicted variation directly.
+
+### Limits
+
+One month, one solar level (smoothed sunspot number 125), and a receiver
+population concentrated in North America and Europe. Both engines are run at a
+fixed one watt, because signal-to-noise is linear in transmit power and the
+P.533 reference implementation rejects anything below a watt outright
+(`RTN_ERRTXPOWER`), which excludes most WSPR beacons.
 
 ## Concurrency, and a bug this turned up
 

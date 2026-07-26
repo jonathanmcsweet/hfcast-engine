@@ -22,3 +22,4 @@ pub mod itu;
 pub mod listing;
 pub mod runner;
 pub mod sweep;
+pub mod wspr;

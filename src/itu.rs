@@ -75,7 +75,12 @@ fn dbkw(watts: f64) -> f64 {
 ///
 /// The area-coverage corners are all set to the receive point because this is a
 /// point-to-point run; the program still requires them.
-pub fn write_input(case: &DeckCase, to: &Path, data_dir: &Path) -> io::Result<()> {
+pub fn write_input(
+    case: &DeckCase,
+    to: &Path,
+    data_dir: &Path,
+    bandwidth_hz: f64,
+) -> io::Result<()> {
     let hours: Vec<String> = (1..=24).map(|h| h.to_string()).collect();
     let freqs: Vec<String> = case.freqs_mhz.iter().map(|f| format!("{f:.3}")).collect();
 
@@ -99,7 +104,7 @@ pub fn write_input(case: &DeckCase, to: &Path, data_dir: &Path) -> io::Result<()
             "Path.SSN {ssn}\n",
             "Path.frequency {freqs}\n",
             "Path.txpower {txpower:.4}\n",
-            "Path.BW 3000.0\n",
+            "Path.BW {bandwidth:.1}\n",
             "Path.SNRr {snr:.1}\n",
             "Path.SNRXXp 90\n",
             "Path.ManMadeNoise \"{noise}\"\n",
@@ -130,6 +135,7 @@ pub fn write_input(case: &DeckCase, to: &Path, data_dir: &Path) -> io::Result<()
         ssn = case.ssn.round() as i64,
         freqs = freqs.join(","),
         txpower = dbkw(case.watts),
+        bandwidth = bandwidth_hz,
         snr = case.required_snr_db,
         noise = noise_category(case.noise_dbw),
         data = data_dir.display(),
@@ -142,10 +148,15 @@ pub fn write_input(case: &DeckCase, to: &Path, data_dir: &Path) -> io::Result<()
 ///
 /// The program is built as a wrapper around two shared libraries that are not
 /// installed, so their directories are put on the loader path for the child.
-pub fn run_case(paths: &ItuPaths, case: &DeckCase, work: &Path) -> Result<String, ItuError> {
+pub fn run_case(
+    paths: &ItuPaths,
+    case: &DeckCase,
+    work: &Path,
+    bandwidth_hz: f64,
+) -> Result<String, ItuError> {
     let input = work.join("case.in");
     let output = work.join("case.out");
-    write_input(case, &input, &paths.data)?;
+    write_input(case, &input, &paths.data, bandwidth_hz)?;
     // A stale report from an earlier case would otherwise be read back if the
     // program failed to write a new one.
     let _ = fs::remove_file(&output);
@@ -326,7 +337,7 @@ mod tests {
         let dir = std::env::temp_dir().join("propcore-itu-input-test");
         fs::create_dir_all(&dir).expect("temp dir");
         let file = dir.join("case.in");
-        write_input(&a_case(), &file, Path::new("/data/")).expect("write");
+        write_input(&a_case(), &file, Path::new("/data/"), 2500.0).expect("write");
         let text = fs::read_to_string(&file).expect("read back");
 
         assert!(text

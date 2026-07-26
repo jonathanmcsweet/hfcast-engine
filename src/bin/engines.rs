@@ -192,7 +192,7 @@ fn main() -> ExitCode {
         let work = scratch_dir(&format!("propcore-itu-{index}"));
         let itu = match fs::create_dir_all(&work)
             .map_err(|e| e.to_string())
-            .and_then(|()| run_case(&paths, case, &work).map_err(|e| e.to_string()))
+            .and_then(|()| run_case(&paths, case, &work, 3000.0).map_err(|e| e.to_string()))
         {
             Ok(text) => Some(parse_report(&text)),
             Err(e) => {
