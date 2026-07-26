@@ -15,7 +15,7 @@ use std::path::Path;
 
 use crate::deck::DeckCase;
 
-use super::area::{pwrcut, xlimit6, Grid};
+use super::area::{pwrcut, xlimit6, Grid, Projection};
 use super::coefficients::{redmap, CoefficientSet, FoF2Model};
 use super::con::{MagneticPole, D2R, R, R2D};
 use super::geometry::{path_geometry, PathGeometry};
@@ -945,7 +945,12 @@ pub struct AreaPoint {
     pub ix: usize,
     pub iy: usize,
     pub lat: R,
+    /// The receiver's longitude, as the prediction used it: folded into
+    /// 0 to 360, which is how `GRIDXY` returns it.
     pub lon: R,
+    /// The longitude `OUTAREA` prints, which under the latitude and
+    /// longitude projection is the same meridian unfolded past zero.
+    pub print_lon: R,
     /// The 24 six-character fields, in `OUTAREA`'s order.
     pub fields: Vec<String>,
 }
@@ -958,10 +963,34 @@ impl AreaPoint {
             self.ix,
             self.iy,
             f_fixed(self.lat, 10, 4),
-            f_fixed(self.lon, 10, 4),
+            f_fixed(self.print_lon, 10, 4),
             self.fields.concat()
         )
     }
+}
+
+/// `OUTAREA`'s longitude for one row.
+///
+/// `GRIDXY` folds every longitude into 0 to 360, but a grid described in
+/// degrees with a negative western edge reads better unfolded, so under
+/// the latitude and longitude projection the print step subtracts 360
+/// again — from the first column, and from any value past 180. It is a
+/// rendering adjustment and not a different mesh: the prediction used the
+/// folded value.
+///
+/// The pole is the case that needs the last line. `HFAREA` forces the
+/// longitude to zero within a tenth of a degree of either pole, so the
+/// first column there would print -360; the source answers zero, with a
+/// comment saying the pole probably caused it.
+fn print_longitude(grid: &Grid, ix: usize, lon: R) -> R {
+    let mut out = lon;
+    if grid.projection != Projection::GreatCircle && grid.xmin < 0.0 && (ix == 1 || out > 180.0) {
+        out -= 360.0;
+    }
+    if out < -359.0 {
+        out = 0.0;
+    }
+    out
 }
 
 /// Fortran fixed-point editing as the reference's own build renders it.
@@ -1040,7 +1069,7 @@ pub fn run_area(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<AreaPoint>, Str
             s.ants.btrd = s.geo.btr * R2D;
             s.ants.brtd = s.geo.brt * R2D;
             let h = hour_body(&s, area.hour, &mut lp, &mut fsecv);
-            out.push(area_point(ix, iy, rlat, rlon, &h, nf));
+            out.push(area_point(&area.grid, ix, iy, rlat, rlon, &h, nf));
         }
     }
     Ok(out)
@@ -1116,7 +1145,16 @@ fn build_area_antennas(
 /// overwriting slot 1, so slot 1 holds the maximum by the time it is
 /// printed — and the power cut, which reads the same slot, sees the
 /// maximised median against unmaximised decile deviations.
-fn area_point(ix: usize, iy: usize, lat: R, lon: R, h: &HourPrediction, nf: usize) -> AreaPoint {
+fn area_point(
+    grid: &Grid,
+    ix: usize,
+    iy: usize,
+    lat: R,
+    lon: R,
+    h: &HourPrediction,
+    nf: usize,
+) -> AreaPoint {
+    let print_lon = print_longitude(grid, ix, lon);
     let s0 = &h.son[0];
     let (mut dbu, mut dbw, mut sndb) = (s0.dbu, s0.dbw, s0.sndb);
     let (mut reliab, mut sprob, mut snxx) = (s0.reliab, s0.sprob, s0.snxx);
@@ -1151,6 +1189,7 @@ fn area_point(ix: usize, iy: usize, lat: R, lon: R, h: &HourPrediction, nf: usiz
             iy,
             lat,
             lon,
+            print_lon,
             fields: vec![
                 f_fixed(h.frel[11], 6, 2),
                 f6(dbu, 1),
@@ -1198,6 +1237,7 @@ fn area_point(ix: usize, iy: usize, lat: R, lon: R, h: &HourPrediction, nf: usiz
         iy,
         lat,
         lon,
+        print_lon,
         fields,
     }
 }

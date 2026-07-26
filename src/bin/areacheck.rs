@@ -224,10 +224,62 @@ fn cases() -> Vec<Case> {
             tx: ant("samples", "sample.02", 0.0, 45.0),
             rx: ant("samples", "sample.06", 0.0, 200.0),
         },
-        // The IPROJ = 8 projection is left out until its printed
-        // longitudes are understood: the reference prints them
-        // unfolded, negative, where `GRIDXY` folds every longitude into
-        // 0 to 360 before returning. See docs/roadmap.md.
+        // The latitude and longitude projection, whose rectangle is in
+        // degrees and whose printed longitudes come back unfolded.
+        Case {
+            name: "latlon",
+            why: "the degree mesh with a negative western edge, reaching the pole",
+            grid: Grid {
+                projection: Projection::LatLon,
+                plat: 40.00,
+                plon: 10.00,
+                xmin: -20.0,
+                xmax: 20.0,
+                ymin: 50.0,
+                ymax: 90.0,
+                nx: 5,
+                ny: 5,
+            },
+            freqs: &[FREQ],
+            tx: TX_ISO,
+            rx: RX_ISO,
+        },
+        Case {
+            name: "latlonwest",
+            why: "a western edge past -180, where the first column alone is unfolded",
+            grid: Grid {
+                projection: Projection::LatLon,
+                plat: 40.00,
+                plon: 10.00,
+                xmin: -200.0,
+                xmax: -160.0,
+                ymin: 20.0,
+                ymax: 50.0,
+                nx: 5,
+                ny: 5,
+            },
+            freqs: &[FREQ],
+            tx: TX_ISO,
+            rx: RX_ISO,
+        },
+        Case {
+            name: "latlon180",
+            why: "the degree mesh past 180, where the edge is not negative and nothing is unfolded",
+            grid: Grid {
+                projection: Projection::LatLon,
+                plat: 40.00,
+                plon: 10.00,
+                xmin: 170.0,
+                xmax: 200.0,
+                ymin: 20.0,
+                ymax: 50.0,
+                nx: 5,
+                ny: 5,
+            },
+            freqs: &[FREQ],
+            tx: TX_ISO,
+            rx: RX_ISO,
+        },
     ]
 }
 
@@ -345,7 +397,11 @@ fn main() -> ExitCode {
             }
             // The coordinates print through `f10.4`, so they are
             // compared as the file's own text.
-            let coords = format!("{}{}", f_fixed(port.lat, 10, 4), f_fixed(port.lon, 10, 4));
+            let coords = format!(
+                "{}{}",
+                f_fixed(port.lat, 10, 4),
+                f_fixed(port.print_lon, 10, 4)
+            );
             out.cells += 2;
             if coords != reference.coords {
                 out.diffs.push(format!(

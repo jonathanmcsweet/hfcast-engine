@@ -589,8 +589,18 @@ which differs in its last digits. And this driver compares the path
 length against `GCDLNG` with `.GT.` where the point-to-point driver uses
 `.GE.`.
 
+The printed longitude is not always the one the prediction used. Under the
+latitude and longitude projection (`IPROJ = 8`), a grid whose western edge
+is negative reads better unfolded, so `OUTAREA` subtracts 360 again from
+the first column and from any value past 180 — `GRIDXY` having folded
+every longitude into 0 to 360 on the way in. It is a rendering
+adjustment, not a different mesh. The pole needs the rule after it: the
+driver forces the longitude to zero within a tenth of a degree of either
+pole, so the first column there would print -360, and the source answers
+zero instead.
+
 `areacheck` compares the reference's rows as text, field by field, which
-is stricter than parsing them back: 13,666 printed cells over 14 grids are
+is stricter than parsing them back: 15,616 printed cells over 17 grids are
 identical.
 
 ## The area antenna table (`area_table`, `area_gain_lookup`)
