@@ -63,8 +63,31 @@ geometry trace only matches this way.
 | ionogram, reflectrix, deviative loss  | `sang`, `selmod`, `genion`, `fobby`, `alosfv`                     | `engine::ionogram`     | 4.6k area calls incl. exact reflectrix   |
 | signal distribution, absorption       | `syssy`, `xlin`, `prbmuf`, `sigdis`                               | `engine::sigdis`       | 3.2k calls, 20 fields                    |
 | noise                                 | `anois1`, `genfam`, `genois`                                      | `engine::noise`        | 70k calls, 13 fields                     |
+| ground constants per point            | `geom.for` land-mass lookup                                       | —                      | (missed by the geometry stage)           |
 | systems model (modes, losses, signal) | `setlng`, `luffy` and relatives                                   | —                      |                                          |
 | output fields                         | `setluf`, `outlin`                                                | —                      |                                          |
 
 Working order is data flow, top to bottom. Each stage lands with its trace
 instrumentation, its `porttest` comparison, and unit tests.
+
+## Mode-loop notes (read, not yet ported)
+
+The short-path per-frequency chain inside `LUFFY` is: `PENANG`
+(penetration angles per layer) → `FINDF` (reflectrix search building the
+`/REFLX/` tables with cusp inserts, skip and maximum distances, plus a
+Martyn correction per entry) → per hop `FDIST` (up to six raysets by
+distance interpolation) → `INMUF` (inserts over-the-MUF or
+zero-distance modes; temporarily rescales the layer MUF distributions
+for higher hop counts, restoring them after) → `REGMOD` (per-mode
+losses: free space, D-E absorption with the collision-frequency term,
+deviative loss, Es obscuration via `PRBMUF`, ground loss between hops
+via `GAIN`'s Fresnel branch using the per-point ground constants,
+over-the-MUF loss, the 2006 low-MUFday extra loss; produces `/ZON/`) →
+`ESMOD`/`ESREG` (sporadic-E modes) → `ALLMODES` (accumulates into
+`/allMODE/`, up to 20 modes) → `GENOIS` → `RELBIL` (combined
+reliability) → `SERPRB`, `MPATH`, `OUTALL`. Inputs still to port:
+ground constants from `geom.for` (`NOISY` plane 7 land-mass map: sea
+5/80, land 0.001/4) and `PWRDB` (transmit power in dBW per antenna,
+30 dBW default). The long-path chain (`GMLOSS`, `SELTXR`, `SETTXR`,
+`LNGPAT`) and the 7000-10000 km smoothing blend at the end of `LUFFY`
+complete the stage.
