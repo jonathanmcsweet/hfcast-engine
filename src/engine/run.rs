@@ -16,7 +16,7 @@ use std::path::Path;
 use crate::deck::DeckCase;
 
 use super::coefficients::{redmap, CoefficientSet, FoF2Model};
-use super::con::{MagneticPole, D2R, R};
+use super::con::{MagneticPole, D2R, R, R2D};
 use super::geometry::path_geometry;
 use super::ionogram::{alosfv, fobby, genion, sang, selmod};
 use super::ionosphere::{
@@ -174,6 +174,106 @@ fn build_antennas(itshfbc: &Path, inp: &RunInputs) -> Result<AntennaSet, String>
     .map_err(|e| e.to_string())?;
     ants.install(2, rx.min_freq, rx.max_freq, rx_table, 0.0);
     Ok(ants)
+}
+
+/// One line of `OUTPAR`: the ionospheric parameters at one control
+/// point for one hour. Card method 1 (`ITRUN = 1`) prints these and
+/// computes nothing else, so they are the layer parameters as
+/// `TIMVAR`, `F2VAR` and `ESIND` leave them, before `IONSET` reshapes
+/// the profile.
+#[derive(Debug, Clone, Copy)]
+pub struct ParRow {
+    /// Geographic latitude and longitude of the point, degrees.
+    pub lat: R,
+    pub lon: R,
+    /// Local mean time at the point and the hour's UT.
+    pub lmt: R,
+    pub gmt: R,
+    /// E critical frequency.
+    pub fe: R,
+    /// F1 critical frequency, semithickness and height.
+    pub f1: R,
+    pub y1: R,
+    pub h1: R,
+    /// Half the gyrofrequency.
+    pub fh2: R,
+    /// F2 critical frequency, semithickness and height.
+    pub f2z: R,
+    pub y2: R,
+    pub h2: R,
+    /// Sporadic E: the lower decile, median and upper decile.
+    pub es: R,
+    pub med: R,
+    pub esu: R,
+    /// M(3000)F2, the virtual height at 0.834 of the F2 critical
+    /// frequency, and the F2 height-to-semithickness ratio.
+    pub m3000: R,
+    pub hpf2: R,
+    pub rat: R,
+    /// Sun zenith angle, and the maximum at which an F1 layer exists.
+    pub zen: R,
+    pub zmax: R,
+    /// Geomagnetic latitude, degrees.
+    pub magl: R,
+}
+
+/// Runs the ionospheric parameters alone for all 24 hours: `ITRUN = 1`,
+/// card method 1. Returns one row per control point per hour, in the
+/// order `OUTPAR` prints them.
+pub fn run_par(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<ParRow>, String> {
+    let pole = MagneticPole::for_tree(itshfbc);
+    let geo = path_geometry(
+        inp.from_lat_deg as R,
+        inp.from_lon_deg as R,
+        inp.to_lat_deg as R,
+        inp.to_lon_deg as R,
+        false,
+        pole,
+    );
+    let mags: Vec<_> = geo.points.iter().map(|p| magvar(p.lat, p.lon)).collect();
+    let set: CoefficientSet =
+        redmap(itshfbc, FoF2Model::Ccir, inp.month, inp.ssn).map_err(|e| e.to_string())?;
+    let cof = cofion(&set);
+    let grounds = ground_constants(&set, &geo.points, &mags);
+    let _ = alatd(&geo.points);
+    let psc = [1.0, 1.0, 1.0, if inp.sporadic_e { 1.0 } else { 0.0 }];
+
+    let mut out = Vec::with_capacity(24 * geo.points.len());
+    for jt in 1..=24i32 {
+        let gmt = jt as R;
+        let ab = virtim(&cof, &set.ikim, gmt);
+        let params = layer_parameters(
+            &set, &ab, &geo.points, &mags, inp.month, inp.ssn, gmt, &psc,
+        );
+        let es = esind(&set, &ab, &geo.points, &mags, &psc);
+        let geog = Geog::from_points(&params, &mags, &grounds);
+        for (k, p) in params.iter().enumerate() {
+            out.push(ParRow {
+                lat: geo.points[k].lat * R2D,
+                lon: geo.points[k].lon * R2D,
+                lmt: p.clck,
+                gmt,
+                fe: p.fi[0],
+                f1: p.fi[1],
+                y1: p.yi[1],
+                h1: p.hi[1],
+                fh2: geog.gyz[k] / 2.0,
+                f2z: p.fi[2],
+                y2: p.yi[2],
+                h2: p.hi[2],
+                es: es[k].fs[0],
+                med: es[k].fs[1],
+                esu: es[k].fs[2],
+                m3000: p.f2m3,
+                hpf2: p.hpf2,
+                rat: p.rat,
+                zen: p.zenang,
+                zmax: p.zenmax,
+                magl: geo.points[k].gmlat * R2D,
+            });
+        }
+    }
+    Ok(out)
 }
 
 /// One hour of a MUF-only run (`ITRUN` 3 and 4, card methods 3 to 11):

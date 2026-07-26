@@ -248,6 +248,21 @@ computes one, so the cell reads zero either way.
 `fuzz --method M` runs the corpus with a different `METHOD` card.
 Methods 16 to 22 are identical to the reference over 60 cases each.
 
+## Ionospheric parameters (`run_par`)
+
+Card method 1 (`ITRUN = 1`) prints `OUTPAR`'s table and computes
+nothing else: one line per control point per hour carrying the E, F1
+and F2 critical frequencies, semithicknesses and heights, half the
+gyrofrequency, the three sporadic-E deciles, M(3000)F2, the virtual
+height at 0.834 of the F2 critical frequency, the height-to-thickness
+ratio, the sun zenith angle and the maximum zenith angle at which an
+F1 layer exists, and the geomagnetic latitude. They are the layer
+parameters as `TIMVAR`, `F2VAR` and `ESIND` leave them — `IONSET` does
+not run on this path, so the profile is not yet reshaped.
+
+`mufcheck --method 1` compares all 21 printed fields: 48 cases,
+every cell identical.
+
 ## The MUF-only methods (`run_muf`)
 
 Card methods 3 to 11 stop at the hour's MUFs and run no systems model.
@@ -271,7 +286,10 @@ columns. 48 cases each, every cell identical.
 Both tables are read by column rather than by splitting on spaces: a
 MUF of 1000.00, which is what the sporadic-E slot holds when no
 control point has a sporadic-E layer, fills its `F7.2` field
-completely and leaves no space before the next one.
+completely and leaves no space before the next one. The comparisons
+round half to even, which is what the Fortran runtime's formatted
+output does: a value landing exactly on a printing boundary, such as
+327.25 in an `F7.1` field, prints as 327.2, not 327.3.
 
 ## The LUF passes (`run_luf`)
 

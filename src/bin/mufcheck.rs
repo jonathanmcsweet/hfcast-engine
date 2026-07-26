@@ -19,10 +19,14 @@
 use std::process::ExitCode;
 
 use propcore::deck::build_deck;
-use propcore::engine::run::{run_muf, RunInputs};
+use propcore::engine::run::{run_muf, run_par, RunInputs};
 use propcore::fuzz::fuzz_cases;
 use propcore::runner::{map_limit, run_deck, variant_bin, IsolatedRoot};
 
+/// Comparisons round half to even, the way the Fortran runtime's
+/// formatted output does: a value that lands exactly on a printing
+/// boundary, such as 327.25 in an `F7.1` field, prints as 327.2.
+///
 /// One hour: GMT, LMT, then seven fields for each of four layers.
 #[derive(Debug, Clone, Copy)]
 struct Row {
@@ -48,7 +52,8 @@ fn main() -> ExitCode {
     let jobs = number("--jobs", 4).max(1) as usize;
     // Method 7 prints `OUTLAY`'s per-layer table; method 3 computes
     // the same hour by the nomogram method and prints `OUTMUF`'s
-    // four-column one.
+    // four-column one; method 1 prints `OUTPAR`'s ionospheric
+    // parameters, one line per control point per hour.
     let method = number("--method", 7) as u32;
 
     let reference = variant_bin("O2");
@@ -104,6 +109,58 @@ fn main() -> ExitCode {
                 return out;
             }
         };
+        let inputs = RunInputs::from(case);
+        if method == 1 {
+            let want = parse_outpar(&text);
+            let got = match run_par(root.path(), &inputs) {
+                Ok(r) => r,
+                Err(e) => {
+                    out.broken = Some(format!("port: {e}"));
+                    return out;
+                }
+            };
+            if want.is_empty() || want.len() != got.len() {
+                out.broken = Some(format!("parsed {} rows, port has {}", want.len(), got.len()));
+                return out;
+            }
+            for (row, p) in want.iter().zip(&got) {
+                // The printed fields, with the decimals each carries.
+                let fields: [(&str, f32, f64); 21] = [
+                    ("LAT", p.lat.abs(), 10.0),
+                    ("LONG", p.lon.abs(), 10.0),
+                    ("LMT", p.lmt, 10.0),
+                    ("UT", p.gmt, 10.0),
+                    ("E", p.fe, 100.0),
+                    ("F1", p.f1, 10.0),
+                    ("Y1", p.y1, 10.0),
+                    ("H1", p.h1, 10.0),
+                    ("FH/2", p.fh2, 10.0),
+                    ("F2Z", p.f2z, 10.0),
+                    ("Y2", p.y2, 10.0),
+                    ("H2", p.h2, 10.0),
+                    ("ES", p.es, 10.0),
+                    ("MED", p.med, 10.0),
+                    ("HI", p.esu, 10.0),
+                    ("M3000", p.m3000, 100.0),
+                    ("HPF2", p.hpf2, 10.0),
+                    ("RAT", p.rat, 10.0),
+                    ("ZEN", p.zen, 10.0),
+                    ("ZMAX", p.zmax, 10.0),
+                    ("MAGL", p.magl.abs(), 10.0),
+                ];
+                for (i, (name, got, decimals)) in fields.into_iter().enumerate() {
+                    out.cells += 1;
+                    let want = row[i];
+                    if (want * decimals).round_ties_even() != (f64::from(got) * decimals).round_ties_even() {
+                        out.diffs.push(format!(
+                            "UT {} point {}: {name} reference {want}, port {got}",
+                            row[3], row[0]
+                        ));
+                    }
+                }
+            }
+            return out;
+        }
         let expected = if method == 7 {
             parse_outlay(&text)
         } else {
@@ -113,7 +170,6 @@ fn main() -> ExitCode {
             out.broken = Some(format!("parsed {} rows, wanted 24", expected.len()));
             return out;
         }
-        let inputs = RunInputs::from(case);
         let hours = match run_muf(root.path(), &inputs) {
             Ok(h) => h,
             Err(e) => {
@@ -125,7 +181,7 @@ fn main() -> ExitCode {
             let mut check = |name: &str, want: f64, got: f32, decimals: f64| {
                 let got = f64::from(got);
                 out.cells += 1;
-                if (want * decimals).round() != (got * decimals).round() {
+                if (want * decimals).round_ties_even() != (got * decimals).round_ties_even() {
                     out.diffs
                         .push(format!("hour {} {}: reference {}, port {}", row.gmt, name, want, got));
                 }
@@ -200,6 +256,55 @@ fn field(line: &str, from: usize, to: usize) -> Option<f64> {
         return None;
     }
     line[from..to].trim().parse().ok()
+}
+
+/// Pulls `OUTPAR`'s lines out of a method-1 listing.
+///
+/// The line is `2(1X,F5.1,A1),2F6.1,F6.2,2F6.1,F7.1,3F6.1,F7.1,3F5.1,
+/// F6.2,2(F7.1,F6.1),F6.1,A1` — 21 numbers, read by column. The two
+/// hemisphere letters and the sign they carry are dropped: the check
+/// compares magnitudes, which is what the line prints.
+fn parse_outpar(text: &str) -> Vec<[f64; 21]> {
+    // (start, end) of each printed field.
+    const COLS: [(usize, usize); 21] = [
+        (1, 6),
+        (8, 13),
+        (14, 20),
+        (20, 26),
+        (26, 32),
+        (32, 38),
+        (38, 44),
+        (44, 51),
+        (51, 57),
+        (57, 63),
+        (63, 69),
+        (69, 76),
+        (76, 81),
+        (81, 86),
+        (86, 91),
+        (91, 97),
+        (97, 104),
+        (104, 110),
+        (110, 117),
+        (117, 123),
+        (123, 129),
+    ];
+    let mut out = Vec::new();
+    for line in text.lines() {
+        let mut row = [0.0f64; 21];
+        let mut ok = true;
+        for (i, (from, to)) in COLS.into_iter().enumerate() {
+            match field(line, from, to) {
+                Some(v) => row[i] = v,
+                None => ok = false,
+            }
+        }
+        // The UT column identifies a data line.
+        if ok && (1.0..=24.0).contains(&row[3]) {
+            out.push(row);
+        }
+    }
+    out
 }
 
 /// Pulls the 24 rows out of an `OUTMUF` table: GMT, LMT, FOT, HPF, the

@@ -114,8 +114,8 @@ fn main() -> ExitCode {
             for c in 0..7 {
                 // GMT and LMT print F6.1, the rest F7.2.
                 let decimals = if c < 2 { 10.0 } else { 100.0 };
-                let want = (row[c] * decimals).round();
-                let got = (ported[c] * decimals).round();
+                let want = (row[c] * decimals).round_ties_even();
+                let got = (ported[c] * decimals).round_ties_even();
                 if want != got {
                     out.diffs.push(format!(
                         "hour {} {}: reference {}, port {}",
