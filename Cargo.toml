@@ -1,0 +1,16 @@
+[package]
+name = "propcore"
+version = "0.2.0"
+edition = "2021"
+description = "Characterisation and validation harness for porting the HF propagation engine"
+publish = false
+
+# No dependencies on purpose. The harness is the reference against which a port
+# is judged, so its own supply chain is kept empty: everything here is std.
+
+[[bin]]
+name = "measure"
+path = "src/bin/measure.rs"
+
+[profile.release]
+debug = true

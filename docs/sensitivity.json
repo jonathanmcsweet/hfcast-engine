@@ -1,0 +1,951 @@
+{
+  "reference": "O2",
+  "cases": 96,
+  "failedRuns": {},
+  "comparisons": {
+    "O0": {
+      "fields": [
+        {
+          "row": "DBU",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "DELAY",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "LOSS",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "MPROB",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "MUF",
+          "samples": 2304,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "MUFday",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "N DBW",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "REL",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "RGAIN",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "RPWRG",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "S DBW",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "S PRB",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "SIG LW",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "SIG UP",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "SNR",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "SNR LW",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "SNR UP",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "SNRxx",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "TANGLE",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "TGAIN",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "V HITE",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        }
+      ],
+      "modes": { "compared": 23040, "mismatched": 0, "onlyInOne": 0 }
+    },
+    "O1": {
+      "fields": [
+        {
+          "row": "DBU",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "DELAY",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "LOSS",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "MPROB",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "MUF",
+          "samples": 2304,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "MUFday",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "N DBW",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "REL",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "RGAIN",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "RPWRG",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "S DBW",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "S PRB",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "SIG LW",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "SIG UP",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "SNR",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "SNR LW",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "SNR UP",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "SNRxx",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "TANGLE",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "TGAIN",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "V HITE",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        }
+      ],
+      "modes": { "compared": 23040, "mismatched": 0, "onlyInOne": 0 }
+    },
+    "O3": {
+      "fields": [
+        {
+          "row": "DBU",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "DELAY",
+          "samples": 23040,
+          "differing": 1,
+          "maxAbs": 0.10000000000000142,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0.0033222591362126715,
+          "onlyInOne": 0
+        },
+        {
+          "row": "LOSS",
+          "samples": 23040,
+          "differing": 1,
+          "maxAbs": 1,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0.0015698587127158557,
+          "onlyInOne": 0
+        },
+        {
+          "row": "MPROB",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "MUF",
+          "samples": 2304,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "MUFday",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "N DBW",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "REL",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "RGAIN",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "RPWRG",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "S DBW",
+          "samples": 23040,
+          "differing": 1,
+          "maxAbs": 1,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0.0016474464579901153,
+          "onlyInOne": 0
+        },
+        {
+          "row": "S PRB",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "SIG LW",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "SIG UP",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "SNR",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "SNR LW",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "SNR UP",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "SNRxx",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "TANGLE",
+          "samples": 23040,
+          "differing": 2,
+          "maxAbs": 0.09999999999999964,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0.007633587786259515,
+          "onlyInOne": 0
+        },
+        {
+          "row": "TGAIN",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "V HITE",
+          "samples": 23040,
+          "differing": 1,
+          "maxAbs": 1,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0.0022471910112359553,
+          "onlyInOne": 0
+        }
+      ],
+      "modes": { "compared": 23040, "mismatched": 0, "onlyInOne": 0 }
+    },
+    "fastmath": {
+      "fields": [
+        {
+          "row": "DBU",
+          "samples": 23040,
+          "differing": 6,
+          "maxAbs": 1,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0.3333333333333333,
+          "onlyInOne": 0
+        },
+        {
+          "row": "DELAY",
+          "samples": 23040,
+          "differing": 2,
+          "maxAbs": 0.09999999999999787,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0.0035587188612098883,
+          "onlyInOne": 0
+        },
+        {
+          "row": "LOSS",
+          "samples": 23040,
+          "differing": 9,
+          "maxAbs": 1,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0.006211180124223602,
+          "onlyInOne": 0
+        },
+        {
+          "row": "MPROB",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "MUF",
+          "samples": 2304,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "MUFday",
+          "samples": 23040,
+          "differing": 2,
+          "maxAbs": 0.010000000000000009,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0.011764705882352951,
+          "onlyInOne": 0
+        },
+        {
+          "row": "N DBW",
+          "samples": 23040,
+          "differing": 1,
+          "maxAbs": 1,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0.006493506493506494,
+          "onlyInOne": 0
+        },
+        {
+          "row": "REL",
+          "samples": 23040,
+          "differing": 4,
+          "maxAbs": 0.010000000000000009,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0.035714285714285546,
+          "onlyInOne": 0
+        },
+        {
+          "row": "RGAIN",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "RPWRG",
+          "samples": 23040,
+          "differing": 9,
+          "maxAbs": 1,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0.07142857142857142,
+          "onlyInOne": 0
+        },
+        {
+          "row": "S DBW",
+          "samples": 23040,
+          "differing": 9,
+          "maxAbs": 1,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0.0070921985815602835,
+          "onlyInOne": 0
+        },
+        {
+          "row": "S PRB",
+          "samples": 23040,
+          "differing": 3,
+          "maxAbs": 0.010000000000000009,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0.05555555555555561,
+          "onlyInOne": 0
+        },
+        {
+          "row": "SIG LW",
+          "samples": 23040,
+          "differing": 9,
+          "maxAbs": 0.5,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0.06578947368421052,
+          "onlyInOne": 0
+        },
+        {
+          "row": "SIG UP",
+          "samples": 23040,
+          "differing": 18,
+          "maxAbs": 0.7000000000000002,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0.31818181818181823,
+          "onlyInOne": 0
+        },
+        {
+          "row": "SNR",
+          "samples": 23040,
+          "differing": 7,
+          "maxAbs": 1,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 1,
+          "onlyInOne": 0
+        },
+        {
+          "row": "SNR LW",
+          "samples": 23040,
+          "differing": 10,
+          "maxAbs": 0.3000000000000007,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0.02439024390243908,
+          "onlyInOne": 0
+        },
+        {
+          "row": "SNR UP",
+          "samples": 23040,
+          "differing": 10,
+          "maxAbs": 0.20000000000000018,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0.03125000000000003,
+          "onlyInOne": 0
+        },
+        {
+          "row": "SNRxx",
+          "samples": 23040,
+          "differing": 9,
+          "maxAbs": 1,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0.04,
+          "onlyInOne": 0
+        },
+        {
+          "row": "TANGLE",
+          "samples": 23040,
+          "differing": 7,
+          "maxAbs": 0.1999999999999993,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0.013333333333333286,
+          "onlyInOne": 0
+        },
+        {
+          "row": "TGAIN",
+          "samples": 23040,
+          "differing": 0,
+          "maxAbs": 0,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0,
+          "onlyInOne": 0
+        },
+        {
+          "row": "V HITE",
+          "samples": 23040,
+          "differing": 41,
+          "maxAbs": 4,
+          "p50Abs": 0,
+          "p95Abs": 0,
+          "p99Abs": 0,
+          "maxRel": 0.008113590263691683,
+          "onlyInOne": 0
+        }
+      ],
+      "modes": { "compared": 23040, "mismatched": 0, "onlyInOne": 0 }
+    }
+  }
+}
