@@ -373,6 +373,15 @@ engine computes with the gain it read back from `gainNN.dat`, not the
 gain it computed, so `AntennaSet` rounds every table value through the
 file's `f7.3` and `f6.2` formats.
 
+**The reference suppresses the sign of a value that prints as zero.**
+Every source file is compiled with `-fno-sign-zero`
+(`src/*/Makefile.am`), so a negative value that rounds to zero in its
+field prints without a minus: a latitude of -1.6e-10 in an `F10.4` field
+is `0.0000`, not `-0.0000`. The listing comparisons could never catch
+this, because they parse the numbers back and `-0.0` equals `0.0`; it
+surfaced the first time an output was compared as text. `run::f_fixed`
+applies it.
+
 **State survives between hours and between calls.** `/SON/`, `/REFLX/`,
 `/ZON/`, `/allMODE/` and `/MODES/` persist across hours and are read
 stale. `FSECV` carries from each hour into the next, which is why an area
@@ -523,6 +532,52 @@ having coordinates that parse.
 to each receiver point. `areacheck` compares 325 points over five grids —
 the distributed rectangle, a centre-on-origin grid, a southern centre,
 one reaching over a pole, one past the antipode — all exact.
+
+## The area driver and its output columns (`run_area`)
+
+`HFAREA` runs the same one-hour prediction at every grid point. The port
+shares the hour body with the point-to-point driver: `hour_setup` holds
+what one hour reads and does not change, and `hour_body` is the hour
+itself, so `run`, `run_hour` and `run_area` cannot drift apart.
+
+Two things the driver does that a reading of the roadmap's note would
+miss. The mode-loop state and `FSECV` carry from one grid point to the
+next, exactly as they carry from hour to hour: `HFAREA` does not reset
+them, so only the first point starts from the program-start zero. And it
+compares the path length against `GCDLNG` with `.GT.` where `HFMUFS` uses
+`.GE.`, which changes the model at exactly 10000 km.
+
+`OUTAREA` prints **24** value columns, not 27, and only when the run has
+one frequency; with more it prints 7. Six of the 24 are the largest value
+over the frequencies rather than the first frequency's, because the
+reference walks them overwriting slot 1 — and the power cut, which reads
+the same slot, therefore sees a maximised median against unmaximised
+decile deviations. `PWRCUT` is George Lane's algorithm: an eleven-point
+normal distribution of signal-to-noise ratios built from the median and
+the two deciles, interpolated at the half-power and quarter-power limits.
+
+`areacheck` compares the reference's rows as text, field by field, which
+is stricter than parsing them back: 8450 printed cells over the five
+grids are identical.
+
+What that run does **not** exercise, because it uses one frequency and
+isotropes at both ends:
+
+- The seven-column form and its maximum-over-frequencies loop. Needs a
+  multi-frequency area file.
+- The 360-azimuth antenna table. An area antenna is built at a single
+  frequency over 360 azimuths and 91 elevations, stored as hundredths of
+  a decibel by `NINT`, and never travels through `gainNN.dat` — the
+  read-back in `DECRED` is commented out. `GAIN` takes that branch when
+  the card's `OFFAZIM` field is `-999`, interpolating in azimuth from the
+  path bearing as well as in elevation. An azimuth-independent pattern —
+  an isotrope, or a gain table in elevation only — reduces that table to
+  one column, which is what the port models today.
+- A useful shortcut for the next stage: `ANTCALC` takes the area branch
+  only when the run has **one** frequency (`freqarea(2)` is zero). A
+  multi-frequency area run uses the ordinary point-to-point table, cut
+  along the azimuth from the transmitter to the grid centre and fixed for
+  every point — a path that is already verified.
 
 Three things about this mode are recorded at the code and matter to the
 rest of the stage. The `AREA` card's last field picks the projection:

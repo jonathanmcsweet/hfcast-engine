@@ -151,9 +151,81 @@ pub fn dazel1(tlat: R, tlon: R, taz: R, dgc: R) -> (R, R) {
     (rlat as R, rlon as R)
 }
 
+/// `XLIMIT6`: clamps a value so it fits an `F6.i` field, `i` 1 to 4.
+pub fn xlimit6(x: R, i: usize) -> R {
+    const XMIN: [R; 4] = [-999.9, -99.99, -9.999, -0.9999];
+    const XMAX: [R; 4] = [9999.9, 999.99, 99.999, 9.9999];
+    let (lo, hi) = (XMIN[i - 1], XMAX[i - 1]);
+    if x < lo {
+        lo
+    } else if x > hi {
+        hi
+    } else {
+        x
+    }
+}
+
+/// `PWRCUT`: the fraction of transmit power that could be cut, by George
+/// Lane's algorithm — the area under the assumed normal distribution of
+/// signal-to-noise ratios over the days of the month.
+///
+/// The eleven-point distribution is built from the median and the two
+/// decile deviations, then the fraction of days exceeding each of the
+/// half-power and quarter-power limits is interpolated within it.
+pub fn pwrcut(snr50: R, snr_lw: R, snr_up: R, snr88: R, snr91: R) -> R {
+    const FACT: [R; 4] = [1.28, 0.84, 0.525, 0.255];
+    let std_lw = snr_lw / 1.28;
+    let std_up = snr_up / 1.28;
+    let mut snr = [0.0 as R; 11];
+    snr[10] = snr50 - FACT[0] * std_lw * 2.0;
+    snr[9] = snr50 - FACT[0] * std_lw;
+    snr[8] = snr50 - FACT[1] * std_lw;
+    snr[7] = snr50 - FACT[2] * std_lw;
+    snr[6] = snr50 - FACT[3] * std_lw;
+    snr[5] = snr50;
+    snr[4] = snr50 + FACT[3] * std_up;
+    snr[3] = snr50 + FACT[2] * std_up;
+    snr[2] = snr50 + FACT[1] * std_up;
+    snr[1] = snr50 + FACT[0] * std_up;
+    snr[0] = snr50 + FACT[0] * std_up * 2.0;
+    let day3db = dayinterp(&snr, snr88);
+    let day6db = dayinterp(&snr, snr91);
+    1.0 - (1.0 - day3db) - (day3db - day6db) / 2.0 - day6db / 4.0
+}
+
+/// `DAYINTERP`: the fraction of days whose signal-to-noise ratio exceeds
+/// `snrx`, interpolated in the eleven-point distribution.
+fn dayinterp(snr: &[R; 11], snrx: R) -> R {
+    if snrx > snr[0] {
+        return 0.0;
+    }
+    for i in 0..10 {
+        if snrx <= snr[i] && snrx >= snr[i + 1] {
+            return ((i as R) + (snr[i] - snrx) / (snr[i] - snr[i + 1])) / 10.0;
+        }
+    }
+    1.0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn xlimit6_clamps_to_its_field() {
+        assert_eq!(xlimit6(12.5, 1), 12.5);
+        assert_eq!(xlimit6(-2000.0, 1), -999.9);
+        assert_eq!(xlimit6(1000.0, 2), 999.99);
+        assert_eq!(xlimit6(-1.0, 4), -0.9999);
+    }
+
+    /// A median far above both limits cuts the most power the algorithm
+    /// allows, and one far below cuts none.
+    #[test]
+    fn the_power_cut_spans_its_documented_range() {
+        assert!((pwrcut(200.0, 10.0, 10.0, 88.0, 91.0) - 0.75).abs() < 1e-6);
+        assert_eq!(pwrcut(10.0, 10.0, 10.0, 88.0, 91.0), 0.0);
+    }
 
     /// The reference's own first grid point for the distributed area
     /// file: a 1414 km diagonal southwest of Tangier.

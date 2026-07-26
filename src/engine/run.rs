@@ -15,17 +15,18 @@ use std::path::Path;
 
 use crate::deck::DeckCase;
 
+use super::area::{pwrcut, xlimit6, Grid};
 use super::coefficients::{redmap, CoefficientSet, FoF2Model};
 use super::con::{MagneticPole, D2R, R, R2D};
-use super::geometry::path_geometry;
+use super::geometry::{path_geometry, PathGeometry};
 use super::ionogram::{alosfv, fobby, genion, sang, selmod};
 use super::ionosphere::{
     alatd, cofion, esind, geotim, ground_constants, layer_parameters, virtim,
 };
 use super::antenna::{
-    dazel0, point_to_point_table, read_antenna, AntennaEnd, AntennaSet, AntennaSetup,
+    dazel0, point_to_point_table, read_antenna, AntennaEnd, AntennaSet, AntennaSetup, GainTable,
 };
-use super::magnetic::magvar;
+use super::magnetic::{magvar, MagneticVars};
 use super::modes::{
     es_slots, luffy_freq_loop, luffy_luf, luffy_smooth, outbod_sentinels, setlng, setluf,
     DeckParams, Geog, HourSaves, ModeLoopState, PassCtx, Son,
@@ -568,8 +569,49 @@ pub struct HourPrediction {
     pub long_model: bool,
 }
 
-/// Runs the full prediction for all 24 hours.
-pub fn run(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<HourPrediction>, String> {
+/// Everything one hour of the prediction reads that the hour loop does
+/// not change: the loaded maps, the path, and the antenna tables.
+///
+/// [`run`] builds this once and walks 24 hours; an area run builds it per
+/// grid point and asks for one hour. Extracting it is what lets both
+/// callers execute the same hour body rather than two copies that can
+/// drift apart.
+struct HourSetup<'a> {
+    set: &'a CoefficientSet,
+    cof: Vec<R>,
+    geo: PathGeometry,
+    mags: Vec<MagneticVars>,
+    grounds: Vec<(R, R)>,
+    clats: Vec<R>,
+    glats: Vec<R>,
+    nang: usize,
+    ants: AntennaSet,
+    deck: DeckParams,
+    base_frel: [R; 12],
+    from_lon_rad: R,
+    to_lon_rad: R,
+    to_lat_rad: R,
+    to_lon_deg: R,
+    psc: [R; 4],
+    month: u32,
+    ssn: R,
+    noise_dbw: i32,
+    method: u32,
+    /// Whether the area driver's own comparison applies: `HFAREA` tests
+    /// the path length against `GCDLNG` with `.GT.` where `HFMUFS` uses
+    /// `.GE.`, so a path of exactly 10000 km takes the short model in an
+    /// area run and the long one point to point.
+    area: bool,
+}
+
+/// Builds the per-path half of a run: geometry, magnetic field, ground
+/// constants and the antenna tables, against maps already loaded.
+fn hour_setup<'a>(
+    itshfbc: &Path,
+    inp: &RunInputs,
+    set: &'a CoefficientSet,
+    ants: Option<AntennaSet>,
+) -> Result<HourSetup<'a>, String> {
     let pole = MagneticPole::for_tree(itshfbc);
     let geo = path_geometry(
         inp.from_lat_deg as R,
@@ -580,51 +622,113 @@ pub fn run(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<HourPrediction>, Strin
         pole,
     );
     let mags: Vec<_> = geo.points.iter().map(|p| magvar(p.lat, p.lon)).collect();
-    let set: CoefficientSet =
-        redmap(itshfbc, inp.fof2, inp.month, inp.ssn).map_err(|e| e.to_string())?;
-    let cof = cofion(&set);
-    let grounds = ground_constants(&set, &geo.points, &mags);
+    let cof = cofion(set);
+    let grounds = ground_constants(set, &geo.points, &mags);
     let _ = alatd(&geo.points);
     let clats: Vec<R> = geo.points.iter().map(|p| p.lat).collect();
     let glats: Vec<R> = geo.points.iter().map(|p| p.gmlat).collect();
-    let psc = inp.psc;
     let nang = sang(geo.gcd_km, 0.1);
-    let ants = build_antennas(itshfbc, inp)?;
-    let deck = DeckParams {
-        amind: 0.1,
-        rsn: inp.required_snr_db,
-        lufp: 90,
-        pmp: 3.0,
-        dmp: 0.1,
-        method: inp.method,
+    // An area run computes its antennas once for the whole grid, so the
+    // caller may pass them in rather than have every point rebuild them.
+    let ants = match ants {
+        Some(a) => a,
+        None => build_antennas(itshfbc, inp)?,
     };
     let mut base_frel = [0.0 as R; 12];
     for (slot, f) in base_frel.iter_mut().zip(&inp.freqs_mhz) {
         *slot = *f;
     }
-    let from_lon_rad = inp.from_lon_deg as R * D2R;
-    let to_lon_rad = inp.to_lon_deg as R * D2R;
-    let to_lat_rad = inp.to_lat_deg as R * D2R;
+    Ok(HourSetup {
+        set,
+        cof,
+        geo,
+        mags,
+        grounds,
+        clats,
+        glats,
+        nang,
+        ants,
+        deck: DeckParams {
+            amind: 0.1,
+            rsn: inp.required_snr_db,
+            lufp: 90,
+            pmp: 3.0,
+            dmp: 0.1,
+            method: inp.method,
+        },
+        base_frel,
+        from_lon_rad: inp.from_lon_deg as R * D2R,
+        to_lon_rad: inp.to_lon_deg as R * D2R,
+        to_lat_rad: inp.to_lat_deg as R * D2R,
+        to_lon_deg: inp.to_lon_deg as R,
+        psc: inp.psc,
+        month: inp.month,
+        ssn: inp.ssn,
+        noise_dbw: inp.noise_dbw,
+        method: inp.method,
+        area: false,
+    })
+}
 
+/// Runs the full prediction for all 24 hours.
+pub fn run(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<HourPrediction>, String> {
+    let set: CoefficientSet =
+        redmap(itshfbc, inp.fof2, inp.month, inp.ssn).map_err(|e| e.to_string())?;
+    let s = hour_setup(itshfbc, inp, &set, None)?;
     let mut lp = ModeLoopState::default();
     let mut fsecv_carry = [0.0 as R; 3];
     let mut out = Vec::with_capacity(24);
     for jt in 1..=24i32 {
+        out.push(hour_body(&s, jt, &mut lp, &mut fsecv_carry));
+    }
+    Ok(out)
+}
+
+/// Runs one hour on its own, from the program-start state.
+///
+/// This is what an area run needs: it computes only the hour its input
+/// file names. Taking one hour out of [`run`]'s output would be a
+/// different computation, because `FSECV` carries from each hour into the
+/// next — hour 18 of a 24-hour run starts from hour 17's value where a
+/// single-hour run starts from zero.
+pub fn run_hour(itshfbc: &Path, inp: &RunInputs, jt: i32) -> Result<HourPrediction, String> {
+    let set: CoefficientSet =
+        redmap(itshfbc, inp.fof2, inp.month, inp.ssn).map_err(|e| e.to_string())?;
+    let s = hour_setup(itshfbc, inp, &set, None)?;
+    let mut lp = ModeLoopState::default();
+    let mut fsecv = [0.0 as R; 3];
+    Ok(hour_body(&s, jt, &mut lp, &mut fsecv))
+}
+
+/// One hour of `HFMUFS`: the MUF, the LUFFY passes with the smoothing
+/// blend, `SETLUF` and `OUTBOD`'s sentinels.
+///
+/// `lp` and `fsecv` are the state the Fortran keeps in COMMON between
+/// hours. They are arguments rather than locals because the hour loop's
+/// answers depend on them: several blocks are read stale by design.
+fn hour_body(
+    s: &HourSetup,
+    jt: i32,
+    lp: &mut ModeLoopState,
+    fsecv_carry: &mut [R; 3],
+) -> HourPrediction {
+    let (set, geo, ants, deck, psc) = (s.set, &s.geo, &s.ants, s.deck, s.psc);
+    {
         let gmt = jt as R;
-        let ab = virtim(&cof, &set.ikim, gmt);
+        let ab = virtim(&s.cof, &set.ikim, gmt);
         let params = layer_parameters(
-            &set,
+            set,
             &ab,
             &geo.points,
-            &mags,
-            inp.month,
-            inp.ssn,
+            &s.mags,
+            s.month,
+            s.ssn,
             gmt,
             &psc,
         );
-        let es = esind(&set, &ab, &geo.points, &mags, &psc);
+        let es = esind(set, &ab, &geo.points, &s.mags, &psc);
         let mut state = IonoState::from_layers(&params);
-        state.fsecv = fsecv_carry;
+        state.fsecv = *fsecv_carry;
         ionset(&mut state);
         let mut es_state = es.clone();
         let clcks: Vec<R> = params.iter().map(|p| p.clck).collect();
@@ -632,19 +736,19 @@ pub fn run(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<HourPrediction>, Strin
             &mut state,
             &mut es_state,
             &set.f2d,
-            &clats,
+            &s.clats,
             &clcks,
             geo.gcd,
             geo.gcd_km,
             deck.amind,
-            inp.ssn,
+            s.ssn,
         );
-        let times = geotim(jt, 1, from_lon_rad, to_lon_rad);
-        let an = anois1(&set, times.gmtr, to_lat_rad, to_lon_rad, inp.to_lon_deg as R);
+        let times = geotim(jt, 1, s.from_lon_rad, s.to_lon_rad);
+        let an = anois1(set, times.gmtr, s.to_lat_rad, s.to_lon_rad, s.to_lon_deg);
         let fof2_end = state.fi[state.kfx - 1][2];
         let noise_for = |f: R| {
             let reff = ants.gain(2, 0.0, f).1;
-            genois(reff, &set, &an, f, to_lat_rad, fof2_end, inp.noise_dbw)
+            genois(reff, set, &an, f, s.to_lat_rad, fof2_end, s.noise_dbw)
         };
 
         // The LUFFY passes. Card method 30 is the only one `DECRED`
@@ -665,10 +769,12 @@ pub fn run(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<HourPrediction>, Strin
                 vec![0]
             }
         };
-        let plans: Vec<PassPlan> = if inp.method != 30 {
-            let long = match inp.method {
+        let plans: Vec<PassPlan> = if s.method != 30 {
+            let long = match s.method {
                 21 => true,
                 22 | 25 => false,
+                // `HFAREA` compares with `.GT.`, `HFMUFS` with `.GE.`.
+                _ if s.area => geo.gcd_km > 10000.0,
                 _ => geo.gcd_km >= 10000.0,
             };
             vec![PassPlan {
@@ -713,27 +819,27 @@ pub fn run(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<HourPrediction>, Strin
             }]
         };
         let (mut fs, mut hs) = es_slots(&es_state);
-        let mut geog = Geog::from_points(&params, &mags, &grounds);
+        let mut geog = Geog::from_points(&params, &s.mags, &s.grounds);
         let mut hour_m = hour.clone();
         let mut saves = HourSaves::default();
-        let mut frel = base_frel;
+        let mut frel = s.base_frel;
         frel[11] = hour.allmuf;
         let mut sd_last: Option<SignalDistribution> = None;
         for plan in &plans {
             for &k in &plan.areas {
                 lecden(&mut state, k);
                 let mut ion = genion(&state, k);
-                let table = fobby(&ion, nang);
+                let table = fobby(&ion, s.nang);
                 alosfv(&state, k, &mut ion, &hour.layers);
                 lp.areas[k].update(ion, &table);
             }
             setlng(&mut state, &mut fs, &mut hs, &mut geog, &mut lp.areas);
             sd_last = Some(sigdis(
-                &set,
+                set,
                 &state,
                 &hour,
                 &lp.areas[jmode].ion,
-                &glats,
+                &s.glats,
                 &clcks,
                 jmode,
                 geo.gcd_km,
@@ -742,7 +848,7 @@ pub fn run(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<HourPrediction>, Strin
             geog.apply_sigdis(sd);
             let ctx = PassCtx {
                 state: &state,
-                ants: &ants,
+                ants,
                 fs: &fs,
                 hs: &hs,
                 geog: &geog,
@@ -754,16 +860,16 @@ pub fn run(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<HourPrediction>, Strin
                 // The systems passes end their area chain at `JMODE`;
                 // only the short LUF pass differs.
                 kctl: jmode,
-                nang,
+                nang: s.nang,
                 long: plan.long,
             };
-            luffy_freq_loop(&mut lp, &ctx, &mut hour_m, &noise_for, &frel, &mut saves);
+            luffy_freq_loop(lp, &ctx, &mut hour_m, &noise_for, &frel, &mut saves);
         }
         if plans.len() == 2 {
             let sd = sd_last.as_ref().expect("two passes ran");
             let ctx = PassCtx {
                 state: &state,
-                ants: &ants,
+                ants,
                 fs: &fs,
                 hs: &hs,
                 geog: &geog,
@@ -775,15 +881,16 @@ pub fn run(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<HourPrediction>, Strin
                 // The systems passes end their area chain at `JMODE`;
                 // only the short LUF pass differs.
                 kctl: jmode,
-                nang,
+                nang: s.nang,
                 long: true,
             };
-            luffy_smooth(&mut lp, &ctx, &noise_for, &frel, &saves);
+            luffy_smooth(lp, &ctx, &noise_for, &frel, &saves);
         }
         let last_long = plans.last().map(|p| p.long).unwrap_or(false);
         let xluf = setluf(&lp.son, &frel, deck.lufp);
         outbod_sentinels(&mut lp.son, hour.allmuf);
-        out.push(HourPrediction {
+        *fsecv_carry = state.fsecv;
+        HourPrediction {
             gmt,
             allmuf: hour.allmuf,
             fot: hour.fot,
@@ -796,10 +903,260 @@ pub fn run(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<HourPrediction>, Strin
             // hop count and layer for the short model, and the two end
             // layers for the long one.
             long_model: last_long,
-        });
-        fsecv_carry = state.fsecv;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------
+// Area coverage: the grid loop and OUTAREA's row
+
+/// An area run's inputs: the grid, the transmitter at its centre, and the
+/// one hour and frequency set the run asks for.
+///
+/// The antennas are given as constant gains rather than definition files.
+/// An area antenna is a 360-azimuth table `ANTCALC` builds at a single
+/// frequency, which is a separate stage; a pattern with no azimuth
+/// variation — an isotrope, or a gain table in elevation only — reduces
+/// that table to one column, and `GAIN`'s azimuth interpolation then
+/// returns the same number at every bearing. Those are exactly the cases
+/// this covers.
+#[derive(Debug, Clone)]
+pub struct AreaInputs {
+    pub grid: Grid,
+    /// Transmitter, degrees. The distributed file puts it at the grid
+    /// centre, but the two are separate fields.
+    pub tx_lat_deg: f64,
+    pub tx_lon_deg: f64,
+    pub month: u32,
+    pub ssn: R,
+    /// The hour the input file names, 1-24. An area run computes one.
+    pub hour: i32,
+    pub freqs_mhz: Vec<R>,
+    pub required_snr_db: R,
+    pub noise_dbw: i32,
+    pub watts: R,
+    pub psc: [R; 4],
+    pub method: u32,
+    pub fof2: FoF2Model,
+    /// Constant gain in dB at each end, as `ANTCALC` would store it:
+    /// hundredths of a decibel.
+    pub tx_gain_db: R,
+    pub rx_gain_db: R,
+}
+
+/// One grid point's output row: the indices, the coordinates and
+/// `OUTAREA`'s value columns already rendered in its formats.
+#[derive(Debug, Clone)]
+pub struct AreaPoint {
+    pub ix: usize,
+    pub iy: usize,
+    pub lat: R,
+    pub lon: R,
+    /// The 24 six-character fields, in `OUTAREA`'s order.
+    pub fields: Vec<String>,
+}
+
+impl AreaPoint {
+    /// The row as `OUTAREA` writes it: `(2i3,2f10.4,24a6)`.
+    pub fn row(&self) -> String {
+        format!(
+            "{:3}{:3}{}{}{}",
+            self.ix,
+            self.iy,
+            f_fixed(self.lat, 10, 4),
+            f_fixed(self.lon, 10, 4),
+            self.fields.concat()
+        )
+    }
+}
+
+/// Fortran fixed-point editing as the reference's own build renders it.
+///
+/// Every source file is compiled with `-fno-sign-zero`, so a negative
+/// value that rounds to zero in its field prints without a minus sign —
+/// a latitude of -1.6e-10 in an `F10.4` field is `0.0000`, not `-0.0000`.
+/// The listing comparisons could never see this, because they parse the
+/// numbers back and `-0.0` equals `0.0`.
+pub fn f_fixed(v: R, width: usize, decimals: usize) -> String {
+    let s = format!("{:w$.d$}", f64::from(v), w = width, d = decimals);
+    if s.bytes().any(|b| b.is_ascii_digit() && b != b'0') {
+        s
+    } else {
+        format!("{:w$.d$}", f64::from(v).abs(), w = width, d = decimals)
+    }
+}
+
+/// Fortran `F6.i` with `XLIMIT6`'s clamp, which is how every `OUTAREA`
+/// value column but the MUF is written.
+fn f6(v: R, decimals: usize) -> String {
+    let s = f_fixed(xlimit6(v, decimals), 6, decimals);
+    if s.len() > 6 {
+        "******".to_string()
+    } else {
+        s
+    }
+}
+
+/// Runs an area coverage grid: the same one-hour prediction at every grid
+/// point, in `HFAREA`'s own point order.
+///
+/// The mode-loop state and `FSECV` carry from one grid point to the next,
+/// exactly as they carry from hour to hour in a point-to-point run: the
+/// Fortran keeps them in COMMON and `HFAREA` does not reset them between
+/// points. Only the first point starts from the program-start zero.
+pub fn run_area(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<AreaPoint>, String> {
+    let set: CoefficientSet =
+        redmap(itshfbc, area.fof2, area.month, area.ssn).map_err(|e| e.to_string())?;
+    let nf = area.freqs_mhz.iter().take_while(|f| **f != 0.0).count().max(1);
+    let ants = constant_gain_set(area);
+    let mut lp = ModeLoopState::default();
+    let mut fsecv = [0.0 as R; 3];
+    let mut out = Vec::with_capacity(area.grid.nx * area.grid.ny);
+    for iy in 1..=area.grid.ny {
+        for ix in 1..=area.grid.nx {
+            let (rlon, rlat) =
+                area.grid
+                    .receiver(ix, iy, area.tx_lat_deg as R, area.tx_lon_deg as R);
+            let inp = RunInputs {
+                from_lat_deg: area.tx_lat_deg,
+                from_lon_deg: area.tx_lon_deg,
+                to_lat_deg: f64::from(rlat),
+                to_lon_deg: f64::from(rlon),
+                month: area.month,
+                ssn: area.ssn,
+                freqs_mhz: area.freqs_mhz.clone(),
+                required_snr_db: area.required_snr_db,
+                noise_dbw: area.noise_dbw,
+                watts: area.watts,
+                sporadic_e: area.psc[3] != 0.0,
+                tx_antenna: None,
+                rx_antenna: None,
+                rx_gain_field: 0.0,
+                method: area.method,
+                fof2: area.fof2,
+                psc: area.psc,
+            };
+            let mut s = hour_setup(itshfbc, &inp, &set, Some(ants.clone()))?;
+            // `HFAREA` compares against `GCDLNG` with `.GT.` where the
+            // point-to-point driver uses `.GE.`. It matters only at
+            // exactly 10000 km, but it is a real difference.
+            s.area = true;
+            let h = hour_body(&s, area.hour, &mut lp, &mut fsecv);
+            out.push(area_point(ix, iy, rlat, rlon, &h, nf));
+        }
     }
     Ok(out)
+}
+
+/// The antenna set for a constant-gain area run: one value at every
+/// frequency and elevation, quantised to hundredths of a decibel.
+///
+/// `ANTCALC` stores an area antenna as `NINT(gain*100)` in an integer
+/// table and the prediction reads that back, so the engine computes with
+/// two decimals. Unlike the point-to-point path the values never travel
+/// through `gainNN.dat`, because the read-back is commented out.
+fn constant_gain_set(area: &AreaInputs) -> AntennaSet {
+    let mut ants = AntennaSet::default();
+    let quantise = |g: R| (nint_hundredths(g) as R) / 100.0;
+    for (iat, gain) in [(1, area.tx_gain_db), (2, area.rx_gain_db)] {
+        let table = GainTable {
+            gains: vec![[quantise(gain); 91]; 30],
+            eff: [0.0; 30],
+            fs: 2.0,
+            fe: 30.0,
+            beam_main: 0.0,
+            offazim: -999.0,
+            cond: 0.0,
+            diel: 0.0,
+        };
+        let kw = if iat == 1 { area.watts / 1000.0 } else { 0.0 };
+        ants.install(iat, 2, 30, table, kw);
+    }
+    ants
+}
+
+/// Fortran `NINT` on hundredths of a decibel: round half away from zero.
+fn nint_hundredths(v: R) -> i32 {
+    let x = v * 100.0;
+    if x >= 0.0 {
+        (x + 0.5) as i32
+    } else {
+        (x - 0.5) as i32
+    }
+}
+
+/// `OUTAREA`'s value columns for one grid point.
+///
+/// Six of them are the largest value over the run's frequencies rather
+/// than the first frequency's: the reference walks the frequencies
+/// overwriting slot 1, so slot 1 holds the maximum by the time it is
+/// printed — and the power cut, which reads the same slot, sees the
+/// maximised median against unmaximised decile deviations.
+fn area_point(ix: usize, iy: usize, lat: R, lon: R, h: &HourPrediction, nf: usize) -> AreaPoint {
+    let s0 = &h.son[0];
+    let (mut dbu, mut dbw, mut sndb) = (s0.dbu, s0.dbw, s0.sndb);
+    let (mut reliab, mut sprob, mut snxx) = (s0.reliab, s0.sprob, s0.snxx);
+    for s in h.son.iter().take(nf).skip(1) {
+        if s.dbu > dbu {
+            dbu = s.dbu;
+        }
+        if s.dbw > dbw {
+            dbw = s.dbw;
+        }
+        if s.sndb > sndb {
+            sndb = s.sndb;
+        }
+        if s.reliab > reliab {
+            reliab = s.reliab;
+        }
+        if s.sprob > sprob {
+            sprob = s.sprob;
+        }
+        if s.snxx > snxx {
+            snxx = s.snxx;
+        }
+    }
+    let power_cut = pwrcut(sndb, s0.snrlw, s0.snrup, 88.0, 91.0);
+    // `ANGLER` falls back to the transmit angle when it is not positive.
+    let angr = if s0.angler <= 0.0 { s0.angle } else { s0.angler };
+    let mode = if h.long_model {
+        format!("  {}{}", laytyp(s0.mode_layer), laytyp(s0.moder_layer))
+    } else {
+        format!("  {:2}{}", s0.nhp, laytyp(s0.mode_layer))
+    };
+    let fields = vec![
+        f_fixed(h.frel[11], 6, 2),
+        mode,
+        f6(s0.angle, 2),
+        f6(s0.delay, 2),
+        f6(s0.vhigh, 1),
+        f6(s0.cprob, 3),
+        f6(s0.dblos, 1),
+        f6(dbu, 1),
+        f6(dbw, 1),
+        f6(s0.xnynois + s0.rneff, 1),
+        f6(sndb, 1),
+        f6(s0.snpr, 1),
+        f6(reliab, 3),
+        f6(s0.probmp, 3),
+        f6(sprob, 3),
+        f6(s0.gaint, 2),
+        f6(s0.gainr, 2),
+        f6(snxx, 1),
+        f6(s0.du_nois, 2),
+        f6(s0.dl_nois, 2),
+        f6(s0.dblosl, 2),
+        f6(s0.dblosu, 2),
+        f6(power_cut, 3),
+        f6(angr, 2),
+    ];
+    AreaPoint {
+        ix,
+        iy,
+        lat,
+        lon,
+        fields,
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -807,7 +1164,7 @@ pub fn run(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<HourPrediction>, Strin
 
 /// Fortran `F5.1`: width 5, one decimal, asterisks on overflow.
 fn f5_1(v: R) -> String {
-    let s = format!("{:5.1}", f64::from(v));
+    let s = f_fixed(v, 5, 1);
     if s.len() > 5 {
         "*****".to_string()
     } else {
@@ -817,7 +1174,7 @@ fn f5_1(v: R) -> String {
 
 /// Fortran `F5.2`.
 fn f5_2(v: R) -> String {
-    let s = format!("{:5.2}", f64::from(v));
+    let s = f_fixed(v, 5, 2);
     if s.len() > 5 {
         "*****".to_string()
     } else {
