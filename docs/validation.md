@@ -8,23 +8,29 @@ The flat baseline predicts every hour as that path's own median. It contains no 
 
 ## All paths
 
-| predictor     | path-hours | median error | RMS error | correlation | slope | error after gain fit |
-| ------------- | ---------: | -----------: | --------: | ----------: | ----: | -------------------: |
-| VOACAP        |       3481 |          4.0 |      14.9 |       +0.76 | +0.22 |                  1.5 |
-| ITU-R P.533   |       3481 |          3.3 |       6.0 |       +0.58 | +0.32 |                  2.0 |
-| flat baseline |       3481 |          2.5 |       4.4 |           — |     — |                    — |
+| predictor           | path-hours | median error | RMS error | correlation | slope | error after gain fit |
+| ------------------- | ---------: | -----------: | --------: | ----------: | ----: | -------------------: |
+| VOACAP              |       3477 |          4.0 |      14.5 |       +0.76 | +0.22 |                  1.5 |
+| ITU-R P.533         |       3477 |          3.3 |       5.9 |       +0.59 | +0.32 |                  2.0 |
+| VOACAP, signal only |       3477 |          4.0 |      15.1 |       +0.77 | +0.20 |                  1.4 |
+| P.533, signal only  |       3477 |          3.1 |       5.9 |       +0.71 | +0.39 |                  1.6 |
+| flat baseline       |       3477 |          2.5 |       4.4 |           — |     — |                    — |
 
 Errors are in dB. Correlation and slope come from fitting `observed = a + b * predicted` per path: correlation says whether the peaks and troughs land in the right places, slope says whether the model swings by the right amount, and the last column is what is left once both are fitted.
+
+The signal-only rows score each engine's predicted received signal with its noise prediction left out, as if the receiver's noise were constant through the day. The models' noise swings strongly between day and night, while a typical WSPR receiver's noise is set by local interference and barely moves. The gap between an engine's row and its signal-only row is the part of the exaggerated swing that comes from the noise half of the prediction.
 
 ## Paths that never approach the decoder's floor
 
 27 paths whose weakest hour stays above -15 dB. WSPR cannot report what it fails to decode, so weak hours read higher than they were or vanish, which flattens the measured daily swing. On these paths that cannot be happening, so anything that survives here is the models rather than the measurement.
 
-| predictor     | path-hours | median error | RMS error | correlation | slope | error after gain fit |
-| ------------- | ---------: | -----------: | --------: | ----------: | ----: | -------------------: |
-| VOACAP        |        630 |          5.0 |      13.2 |       +0.73 | +0.16 |                  1.3 |
-| ITU-R P.533   |        630 |          3.4 |       5.7 |       +0.58 | +0.24 |                  1.6 |
-| flat baseline |        630 |          2.0 |       3.7 |           — |     — |                    — |
+| predictor           | path-hours | median error | RMS error | correlation | slope | error after gain fit |
+| ------------------- | ---------: | -----------: | --------: | ----------: | ----: | -------------------: |
+| VOACAP              |        630 |          5.0 |      13.2 |       +0.73 | +0.16 |                  1.3 |
+| ITU-R P.533         |        630 |          3.4 |       5.7 |       +0.58 | +0.24 |                  1.6 |
+| VOACAP, signal only |        630 |          5.0 |      13.6 |       +0.66 | +0.16 |                  1.2 |
+| P.533, signal only  |        630 |          3.5 |       5.8 |       +0.63 | +0.25 |                  1.5 |
+| flat baseline       |        630 |          2.0 |       3.7 |           — |     — |                    — |
 
 ## What was left out
 

@@ -85,13 +85,35 @@ const IMPLAUSIBLE_SNR_DB: f64 = -200.0;
 /// A path needs this many usable hours before its shape means anything.
 const MIN_HOURS: usize = 8;
 
+/// Below this a predicted received power is a dead-path sentinel.
+const IMPLAUSIBLE_SIGNAL_DBW: f64 = -250.0;
+
+/// One usable hour on one path: the observation and both engines' predictions.
+///
+/// The signal-only fields separate the two halves of a prediction. Both
+/// engines predict the received signal and the background noise and subtract.
+/// A typical WSPR receiver's noise is set by local interference, which barely
+/// changes through the day, while the models' noise swings strongly between
+/// day and night. Scoring the signal alone scores the engine as if the noise
+/// were constant, which shows how much of any exaggerated daily swing comes
+/// from the noise half of the prediction.
+struct HourSample {
+    observed: f64,
+    voacap_snr: f64,
+    itu_snr: f64,
+    /// VOACAP's predicted received signal power (`S DBW`), noise left out.
+    voacap_signal: f64,
+    /// P.533's predicted median receiver power (`Pr`), noise left out.
+    itu_signal: f64,
+}
+
 struct PathOutcome {
     label: String,
     km: f64,
     band: i32,
-    /// Observed, VOACAP and P.533 signal-to-noise ratios for the hours where
-    /// all three exist and the observation is above the censoring floor.
-    hours: Vec<(f64, f64, f64)>,
+    /// Hours where the observation and all four predictions exist and the
+    /// observation is above the censoring floor.
+    hours: Vec<HourSample>,
     failure: Option<String>,
 }
 
@@ -196,35 +218,45 @@ fn run_path(
     };
 
     // VOACAP prints its ratio in a 1 Hz bandwidth; WSPR reports in 2500 Hz.
-    let voacap: Option<[Option<f64>; 24]> = match IsolatedRoot::create(&format!("val-{index}")) {
-        Ok(root) => match run_deck(voacap_bin, root.path(), &deck) {
-            Ok(text) => {
-                let listing = parse_listing(&text);
-                let mut day = [None; 24];
-                for s in listing
-                    .numeric
-                    .iter()
-                    .filter(|s| s.row == "SNR" && s.slot == 0)
-                {
-                    if s.value > IMPLAUSIBLE_SNR_DB {
-                        day[s.hour as usize] = Some(s.value - WSPR_BANDWIDTH_OFFSET_DB);
+    // `S DBW` is kept alongside so the signal can be scored with the noise
+    // held out; the per-path offset makes its absolute unit irrelevant.
+    let voacap: Option<[Option<(f64, f64)>; 24]> =
+        match IsolatedRoot::create(&format!("val-{index}")) {
+            Ok(root) => match run_deck(voacap_bin, root.path(), &deck) {
+                Ok(text) => {
+                    let listing = parse_listing(&text);
+                    let mut snr = [None; 24];
+                    let mut signal = [None; 24];
+                    for s in listing.numeric.iter().filter(|s| s.slot == 0) {
+                        match s.row.as_str() {
+                            "SNR" if s.value > IMPLAUSIBLE_SNR_DB => {
+                                snr[s.hour as usize] = Some(s.value - WSPR_BANDWIDTH_OFFSET_DB);
+                            }
+                            "S DBW" if s.value > IMPLAUSIBLE_SIGNAL_DBW => {
+                                signal[s.hour as usize] = Some(s.value);
+                            }
+                            _ => {}
+                        }
                     }
+                    let mut day = [None; 24];
+                    for (hour, slot) in day.iter_mut().enumerate() {
+                        *slot = snr[hour].zip(signal[hour]);
+                    }
+                    Some(day)
                 }
-                Some(day)
-            }
+                Err(e) => {
+                    outcome.failure = Some(format!("voacap: {e}"));
+                    None
+                }
+            },
             Err(e) => {
-                outcome.failure = Some(format!("voacap: {e}"));
+                outcome.failure = Some(format!("isolate: {e}"));
                 None
             }
-        },
-        Err(e) => {
-            outcome.failure = Some(format!("isolate: {e}"));
-            None
-        }
-    };
+        };
 
     let work = scratch(&format!("propcore-val-{index}"));
-    let itu_day: Option<[Option<f64>; 24]> = match fs::create_dir_all(&work)
+    let itu_day: Option<[Option<(f64, f64)>; 24]> = match fs::create_dir_all(&work)
         .map_err(|e| e.to_string())
         .and_then(|()| run_case(itu, &case, &work, WSPR_BANDWIDTH_HZ).map_err(|e| e.to_string()))
     {
@@ -233,8 +265,11 @@ fn run_path(
             for r in parse_report(&text) {
                 // `NONE` means the model found no propagating mode, which is a
                 // prediction of no signal rather than a number to compare.
-                if !r.mode.trim().eq_ignore_ascii_case("NONE") && r.snr > IMPLAUSIBLE_SNR_DB {
-                    day[r.hour as usize] = Some(r.snr);
+                if !r.mode.trim().eq_ignore_ascii_case("NONE")
+                    && r.snr > IMPLAUSIBLE_SNR_DB
+                    && r.receiver_power > IMPLAUSIBLE_SIGNAL_DBW
+                {
+                    day[r.hour as usize] = Some((r.snr, r.receiver_power));
                 }
             }
             Some(day)
@@ -255,13 +290,21 @@ fn run_path(
     };
 
     for hour in 0..24 {
-        let (Some(obs), Some(v), Some(i)) = (observed[hour], voacap[hour], itu_day[hour]) else {
+        let (Some(obs), Some((v_snr, v_sig)), Some((i_snr, i_sig))) =
+            (observed[hour], voacap[hour], itu_day[hour])
+        else {
             continue;
         };
         if obs < OBSERVED_FLOOR_DB {
             continue;
         }
-        outcome.hours.push((obs, v, i));
+        outcome.hours.push(HourSample {
+            observed: obs,
+            voacap_snr: v_snr,
+            itu_snr: i_snr,
+            voacap_signal: v_sig,
+            itu_signal: i_sig,
+        });
     }
 
     outcome
@@ -450,36 +493,42 @@ const TABLE_HEADER: &str = concat!(
 /// it is the models, not the measurement.
 const UNCENSORED_FLOOR_DB: f64 = -15.0;
 
-fn score(
-    outcomes: &[PathOutcome],
-    uncensored_only: bool,
-) -> (EngineScore, EngineScore, EngineScore, usize) {
-    let mut voacap = EngineScore::default();
-    let mut itu = EngineScore::default();
-    let mut flat = EngineScore::default();
-    let mut used = 0usize;
+#[derive(Default)]
+struct Scores {
+    voacap_snr: EngineScore,
+    itu_snr: EngineScore,
+    voacap_signal: EngineScore,
+    itu_signal: EngineScore,
+    flat: EngineScore,
+    used: usize,
+}
+
+fn score(outcomes: &[PathOutcome], uncensored_only: bool) -> Scores {
+    let mut s = Scores::default();
 
     for o in outcomes {
         if o.hours.len() < MIN_HOURS {
             continue;
         }
-        let observed: Vec<f64> = o.hours.iter().map(|h| h.0).collect();
+        let observed: Vec<f64> = o.hours.iter().map(|h| h.observed).collect();
         if uncensored_only && observed.iter().any(|v| *v < UNCENSORED_FLOOR_DB) {
             continue;
         }
-        used += 1;
+        s.used += 1;
 
-        let v: Vec<f64> = o.hours.iter().map(|h| h.1).collect();
-        let i: Vec<f64> = o.hours.iter().map(|h| h.2).collect();
         let level = median(&mut observed.clone());
-        let f: Vec<f64> = vec![level; observed.len()];
+        let flat: Vec<f64> = vec![level; observed.len()];
+        let take = |f: fn(&HourSample) -> f64| -> Vec<f64> { o.hours.iter().map(f).collect() };
 
-        voacap.add_path(&observed, &v);
-        itu.add_path(&observed, &i);
-        flat.add_path(&observed, &f);
+        s.voacap_snr.add_path(&observed, &take(|h| h.voacap_snr));
+        s.itu_snr.add_path(&observed, &take(|h| h.itu_snr));
+        s.voacap_signal
+            .add_path(&observed, &take(|h| h.voacap_signal));
+        s.itu_signal.add_path(&observed, &take(|h| h.itu_signal));
+        s.flat.add_path(&observed, &flat);
     }
 
-    (voacap, itu, flat, used)
+    s
 }
 
 fn report(month: &str, ssn: f64, outcomes: &[PathOutcome], data_dir: &Path) {
@@ -497,9 +546,9 @@ fn report(month: &str, ssn: f64, outcomes: &[PathOutcome], data_dir: &Path) {
             continue;
         }
         used += 1;
-        let observed: Vec<f64> = o.hours.iter().map(|h| h.0).collect();
-        let v: Vec<f64> = o.hours.iter().map(|h| h.1).collect();
-        let i: Vec<f64> = o.hours.iter().map(|h| h.2).collect();
+        let observed: Vec<f64> = o.hours.iter().map(|h| h.observed).collect();
+        let v: Vec<f64> = o.hours.iter().map(|h| h.voacap_snr).collect();
+        let i: Vec<f64> = o.hours.iter().map(|h| h.itu_snr).collect();
         // The control: predict every hour as the path's own median.
         let level = median(&mut observed.clone());
         let f: Vec<f64> = vec![level; observed.len()];
@@ -539,12 +588,14 @@ fn report(month: &str, ssn: f64, outcomes: &[PathOutcome], data_dir: &Path) {
          nothing.\n"
     );
 
-    let (voacap, itu, flat, _) = score(outcomes, false);
+    let all = score(outcomes, false);
     println!("## All paths\n");
     println!("{TABLE_HEADER}");
-    println!("{}", voacap.line("VOACAP"));
-    println!("{}", itu.line("ITU-R P.533"));
-    println!("{}", flat.line("flat baseline"));
+    println!("{}", all.voacap_snr.line("VOACAP"));
+    println!("{}", all.itu_snr.line("ITU-R P.533"));
+    println!("{}", all.voacap_signal.line("VOACAP, signal only"));
+    println!("{}", all.itu_signal.line("P.533, signal only"));
+    println!("{}", all.flat.line("flat baseline"));
     println!(
         "\nErrors are in dB. Correlation and slope come from fitting \
          `observed = a + b * predicted` per path: correlation says whether the \
@@ -552,20 +603,32 @@ fn report(month: &str, ssn: f64, outcomes: &[PathOutcome], data_dir: &Path) {
          model swings by the right amount, and the last column is what is left \
          once both are fitted.\n"
     );
+    println!(
+        "The signal-only rows score each engine's predicted received signal \
+         with its noise prediction left out, as if the receiver's noise were \
+         constant through the day. The models' noise swings strongly between \
+         day and night, while a typical WSPR receiver's noise is set by local \
+         interference and barely moves. The gap between an engine's row and \
+         its signal-only row is the part of the exaggerated swing that comes \
+         from the noise half of the prediction.\n"
+    );
 
-    let (unc_v, unc_i, unc_f, unc_used) = score(outcomes, true);
+    let unc = score(outcomes, true);
     println!("## Paths that never approach the decoder's floor\n");
     println!(
-        "{unc_used} paths whose weakest hour stays above {UNCENSORED_FLOOR_DB:.0} dB. \
+        "{} paths whose weakest hour stays above {UNCENSORED_FLOOR_DB:.0} dB. \
          WSPR cannot report what it fails to decode, so weak hours read higher \
          than they were or vanish, which flattens the measured daily swing. On \
          these paths that cannot be happening, so anything that survives here is \
-         the models rather than the measurement.\n"
+         the models rather than the measurement.\n",
+        unc.used
     );
     println!("{TABLE_HEADER}");
-    println!("{}", unc_v.line("VOACAP"));
-    println!("{}", unc_i.line("ITU-R P.533"));
-    println!("{}", unc_f.line("flat baseline"));
+    println!("{}", unc.voacap_snr.line("VOACAP"));
+    println!("{}", unc.itu_snr.line("ITU-R P.533"));
+    println!("{}", unc.voacap_signal.line("VOACAP, signal only"));
+    println!("{}", unc.itu_signal.line("P.533, signal only"));
+    println!("{}", unc.flat.line("flat baseline"));
     println!();
 
     println!("## What was left out\n");

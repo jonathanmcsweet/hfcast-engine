@@ -185,11 +185,13 @@ It contains no physics, and an engine that cannot beat it is adding nothing.
 Full output in [docs/validation.md](docs/validation.md). 150 paths, 3,481
 path-hours.
 
-| predictor     | median error | correlation | slope | error after gain fit |
-| ------------- | -----------: | ----------: | ----: | -------------------: |
-| VOACAP        |       4.0 dB |       +0.76 | +0.22 |               1.5 dB |
-| ITU-R P.533   |       3.3 dB |       +0.58 | +0.32 |               2.0 dB |
-| flat baseline |       2.5 dB |           — |     — |                    — |
+| predictor           | median error | correlation | slope | error after gain fit |
+| ------------------- | -----------: | ----------: | ----: | -------------------: |
+| VOACAP              |       4.0 dB |       +0.76 | +0.22 |               1.5 dB |
+| ITU-R P.533         |       3.3 dB |       +0.59 | +0.32 |               2.0 dB |
+| VOACAP, signal only |       4.0 dB |       +0.77 | +0.20 |               1.4 dB |
+| P.533, signal only  |       3.1 dB |       +0.71 | +0.39 |               1.6 dB |
+| flat baseline       |       2.5 dB |           — |     — |                    — |
 
 Read the columns together, because separately they mislead:
 
@@ -216,10 +218,31 @@ the 27 paths whose weakest hour never drops below -15 dB, comfortably clear of
 the roughly -29 dB decode floor. The effect gets _stronger_ there, not weaker:
 slope +0.16, residual 1.3 dB. Censoring is not what is causing it.
 
-That does not make the models wrong by a factor of five. Other explanations
-remain open and are not tested here — the decoder's own signal-to-noise
-estimate compresses at both ends of its range, and a diurnal swing in either
-engine's noise model would inflate predicted variation directly.
+### Which half of the prediction is wrong
+
+Both engines predict the received signal and the background noise separately
+and subtract. Those halves can be scored apart, because VOACAP prints `S DBW`
+and P.533 prints `Pr` alongside their ratios. The signal-only rows in the table
+score each engine as if the receiver's noise were constant through the day —
+which, for a typical WSPR receiver limited by its own local interference, it
+roughly is.
+
+The result is one-sided. Removing the noise barely changes the swing: VOACAP's
+slope moves from 0.22 to 0.20, P.533's from 0.32 to 0.39. **The exaggeration
+lives in the predicted signal itself**, in both engines. The noise model is not
+the cause. One side finding: P.533's timing improves when its noise is removed
+(correlation +0.59 to +0.71), so its noise model's daily pattern is actively
+hurting its predictions on these paths.
+
+What remains open is why the predicted signal swings too much. Two candidates
+point the same way. The models follow one dominant propagation route per hour,
+while the real ionosphere usually offers several at once — so when the
+dominant route fades, reality does not drop as far as the model says. And June
+is the peak of the sporadic-E season, a summer layer that keeps paths alive
+when the main-layer prediction says they should fade; standard VOACAP practice,
+followed here, disables its sporadic-E term because that term is considered
+unreliable. A winter month, where sporadic-E largely disappears, would separate
+these: if the exaggeration shrinks in winter, the missing mechanism is found.
 
 ### Limits
 
