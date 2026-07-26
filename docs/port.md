@@ -31,7 +31,9 @@ scratch files, deployment anywhere Rust runs, and code a person can read.
 2. **The tolerance envelope.** The finished engine must stay inside
    `sensitivity.md` on the full sweep: no further from the `-O2` reference
    than IEEE-conformant rebuilds are from each other (worst case 1 dB SNR,
-   zero structural disagreements).
+   zero structural disagreements). **Result (2026-07-26, `portcheck`): the
+   port is bit-identical at the listing level — 463,104 printed cells and
+   23,040 mode labels over the 96 sweep cases with zero differences.**
 
 ## Precision policy
 
@@ -67,7 +69,7 @@ geometry trace only matches this way.
 | mode loop (raysets, losses, Es modes) | `penang`, `findf`, `fdist`, `inmuf`, `regmod`, `esmod`, `esreg`   | `engine::modes`        | 46k reflectrix, 49k hop, 32k mode dumps  |
 | long-path model                       | `gmloss`, `settxr`, `seltxr`, `lngpat` and helpers                | `engine::modes`        | 14.4k two-end loss tables, exact rows    |
 | reliability, per-frequency outputs    | `relbil`, `serprb`, `mpath`, `setlng`, the smoothing blend        | `engine::modes`        | 31.7k slots + 8.6k smoothed, 24 fields   |
-| output fields                         | `setluf`, `outlin`                                                | `setluf` ported        | unit tests; line output open             |
+| output fields, whole engine           | `setluf`, `outbod` listing body, `hfmufs` hour loop               | `engine::run`          | listing bit-identical over 96 cases      |
 
 Working order is data flow, top to bottom. Each stage lands with its trace
 instrumentation, its `porttest` comparison, and unit tests.
