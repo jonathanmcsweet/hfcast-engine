@@ -133,6 +133,7 @@ pub fn sweep_cases() -> Vec<DeckCase> {
                     method: 30,
                     ursi: false,
                     fprob: None,
+                    botlines: None,
                     month,
                     year: 2026,
                     ssn,

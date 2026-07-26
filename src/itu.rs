@@ -309,6 +309,7 @@ mod tests {
             method: 30,
             ursi: false,
             fprob: None,
+            botlines: None,
             from_lat: 35.8,
             from_lon: -5.9,
             to_lat: 44.9,

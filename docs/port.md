@@ -230,6 +230,16 @@ power plus 30 and only method 25 prints it. Method 23 takes its lines
 from `TOPLINES` and `BOTLINES` cards instead, and selects nothing
 without them.
 
+A `BOTLINES` card overrides that selection, for any method and not
+only method 23: the jump that would skip `SETOUT`'s card block is
+commented out, so the card applies to whatever the method chose. The
+lines then print in the order the card lists them rather than in
+numeric order, because `OUTBOD` walks the card for this path. A card
+may also name a line past the 22 `OUTBOD2` knows: `SETOUT` lets values
+up to 25 through, and the computed `GO TO` falls out of its label list
+into the statement after it, which prints the MODE row. The port
+matches on both counts.
+
 Which model runs: `DECRED` rewrites card method 30 to method 20 with
 `MSPEC = 121`, and that is the only combination that runs both models
 between 7000 and 10000 km and blends them. Method 21 forces the long

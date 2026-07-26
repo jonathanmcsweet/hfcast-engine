@@ -14,7 +14,7 @@
 //!
 //! Usage: `cargo run --release --bin fuzz [--cases N] [--from N]
 //! [--jobs J] [--seed N] [--show N] [--method M] [--coeffs URSI88]
-//! [--fprob a,b,c,d]`
+//! [--fprob a,b,c,d] [--botlines a,b,c]`
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::process::ExitCode;
@@ -121,10 +121,16 @@ fn main() -> ExitCode {
         let parts: Vec<f64> = v.split(',').filter_map(|t| t.trim().parse().ok()).collect();
         (parts.len() == 4).then(|| [parts[0], parts[1], parts[2], parts[3]])
     });
+    // `--botlines a,b,c` writes a BOTLINES card, which selects the
+    // body lines and their order for any method.
+    let botlines: Option<Vec<u32>> = flag("--botlines").map(|v| {
+        v.split(',').filter_map(|t| t.trim().parse().ok()).collect()
+    });
     for case in cases.iter_mut() {
         case.method = method;
         case.ursi = ursi;
         case.fprob = fprob;
+        case.botlines = botlines.clone();
     }
     let cases = cases;
 
@@ -349,7 +355,7 @@ fn check_case(reference: &std::path::Path, case: &DeckCase) -> Outcome {
         },
         (Ok(text), Ok(hours)) => {
             let a = parse_listing(&text);
-            let b = parse_listing(&listing_text(&hours, &body_lines(case.method)));
+            let b = parse_listing(&listing_text(&hours, &body_lines(case.method, case.botlines.as_deref())));
             let (cells, compared) = cell_diffs(&a, &b);
             let modes = mode_diffs(&a, &b);
             if cells.is_empty() && modes.is_empty() {

@@ -160,6 +160,7 @@ pub fn fuzz_case(index: u64) -> DeckCase {
         method: 30,
         ursi: false,
         fprob: None,
+        botlines: None,
         from_lat,
         from_lon,
         to_lat,

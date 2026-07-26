@@ -872,19 +872,24 @@ fn row(label: &str, muf_field: String, fields: Vec<String>, jfreq: i32) -> Strin
 ///
 /// Method 23 selects nothing here: its lines come from `TOPLINES` and
 /// `BOTLINES` cards, and with no cards `SETOUT` leaves every line off.
-pub fn body_lines(method: u32) -> [bool; 22] {
+pub fn body_lines(method: u32, botlines: Option<&[u32]>) -> Vec<usize> {
+    // A `BOTLINES` card overrides the method's own selection, for any
+    // method and not only 23: `SETOUT`'s jump past that block is
+    // commented out, so it applies to whatever ran before it. The
+    // lines then print in the order the card lists them rather than in
+    // numeric order, because `OUTBOD` walks the card for this path.
+    if let Some(card) = botlines {
+        return card.iter().filter(|l| **l > 0).map(|l| *l as usize).collect();
+    }
     let method = if method == 30 { 20 } else { method };
-    let mut bot = [false; 22];
-    let mut set = |lines: &[usize]| {
-        for &l in lines {
-            bot[l - 1] = true;
-        }
-    };
+    let mut bot = Vec::new();
     match method {
         // The three methods that do not print consecutive lines.
-        17 => set(&[1, 2, 5, 7, 10, 12]),
-        18 => set(&[1, 2, 5, 7, 10, 14]),
-        24 => set(&[12]),
+        17 => bot.extend([1, 2, 5, 7, 10, 12]),
+        18 => bot.extend([1, 2, 5, 7, 10, 14]),
+        24 => bot.push(12),
+        // Method 23 prints what its `TOPLINES` and `BOTLINES` cards
+        // say, and nothing without them.
         23 => {}
         _ => {
             let nbod = match method {
@@ -897,16 +902,16 @@ pub fn body_lines(method: u32) -> [bool; 22] {
                 // routine instead of `OUTBOD`.
                 _ => 1,
             };
-            set(&(1..=nbod).collect::<Vec<_>>());
+            bot.extend(1..=nbod);
         }
     }
     bot
 }
 
 /// Renders the hours as the listing body `OUTBOD` prints: the FREQ line
-/// and the rows `lines` selects, for comparison via
+/// and the rows `lines` names, in that order, for comparison via
 /// `listing::parse_listing`. [`body_lines`] gives a method's selection.
-pub fn listing_text(hours: &[HourPrediction], lines: &[bool; 22]) -> String {
+pub fn listing_text(hours: &[HourPrediction], lines: &[usize]) -> String {
     let mut out = String::new();
     for h in hours {
         // The FREQ line: hour, the MUF, the eleven card frequencies.
@@ -940,7 +945,8 @@ pub fn listing_text(hours: &[HourPrediction], lines: &[bool; 22]) -> String {
         let slots: Vec<usize> = (0..jfreq as usize).collect();
         let muf = &h.son[11];
 
-        // MODE.
+        // MODE, line 1: the short model prints hop count and layer,
+        // the long one the layer at each end.
         let mode_field = |s: &Son| {
             if h.long_model {
                 format!(" {}{}", laytyp(s.mode_layer), laytyp(s.moder_layer))
@@ -948,22 +954,9 @@ pub fn listing_text(hours: &[HourPrediction], lines: &[bool; 22]) -> String {
                 format!(" {:2}{}", s.nhp, laytyp(s.mode_layer))
             }
         };
-        if lines[0] {
-            out.push_str(&row(
-                "MODE  ",
-                mode_field(muf),
-                slots.iter().map(|&i| mode_field(&h.son[i])).collect(),
-                jfreq,
-            ));
-            out.push('\n');
-        }
 
-        // The numeric rows, in OUTBOD's order and formats.
-        type Field = (
-            &'static str,
-            fn(&Son) -> String,
-        );
-        // `OUTBOD2` lines 2 to 22; line 1 is the MODE row above.
+        // `OUTBOD2` lines 2 to 22, in its order and formats.
+        type Field = (&'static str, fn(&Son) -> String);
         let rows: [Field; 21] = [
             ("TANGLE", |s| f5_1(s.angle)),
             ("DELAY ", |s| f5_1(s.delay)),
@@ -987,16 +980,29 @@ pub fn listing_text(hours: &[HourPrediction], lines: &[bool; 22]) -> String {
             ("SNRxx ", |s| i5(s.snxx)),
             ("DBM   ", |s| i5(s.dbw + 30.0)),
         ];
-        for (line, (label, field)) in rows.into_iter().enumerate() {
-            if !lines[line + 1] {
-                continue;
-            }
-            out.push_str(&row(
-                label,
-                field(muf),
-                slots.iter().map(|&i| field(&h.son[i])).collect(),
-                jfreq,
-            ));
+        for &line in lines {
+            // `OUTBOD2` dispatches on the line number with a computed
+            // GO TO of 22 labels. A `BOTLINES` card may name a line
+            // past those, and `SETOUT` lets values up to 25 through:
+            // the jump then falls through to the statement after it,
+            // which is the MODE line.
+            let numeric = (2..=22).contains(&line);
+            let (label, field) = if numeric {
+                rows[line - 2]
+            } else {
+                ("MODE  ", (|_: &Son| String::new()) as fn(&Son) -> String)
+            };
+            let fields: Vec<String> = if numeric {
+                slots.iter().map(|&i| field(&h.son[i])).collect()
+            } else {
+                slots.iter().map(|&i| mode_field(&h.son[i])).collect()
+            };
+            let muf_field = if numeric {
+                field(muf)
+            } else {
+                mode_field(muf)
+            };
+            out.push_str(&row(label, muf_field, fields, jfreq));
             out.push('\n');
             // The long path prints its reception angle after TANGLE as
             // RANGLE; the comparison surface ignores it, so it is not
@@ -1021,14 +1027,7 @@ mod tests {
 
     #[test]
     fn setout_selects_the_lines_each_method_prints() {
-        let on = |m: u32| -> Vec<usize> {
-            body_lines(m)
-                .iter()
-                .enumerate()
-                .filter(|(_, v)| **v)
-                .map(|(i, _)| i + 1)
-                .collect()
-        };
+        let on = |m: u32| body_lines(m, None);
         // Card method 30 is method 20 after DECRED rewrites it.
         assert_eq!(on(30), on(20));
         assert_eq!(on(20), (1..=21).collect::<Vec<_>>());
@@ -1041,6 +1040,8 @@ mod tests {
         // Method 23 prints what its TOPLINES and BOTLINES cards say,
         // and nothing without them.
         assert!(on(23).is_empty());
+        // A BOTLINES card overrides any method, in the card's order.
+        assert_eq!(body_lines(30, Some(&[12, 2, 0, 5])), vec![12, 2, 5]);
     }
 
     #[test]
@@ -1060,7 +1061,7 @@ mod tests {
             son,
             long_model: false,
         };
-        let text = listing_text(&[h], &body_lines(30));
+        let text = listing_text(&[h], &body_lines(30, None));
         let parsed = crate::listing::parse_listing(&text);
         let rel: Vec<_> = parsed
             .numeric

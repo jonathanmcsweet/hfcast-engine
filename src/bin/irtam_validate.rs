@@ -143,6 +143,7 @@ fn gather(dir: &Path, cache_dir: &Path) -> Result<(String, Vec<Sample>, Vec<f64>
             method: 30,
             ursi: false,
             fprob: None,
+            botlines: None,
             month,
             year,
             ssn,

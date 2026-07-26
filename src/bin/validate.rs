@@ -256,6 +256,7 @@ fn run_path(
         method: 30,
         ursi: false,
         fprob: None,
+        botlines: None,
         from_lat: path.tx_lat,
         from_lon: path.tx_lon,
         to_lat: path.rx_lat,

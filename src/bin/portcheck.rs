@@ -97,7 +97,7 @@ fn main() -> ExitCode {
                 return ExitCode::FAILURE;
             }
         };
-        let ported = parse_listing(&listing_text(&hours, &body_lines(case.method)));
+        let ported = parse_listing(&listing_text(&hours, &body_lines(case.method, case.botlines.as_deref())));
         merged.merge(compare_listings(&fortran, &ported));
         compared += 1;
     }

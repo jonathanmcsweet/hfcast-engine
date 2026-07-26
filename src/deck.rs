@@ -68,6 +68,10 @@ pub struct DeckCase {
     /// sporadic E, each multiplying that layer's critical frequency.
     /// `None` is the switch's own card.
     pub fprob: Option<[f64; 4]>,
+    /// A `BOTLINES` card: the body lines to print, in the order they
+    /// are listed. It overrides whatever the method would select, and
+    /// is how card method 23 says what to print.
+    pub botlines: Option<Vec<u32>>,
 }
 
 impl DeckCase {
@@ -252,10 +256,23 @@ pub fn build_deck(c: &DeckCase) -> Result<String, DeckError> {
             field("0.0000", 10)?
         ),
         format!("FREQUENCY {freq_card}"),
+        // The BOTLINES card takes fourteen I5 fields; the unused ones
+        // stay blank, which reads as zero and selects no line.
+        match &c.botlines {
+            None => String::new(),
+            Some(lines) => {
+                let mut card = String::from("BOTLINES  ");
+                for l in lines.iter().take(14) {
+                    card.push_str(&field(&l.to_string(), 5)?);
+                }
+                card
+            }
+        },
         format!("METHOD    {}{}", field(&c.method.to_string(), 5)?, field("0", 5)?),
         "EXECUTE".to_string(),
         "QUIT".to_string(),
     ];
+    let lines: Vec<String> = lines.into_iter().filter(|l| !l.is_empty()).collect();
 
     let mut deck = lines.join("\n");
     deck.push('\n');
@@ -272,6 +289,7 @@ mod tests {
             method: 30,
             ursi: false,
             fprob: None,
+            botlines: None,
             from_lat: 35.8,
             from_lon: -5.9,
             to_lat: 44.9,
