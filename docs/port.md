@@ -61,7 +61,8 @@ geometry trace only matches this way.
 | sporadic E losses                     | `esreg`, `esmod`                                                  | —                      | (with the systems model)                 |
 | MUF                                   | `ionset`, `lecden`, `gethp`, `f2dis`, `curmuf`                    | `engine::muf`          | 2.3k hours, 20 fields + profiles         |
 | ionogram, reflectrix, deviative loss  | `sang`, `selmod`, `genion`, `fobby`, `alosfv`                     | `engine::ionogram`     | 4.6k area calls incl. exact reflectrix   |
-| systems model (modes, losses, signal) | `setlng`, `sigdis`, `luffy` and relatives                         | —                      |                                          |
+| signal distribution, absorption       | `syssy`, `xlin`, `prbmuf`, `sigdis`                               | `engine::sigdis`       | 3.2k calls, 20 fields                    |
+| systems model (modes, losses, signal) | `setlng`, `luffy` and relatives                                   | —                      |                                          |
 | noise                                 | `noisy`, `genois`, `anois1`                                       | —                      |                                          |
 | output fields                         | `setluf`, `outlin`                                                | —                      |                                          |
 

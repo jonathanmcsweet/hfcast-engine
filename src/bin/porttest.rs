@@ -19,6 +19,7 @@ use propcore::engine::con::MagneticPole;
 use propcore::engine::ionosphere::{cofion, esind, layer_parameters, virtim, LayerParams};
 use propcore::engine::ionogram::{alosfv, fobby, genion, sang, selmod};
 use propcore::engine::muf::{curmuf, ionset, lecden, IonoState};
+use propcore::engine::sigdis::sigdis;
 use propcore::engine::geometry::{path_geometry, PathGeometry};
 use propcore::engine::magnetic::magvar;
 use propcore::runner::{run_deck_with_env, variant_bin, IsolatedRoot};
@@ -290,6 +291,31 @@ fn main() -> ExitCode {
         Worst::new("layer MUF median (MHz)"),
         Worst::new("layer MUF upper decile (MHz)"),
     ];
+    let mut sig_worst: Vec<Worst> = [
+        "DSL",
+        "ASM",
+        "DSU",
+        "AGLAT",
+        "ACAV",
+        "FEAV",
+        "AFE",
+        "BFE",
+        "HNU",
+        "HTLOSS",
+        "XNUZ",
+        "XVE",
+        "ADJ",
+        "SU",
+        "SL",
+        "ADS",
+        "SUS",
+        "SLS",
+        "ABIY",
+        "ARTIC",
+    ]
+    .iter()
+    .map(|n| Worst::new(n))
+    .collect();
     let mut ion_worst = [
         Worst::new("sounding frequency (MHz)"),
         Worst::new("ionogram virtual height (km)"),
@@ -307,6 +333,7 @@ fn main() -> ExitCode {
     let mut lec_points = 0usize;
     let mut muf_hours = 0usize;
     let mut ion_calls = 0usize;
+    let mut sig_calls = 0usize;
 
     for case in &cases {
         let deck = match build_deck(case) {
@@ -513,6 +540,8 @@ fn main() -> ExitCode {
         }
         let fob_dump = std::fs::read_to_string(trace_dir.join("fobby.txt")).unwrap_or_default();
         let fobs = parse_hour_traces(&fob_dump, "FOB");
+        let sig_dump = std::fs::read_to_string(trace_dir.join("sigdis.txt")).unwrap_or_default();
+        let sigs = parse_hour_traces(&sig_dump, "SIG");
         if mufs.len() != virs.len() || lecs.len() != virs.len() {
             eprintln!(
                 "{}: {} VIRTIM dumps but {} CURMUF and {} LECDEN dumps",
@@ -531,6 +560,7 @@ fn main() -> ExitCode {
         // ionogram chain's lecden calls update it after curmuf's.
         let mut fsecv_carry = [0.0f32; 3];
         let mut ion_index = 0usize;
+        let mut sig_index = 0usize;
         let nang = sang(rust.gcd_km, 0.1);
         for (((vir, f2h), esh), (lech, mufh)) in virs
             .iter()
@@ -739,6 +769,7 @@ fn main() -> ExitCode {
                 }
                 v
             };
+            let mut jmode_ion = None;
             for &k in &areas {
                 let (Some(ionh), Some(fobh)) = (ions.get(ion_index), fobs.get(ion_index)) else {
                     eprintln!("{}: ran out of ionogram dumps", case.id);
@@ -782,8 +813,83 @@ fn main() -> ExitCode {
                         ion_worst[4].update((f64::from(*r) - t).abs(), &case.id);
                     }
                 }
+                if k == jmode {
+                    jmode_ion = Some(ion);
+                }
             }
             fsecv_carry = state.fsecv;
+
+            // SIGDIS runs once per LUFFY pass: twice in the smoothing
+            // band, once otherwise. Its inputs are identical between the
+            // passes, so one Rust evaluation compares against each dump.
+            if let Some(jion) = jmode_ion {
+                let glats: Vec<f32> = rust.points.iter().map(|p| p.gmlat).collect();
+                let sd = sigdis(
+                    &set,
+                    &state,
+                    &hour,
+                    &jion,
+                    &glats,
+                    &clcks,
+                    jmode,
+                    rust.gcd_km,
+                );
+                let passes = if rust.gcd_km >= 7000.0 && rust.gcd_km < 10000.0 {
+                    2
+                } else {
+                    1
+                };
+                for _ in 0..passes {
+                    let Some(sigh) = sigs.get(sig_index) else {
+                        eprintln!("{}: ran out of SIGDIS dumps", case.id);
+                        structural += 1;
+                        break;
+                    };
+                    sig_index += 1;
+                    let kfx = sigh.h2 as usize;
+                    if kfx != state.kfx || sigh.values.len() != 18 + 2 * kfx {
+                        eprintln!("{}: malformed SIGDIS dump", case.id);
+                        structural += 1;
+                        continue;
+                    }
+                    sig_calls += 1;
+                    let fields = [
+                        f64::from(sd.dsl),
+                        f64::from(sd.asm),
+                        f64::from(sd.dsu),
+                        f64::from(sd.aglat),
+                        f64::from(sd.acav),
+                        f64::from(sd.feav),
+                        f64::from(sd.afe),
+                        f64::from(sd.bfe),
+                        f64::from(sd.hnu),
+                        f64::from(sd.htloss),
+                        f64::from(sd.xnuz),
+                        f64::from(sd.xve),
+                        f64::from(sd.adj),
+                        f64::from(sd.su),
+                        f64::from(sd.sl),
+                        f64::from(sd.ads),
+                        f64::from(sd.sus),
+                        f64::from(sd.sls),
+                    ];
+                    for (worst, (r, t)) in
+                        sig_worst.iter_mut().zip(fields.iter().zip(&sigh.values))
+                    {
+                        worst.update((r - t).abs(), &case.id);
+                    }
+                    for k in 0..kfx {
+                        sig_worst[18].update(
+                            (f64::from(sd.abiy[k]) - sigh.values[18 + k]).abs(),
+                            &case.id,
+                        );
+                        sig_worst[19].update(
+                            (f64::from(sd.artic[k]) - sigh.values[18 + kfx + k]).abs(),
+                            &case.id,
+                        );
+                    }
+                }
+            }
         }
     }
 
@@ -846,6 +952,14 @@ fn main() -> ExitCode {
     println!("| field | worst difference | case |");
     println!("| --- | --: | --- |");
     for w in &ion_worst {
+        println!("| {} | {:.2e} | {} |", w.name, w.value, w.case);
+    }
+
+    println!("\n## Stage: signal distribution (syssy, prbmuf, sigdis)\n");
+    println!("Compared {sig_calls} calls.\n");
+    println!("| field | worst difference | case |");
+    println!("| --- | --: | --- |");
+    for w in &sig_worst {
         println!("| {} | {:.2e} | {} |", w.name, w.value, w.case);
     }
 
