@@ -21,5 +21,6 @@ pub mod deck;
 pub mod itu;
 pub mod listing;
 pub mod runner;
+pub mod stats;
 pub mod sweep;
 pub mod wspr;

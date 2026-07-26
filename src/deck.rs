@@ -42,6 +42,14 @@ pub struct DeckCase {
     pub noise_dbw: f64,
     /// Frequencies in MHz, ascending, at most [`FREQ_SLOTS`] of them.
     pub freqs_mhz: Vec<f64>,
+    /// Enables VOACAP's sporadic-E layer (the FPROB card's fourth value).
+    ///
+    /// Standard practice runs with it off, because VOACAP's sporadic-E model
+    /// is considered unreliable. That also removes a real summer mechanism,
+    /// so the validation uses this switch to measure what turning it on
+    /// changes. `decred.for` documents the card: each critical frequency is
+    /// multiplied by the value, and the fourth is Es.
+    pub sporadic_e: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -167,7 +175,10 @@ pub fn build_deck(c: &DeckCase) -> Result<String, DeckError> {
             field("3.00", 5)?,
             field("0.10", 5)?
         ),
-        "FPROB      1.00 1.00 1.00 0.00".to_string(),
+        format!(
+            "FPROB      1.00 1.00 1.00 {}",
+            if c.sporadic_e { "1.00" } else { "0.00" }
+        ),
         format!(
             "ANTENNA   {}{}{}{}{}{}{}{}",
             field("1", 5)?,
@@ -219,6 +230,7 @@ mod tests {
             required_snr_db: 24.0,
             noise_dbw: 145.0,
             freqs_mhz: vec![6.07, 7.2, 9.7, 11.85],
+            sporadic_e: false,
         }
     }
 
@@ -291,6 +303,19 @@ mod tests {
             build_deck(&c),
             Err(DeckError::TooManyFrequencies(FREQ_SLOTS + 1))
         );
+    }
+
+    #[test]
+    fn sporadic_e_switch_sets_the_fprob_card() {
+        let mut c = a_case();
+        let off = build_deck(&c).expect("deck");
+        assert!(
+            off.contains("FPROB      1.00 1.00 1.00 0.00"),
+            "got {off:?}"
+        );
+        c.sporadic_e = true;
+        let on = build_deck(&c).expect("deck");
+        assert!(on.contains("FPROB      1.00 1.00 1.00 1.00"), "got {on:?}");
     }
 
     #[test]

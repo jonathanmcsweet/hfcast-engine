@@ -158,11 +158,17 @@ and value ranges actually look like.
 ## Against reality
 
 The two experiments above compare code with code. This one compares both
-engines with measured radio.
+engines with measured radio. It grew into a six-month study across the solar
+cycle whose results are consolidated in [docs/accuracy.md](docs/accuracy.md) —
+in short: standard practice's disabled sporadic-E term was costing real
+accuracy, and a single amplitude factor fitted on one month (k = 0.25 for
+VOACAP) beats the flat baseline on every month it never saw. The sections
+below describe the method and the first month in detail.
 
 ```sh
-tools/fetch-wspr.sh 2025-06                 # aggregated reception reports
-cargo run --release --bin validate > docs/validation.md
+tools/fetch-wspr.sh 2025-06 data/2025-06    # aggregated reception reports
+cargo run --release --bin validate -- --data data/2025-06 --es --dump data/2025-06/hours-es.csv > report.md
+tools/calibration-matrix.sh docs/calibration-matrix-es.md hours-es.csv
 ```
 
 WSPR is the only large public source that records both ends of the experiment:

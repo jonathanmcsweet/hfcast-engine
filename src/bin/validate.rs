@@ -51,6 +51,7 @@ use propcore::deck::{build_deck, DeckCase};
 use propcore::itu::{parse_report, run_case, ItuPaths};
 use propcore::listing::parse_listing;
 use propcore::runner::{map_limit, run_deck, variant_bin, IsolatedRoot};
+use propcore::stats::{correlation, fit_line, median, rms};
 use propcore::wspr::{self, WsprPath, WSPR_BANDWIDTH_HZ, WSPR_BANDWIDTH_OFFSET_DB};
 
 const VOACAP_VARIANT: &str = "O2";
@@ -158,21 +159,76 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
+    // Enables VOACAP's sporadic-E term, which standard practice keeps off.
+    // Used by the summer-mechanism experiment; affects VOACAP only.
+    let sporadic_e = std::env::args().any(|a| a == "--es");
+
     eprintln!(
-        "{} paths from {}, smoothed sunspot number {ssn}",
+        "{} paths from {}, smoothed sunspot number {ssn}, sporadic-E {}",
         data.paths.len(),
-        data.month
+        data.month,
+        if sporadic_e { "on" } else { "off" }
     );
     let started = Instant::now();
 
     let outcomes = map_limit(&data.paths, CONCURRENCY, |path, index| {
-        run_path(path, index, year, month, ssn, &data, &itu, &voacap_bin)
+        run_path(
+            path,
+            index,
+            year,
+            month,
+            ssn,
+            sporadic_e,
+            &data,
+            &itu,
+            &voacap_bin,
+        )
     });
 
     eprintln!("finished in {:.1}s", started.elapsed().as_secs_f64());
 
-    report(&data.month, ssn, &outcomes, &data_dir);
+    report(&data.month, ssn, sporadic_e, &outcomes, &data_dir);
+
+    // The calibration step consumes raw hours rather than summaries, so
+    // percentile and fitting decisions stay in one place downstream.
+    if let Some(dump) = arg("--dump") {
+        match dump_hours(&outcomes, &dump) {
+            Ok(()) => eprintln!("wrote {}", dump.display()),
+            Err(e) => {
+                eprintln!("could not write {}: {e}", dump.display());
+                return ExitCode::FAILURE;
+            }
+        }
+    }
     ExitCode::SUCCESS
+}
+
+/// Writes one row per scored path-hour, for the calibration step.
+///
+/// Only paths that meet [`MIN_HOURS`] appear, so downstream consumers see
+/// exactly the population the report describes.
+fn dump_hours(outcomes: &[PathOutcome], to: &Path) -> std::io::Result<()> {
+    let mut text =
+        String::from("label,band,km,observed,voacap_snr,itu_snr,voacap_signal,itu_signal\n");
+    for o in outcomes {
+        if o.hours.len() < MIN_HOURS {
+            continue;
+        }
+        for h in &o.hours {
+            text.push_str(&format!(
+                "{},{},{:.0},{},{},{},{},{}\n",
+                o.label,
+                o.band,
+                o.km,
+                h.observed,
+                h.voacap_snr,
+                h.itu_snr,
+                h.voacap_signal,
+                h.itu_signal
+            ));
+        }
+    }
+    fs::write(to, text)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -182,6 +238,7 @@ fn run_path(
     year: u32,
     month: u32,
     ssn: f64,
+    sporadic_e: bool,
     data: &wspr::WsprData,
     itu: &ItuPaths,
     voacap_bin: &Path,
@@ -207,6 +264,7 @@ fn run_path(
         required_snr_db: REQUIRED_SNR_DB,
         noise_dbw: NOISE_DBW,
         freqs_mhz: vec![path.freq_mhz],
+        sporadic_e,
     };
 
     let deck = match build_deck(&case) {
@@ -330,6 +388,10 @@ fn scratch(name: &str) -> PathBuf {
 /// changes once published, and a validation run should not depend on a network
 /// service being up or on which day it was run.
 const SMOOTHED_SSN: &[(&str, f64)] = &[
+    ("2019-06", 3.7),
+    ("2019-12", 1.8),
+    ("2024-12", 151.2),
+    ("2025-03", 135.9),
     ("2025-04", 133.4),
     ("2025-05", 128.6),
     ("2025-06", 124.7),
@@ -342,75 +404,6 @@ fn smoothed_ssn(month: &str) -> Option<f64> {
         .iter()
         .find(|(m, _)| *m == month)
         .map(|(_, v)| *v)
-}
-
-fn median(values: &mut [f64]) -> f64 {
-    if values.is_empty() {
-        return 0.0;
-    }
-    values.sort_by(|a, b| a.partial_cmp(b).expect("no NaN"));
-    let mid = values.len() / 2;
-    if values.len().is_multiple_of(2) {
-        (values[mid - 1] + values[mid]) / 2.0
-    } else {
-        values[mid]
-    }
-}
-
-fn rms(values: &[f64]) -> f64 {
-    if values.is_empty() {
-        return 0.0;
-    }
-    (values.iter().map(|v| v * v).sum::<f64>() / values.len() as f64).sqrt()
-}
-
-/// Pearson correlation, or `None` if either side does not vary.
-fn correlation(a: &[f64], b: &[f64]) -> Option<f64> {
-    if a.len() != b.len() || a.len() < 3 {
-        return None;
-    }
-    let n = a.len() as f64;
-    let mean_a = a.iter().sum::<f64>() / n;
-    let mean_b = b.iter().sum::<f64>() / n;
-    let mut num = 0.0;
-    let mut da = 0.0;
-    let mut db = 0.0;
-    for (x, y) in a.iter().zip(b) {
-        num += (x - mean_a) * (y - mean_b);
-        da += (x - mean_a).powi(2);
-        db += (y - mean_b).powi(2);
-    }
-    if da <= 0.0 || db <= 0.0 {
-        return None;
-    }
-    Some(num / (da * db).sqrt())
-}
-
-/// Least-squares fit of `observed = a + b * predicted`.
-///
-/// The slope matters as much as the fit. A model can put the peaks and troughs
-/// in the right places and still swing far too hard between them; correlation
-/// cannot see that, because it ignores scale, but the slope shows it directly.
-/// A slope near 1 means the model predicts the right amount of variation, and
-/// well under 1 means it predicts too much.
-fn fit_line(observed: &[f64], predicted: &[f64]) -> Option<(f64, f64)> {
-    if observed.len() != predicted.len() || observed.len() < 3 {
-        return None;
-    }
-    let n = observed.len() as f64;
-    let mean_p = predicted.iter().sum::<f64>() / n;
-    let mean_o = observed.iter().sum::<f64>() / n;
-    let mut num = 0.0;
-    let mut den = 0.0;
-    for (p, o) in predicted.iter().zip(observed) {
-        num += (p - mean_p) * (o - mean_o);
-        den += (p - mean_p).powi(2);
-    }
-    if den <= 0.0 {
-        return None;
-    }
-    let slope = num / den;
-    Some((mean_o - slope * mean_p, slope))
 }
 
 #[derive(Default)]
@@ -531,7 +524,7 @@ fn score(outcomes: &[PathOutcome], uncensored_only: bool) -> Scores {
     s
 }
 
-fn report(month: &str, ssn: f64, outcomes: &[PathOutcome], data_dir: &Path) {
+fn report(month: &str, ssn: f64, sporadic_e: bool, outcomes: &[PathOutcome], data_dir: &Path) {
     let mut used = 0usize;
     let mut skipped_short = 0usize;
     let failures: Vec<&PathOutcome> = outcomes.iter().filter(|o| o.failure.is_some()).collect();
@@ -573,7 +566,9 @@ fn report(month: &str, ssn: f64, outcomes: &[PathOutcome], data_dir: &Path) {
 
     println!("# Both engines against measured WSPR reports\n");
     println!(
-        "{month}, smoothed sunspot number {ssn}. {used} paths used of {} fetched.\n",
+        "{month}, smoothed sunspot number {ssn}, VOACAP sporadic-E {}. \
+         {used} paths used of {} fetched.\n",
+        if sporadic_e { "on" } else { "off" },
         outcomes.len()
     );
     println!(

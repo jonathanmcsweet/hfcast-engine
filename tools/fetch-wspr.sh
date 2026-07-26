@@ -27,14 +27,14 @@ ENDPOINT="${WSPR_ENDPOINT:-https://db1.wspr.live/}"
 
 # Below this a path is short enough for ground wave to matter, and the models
 # are being asked about skywave. Above it the great-circle assumption weakens.
-MIN_KM=800
-MAX_KM=12000
+MIN_KM="${MIN_KM:-800}"
+MAX_KM="${MAX_KM:-12000}"
 
 # Bands that map onto the amateur allocations the app predicts.
 BANDS="3,7,10,14,18,21,24,28"
 
 # Enough reports for the hourly medians to mean something.
-MIN_REPORTS=400
+MIN_REPORTS="${MIN_REPORTS:-400}"
 
 # How many distinct UTC hours a path must appear in.
 #
@@ -43,13 +43,13 @@ MIN_REPORTS=400
 # has nothing to add over quoting the average. Predicting when a band opens and
 # closes is the interesting part, so paths that go quiet for part of the day
 # have to be in the sample.
-MIN_HOURS_COVERED=12
+MIN_HOURS_COVERED="${MIN_HOURS_COVERED:-12}"
 
 # One transmitter can dominate a month; WW0WWV alone accounts for many of the
 # best-covered paths. Capping keeps the sample from becoming a test of one
 # station's antenna.
-MAX_PER_TX=2
-MAX_PATHS=150
+MAX_PER_TX="${MAX_PER_TX:-2}"
+MAX_PATHS="${MAX_PATHS:-150}"
 
 start="${MONTH}-01"
 end="$(date -u -d "${start} +1 month" +%Y-%m-%d)"

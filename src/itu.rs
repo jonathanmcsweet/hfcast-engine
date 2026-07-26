@@ -317,6 +317,7 @@ mod tests {
             required_snr_db: 24.0,
             noise_dbw: 145.0,
             freqs_mhz: vec![7.1, 14.2],
+            sporadic_e: false,
         }
     }
 

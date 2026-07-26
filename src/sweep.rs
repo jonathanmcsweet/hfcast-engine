@@ -137,6 +137,7 @@ pub fn sweep_cases() -> Vec<DeckCase> {
                     required_snr_db: system.required_snr_db,
                     noise_dbw: system.noise_dbw,
                     freqs_mhz: AMATEUR_FREQS_MHZ.to_vec(),
+                    sporadic_e: false,
                 });
             }
         }
