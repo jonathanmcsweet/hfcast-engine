@@ -600,8 +600,40 @@ pole, so the first column there would print -360, and the source answers
 zero instead.
 
 `areacheck` compares the reference's rows as text, field by field, which
-is stricter than parsing them back: 15,616 printed cells over 17 grids are
+is stricter than parsing them back: 17,791 printed cells over 21 grids are
 identical.
+
+## Inverse area coverage
+
+The program's third invocation word. `voacapl <root> inv calc
+default/<name>.voa` reads its input from `area_inv/default` rather than
+`areadata/default` and writes its `.vg1` beside it. The input file has the
+same keys.
+
+The grid supplies the **transmitter** and the file's `Transmit` line
+becomes the fixed receiver — `HFAREA` swaps the roles rather than the
+file, so that line keeps its name and the port's field names follow it.
+Three consequences:
+
+- The output row still names the grid point, which is now the transmitter.
+- The transmit antenna's beam is re-aimed at the fixed station from every
+  grid point, replacing whatever the card asked for. This is a lookup-time
+  change only, so a multi-frequency inverse run is unaffected: its table
+  was already cut along one bearing and no longer consults the beam.
+- The nudge that separates a grid point from the station compares against
+  the station's coordinates after a round trip through the degree
+  conversion, because the driver holds that end in radians by then. The
+  round trip is not exact in single precision. Reaching a printed
+  difference would need a grid point within about 20 cm of the nudge's
+  0.05-degree boundary, so this is right by transcription and not by
+  verification — the same standing as the `.0174533` constant above.
+
+`areacheck` covers this with four cases: an isotrope, where only the
+geometry reverses; a directional transmitter, where the re-aiming shows; a
+multi-frequency run, where it does not; and a grid straddling its own
+station at the nudge's boundary. Removing the swap breaks all four,
+removing the re-aiming breaks only the directional one, and removing the
+nudge breaks all four again.
 
 ## The area antenna table (`area_table`, `area_gain_lookup`)
 

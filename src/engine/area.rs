@@ -12,7 +12,7 @@
 //! into an azimuth and a distance, and asks `DAZEL1` for the point that
 //! far along that bearing. Longitudes come back folded into 0 to 360.
 
-use super::con::R;
+use super::con::{D2R, R};
 
 /// Which projection the grid uses.
 ///
@@ -67,6 +67,31 @@ impl Grid {
         let (mut lon, lat) = self.point(ix, iy);
         if (lat - tlat).abs() < 0.05 && (lon - tlon).abs() <= 0.05 {
             lon = tlon + 0.05;
+            if lon >= 360.0 {
+                lon -= 360.0;
+            }
+        }
+        if lat.abs() > 89.9 {
+            lon = 0.0;
+        }
+        (lon, lat)
+    }
+
+    /// The transmitter location an inverse area run uses at grid point
+    /// `(ix, iy)`: [`Grid::point`], then the same two corrections, with
+    /// the two ends swapped.
+    ///
+    /// `rlat` and `rlon` are the fixed station's degrees. `HFAREA` holds
+    /// that end in radians by then and converts back for this
+    /// comparison, so the port makes the same round trip through the
+    /// degree conversion — which does not always return the number it
+    /// started from in single precision.
+    pub fn transmitter(&self, ix: usize, iy: usize, rlat: R, rlon: R) -> (R, R) {
+        let rlatd = (rlat * D2R) / D2R;
+        let rlond = (rlon * D2R) / D2R;
+        let (mut lon, lat) = self.point(ix, iy);
+        if (lat - rlatd).abs() < 0.05 && (lon - rlond).abs() <= 0.05 {
+            lon = rlond + 0.05;
             if lon >= 360.0 {
                 lon -= 360.0;
             }

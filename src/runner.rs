@@ -247,8 +247,15 @@ pub fn run_area(
     itshfbc: &Path,
     name: &str,
     voa: &str,
+    inverse: bool,
 ) -> Result<String, RunError> {
-    let dir = itshfbc.join("areadata").join("default");
+    // Inverse coverage is its own invocation word and its own directory:
+    // the input goes under `area_inv` rather than `areadata`.
+    let (dir, mode) = if inverse {
+        (itshfbc.join("area_inv").join("default"), "inv")
+    } else {
+        (itshfbc.join("areadata").join("default"), "area")
+    };
     fs::create_dir_all(&dir)?;
     fs::write(dir.join(format!("{name}.voa")), voa)?;
     let out = dir.join(format!("{name}.vg1"));
@@ -256,7 +263,7 @@ pub fn run_area(
     let mut command = Command::new(bin);
     let mut child = command
         .arg(itshfbc)
-        .arg("area")
+        .arg(mode)
         .arg("calc")
         .arg(format!("default/{name}.voa"))
         .current_dir(itshfbc)

@@ -82,6 +82,9 @@ struct Case {
     freqs: &'static [f32],
     tx: Ant,
     rx: Ant,
+    /// Inverse coverage: the grid supplies the transmitter and the input
+    /// file's `Transmit` line becomes the fixed receiver.
+    inverse: bool,
 }
 
 fn cases() -> Vec<Case> {
@@ -115,6 +118,7 @@ fn cases() -> Vec<Case> {
             freqs: &[FREQ],
             tx: TX_ISO,
             rx: RX_ISO,
+            inverse: false,
         },
         Case {
             name: "odd",
@@ -123,6 +127,7 @@ fn cases() -> Vec<Case> {
             freqs: &[FREQ],
             tx: TX_ISO,
             rx: RX_ISO,
+            inverse: false,
         },
         Case {
             name: "south",
@@ -131,6 +136,7 @@ fn cases() -> Vec<Case> {
             freqs: &[FREQ],
             tx: TX_ISO,
             rx: RX_ISO,
+            inverse: false,
         },
         Case {
             name: "polar",
@@ -139,6 +145,7 @@ fn cases() -> Vec<Case> {
             freqs: &[FREQ],
             tx: TX_ISO,
             rx: RX_ISO,
+            inverse: false,
         },
         Case {
             name: "anti",
@@ -147,6 +154,7 @@ fn cases() -> Vec<Case> {
             freqs: &[FREQ],
             tx: TX_ISO,
             rx: RX_ISO,
+            inverse: false,
         },
         Case {
             name: "manyfreq",
@@ -155,6 +163,7 @@ fn cases() -> Vec<Case> {
             freqs: &[7.100, 11.850, 15.400, 21.650],
             tx: TX_ISO,
             rx: RX_ISO,
+            inverse: false,
         },
         // From here the antenna is what varies: one case per family the
         // area branch of `ANTCALC` computes, at both ends.
@@ -165,6 +174,7 @@ fn cases() -> Vec<Case> {
             freqs: &[FREQ],
             tx: ant("samples", "sample.02", 0.0, 45.0),
             rx: ant("samples", "sample.06", 0.0, 200.0),
+            inverse: false,
         },
         Case {
             name: "rhombic",
@@ -173,6 +183,7 @@ fn cases() -> Vec<Case> {
             freqs: &[FREQ],
             tx: ant("samples", "sample.07", 0.0, -40.0),
             rx: ant("samples", "sample.09", 0.0, 130.0),
+            inverse: false,
         },
         Case {
             name: "tables",
@@ -181,6 +192,7 @@ fn cases() -> Vec<Case> {
             freqs: &[FREQ],
             tx: ant("samples", "sample.13", 0.0, 70.0),
             rx: ant("samples", "sample.14", 0.0, 250.0),
+            inverse: false,
         },
         Case {
             name: "curtain",
@@ -189,6 +201,7 @@ fn cases() -> Vec<Case> {
             freqs: &[FREQ],
             tx: ant("samples", "sample.12", 0.0, 90.0),
             rx: ant("samples", "sample.11", 0.0, 0.0),
+            inverse: false,
         },
         Case {
             name: "ioncap",
@@ -199,6 +212,7 @@ fn cases() -> Vec<Case> {
             // Type 25's efficiency varies with elevation, so which of
             // the branch's calls leaves the stored value behind matters.
             rx: ant("samples", "sample.25", 0.0, 300.0),
+            inverse: false,
         },
         Case {
             name: "mufes",
@@ -207,6 +221,7 @@ fn cases() -> Vec<Case> {
             freqs: &[FREQ],
             tx: ant("samples", "sample.31", 0.0, 160.0),
             rx: ant("samples", "sample.44", 0.0, 10.0),
+            inverse: false,
         },
         Case {
             name: "nosc",
@@ -215,6 +230,7 @@ fn cases() -> Vec<Case> {
             freqs: &[FREQ],
             tx: ant("samples", "sample.48", 0.0, 0.0),
             rx: ant("samples", "sample.10", 0.0, 0.0),
+            inverse: false,
         },
         Case {
             name: "multiant",
@@ -223,6 +239,7 @@ fn cases() -> Vec<Case> {
             freqs: &[7.100, 11.850, 15.400],
             tx: ant("samples", "sample.02", 0.0, 45.0),
             rx: ant("samples", "sample.06", 0.0, 200.0),
+            inverse: false,
         },
         // The latitude and longitude projection, whose rectangle is in
         // degrees and whose printed longitudes come back unfolded.
@@ -243,6 +260,59 @@ fn cases() -> Vec<Case> {
             freqs: &[FREQ],
             tx: TX_ISO,
             rx: RX_ISO,
+            inverse: false,
+        },
+        // Inverse coverage: the grid supplies the transmitter and the
+        // input file's Transmit line becomes the fixed receiver, with the
+        // transmit beam re-aimed at it from every grid point.
+        Case {
+            name: "inverse",
+            why: "inverse coverage with an isotrope, where only the geometry reverses",
+            grid: spread,
+            freqs: &[FREQ],
+            tx: TX_ISO,
+            rx: RX_ISO,
+            inverse: true,
+        },
+        Case {
+            name: "invbeam",
+            why: "inverse coverage with a directional transmitter, re-aimed at every point",
+            grid: spread,
+            freqs: &[FREQ],
+            tx: ant("samples", "sample.02", 0.0, 45.0),
+            rx: ant("samples", "sample.06", 0.0, 200.0),
+            inverse: true,
+        },
+        Case {
+            name: "invmany",
+            why: "inverse coverage with several frequencies, where the beam is no longer read",
+            grid: spread,
+            freqs: &[7.100, 11.850, 15.400],
+            tx: ant("samples", "sample.02", 0.0, 45.0),
+            rx: ant("samples", "sample.06", 0.0, 200.0),
+            inverse: true,
+        },
+        Case {
+            name: "invclose",
+            why: "inverse coverage over a grid straddling its own station, at the nudge's edge",
+            grid: Grid {
+                projection: Projection::LatLon,
+                plat: 30.00,
+                plon: 7.17,
+                // The input file's rectangle carries one decimal, so
+                // the bounds are tenths and the step comes from the
+                // point count: five points give 0.05 degrees.
+                xmin: 7.1,
+                xmax: 7.3,
+                ymin: 30.00,
+                ymax: 30.20,
+                nx: 5,
+                ny: 5,
+            },
+            freqs: &[FREQ],
+            tx: TX_ISO,
+            rx: RX_ISO,
+            inverse: true,
         },
         Case {
             name: "latlonwest",
@@ -261,6 +331,7 @@ fn cases() -> Vec<Case> {
             freqs: &[FREQ],
             tx: TX_ISO,
             rx: RX_ISO,
+            inverse: false,
         },
         Case {
             name: "latlon180",
@@ -279,6 +350,7 @@ fn cases() -> Vec<Case> {
             freqs: &[FREQ],
             tx: TX_ISO,
             rx: RX_ISO,
+            inverse: false,
         },
     ]
 }
@@ -338,7 +410,7 @@ fn main() -> ExitCode {
                 return out;
             }
         }
-        let text = match run_area(&reference, root.path(), case.name, &area_file(case)) {
+        let text = match run_area(&reference, root.path(), case.name, &area_file(case), case.inverse) {
             Ok(t) => t,
             Err(e) => {
                 out.broken = Some(format!("reference: {e}"));
@@ -365,6 +437,7 @@ fn main() -> ExitCode {
             psc: [1.0, 1.0, 1.0, 0.0],
             method: 30,
             fof2: FoF2Model::Ccir,
+            inverse: case.inverse,
             // The transmit card carries a design frequency and the
             // receive card a gain, in the same field.
             tx_antenna: Some(spec(&case.tx, case.tx.value)),

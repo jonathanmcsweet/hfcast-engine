@@ -930,6 +930,11 @@ pub struct AreaInputs {
     pub psc: [R; 4],
     pub method: u32,
     pub fof2: FoF2Model,
+    /// Inverse coverage: the grid supplies the **transmitter** and
+    /// `tx_lat_deg` and `tx_lon_deg` become the fixed receiver. The input
+    /// file still calls that end `Transmit`, and so do these fields,
+    /// because `HFAREA` swaps the roles rather than the file.
+    pub inverse: bool,
     /// `None` is the isotrope card at that end.
     pub tx_antenna: Option<AntennaCardSpec>,
     pub rx_antenna: Option<AntennaCardSpec>,
@@ -1035,16 +1040,27 @@ pub fn run_area(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<AreaPoint>, Str
     let mut lp = ModeLoopState::default();
     let mut fsecv = [0.0 as R; 3];
     let mut out = Vec::with_capacity(area.grid.nx * area.grid.ny);
+    let (fixed_lat, fixed_lon) = (area.tx_lat_deg as R, area.tx_lon_deg as R);
     for iy in 1..=area.grid.ny {
         for ix in 1..=area.grid.nx {
-            let (rlon, rlat) =
-                area.grid
-                    .receiver(ix, iy, area.tx_lat_deg as R, area.tx_lon_deg as R);
+            // The grid point is the receiver in a normal run and the
+            // transmitter in an inverse one. Either way it is the point
+            // the output row names.
+            let (glon, glat) = if area.inverse {
+                area.grid.transmitter(ix, iy, fixed_lat, fixed_lon)
+            } else {
+                area.grid.receiver(ix, iy, fixed_lat, fixed_lon)
+            };
+            let (from, to) = if area.inverse {
+                ((glat, glon), (fixed_lat, fixed_lon))
+            } else {
+                ((fixed_lat, fixed_lon), (glat, glon))
+            };
             let inp = RunInputs {
-                from_lat_deg: area.tx_lat_deg,
-                from_lon_deg: area.tx_lon_deg,
-                to_lat_deg: f64::from(rlat),
-                to_lon_deg: f64::from(rlon),
+                from_lat_deg: f64::from(from.0),
+                from_lon_deg: f64::from(from.1),
+                to_lat_deg: f64::from(to.0),
+                to_lon_deg: f64::from(to.1),
                 month: area.month,
                 ssn: area.ssn,
                 freqs_mhz: area.freqs_mhz.clone(),
@@ -1068,8 +1084,21 @@ pub fn run_area(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<AreaPoint>, Str
             // along the bearings it leaves behind.
             s.ants.btrd = s.geo.btr * R2D;
             s.ants.brtd = s.geo.brt * R2D;
+            if area.inverse {
+                // `HFAREA` re-aims the transmit antenna at the fixed
+                // station from each grid point, replacing whatever beam
+                // the card asked for. It writes the first antenna slot,
+                // which is the one the area lookup reads for the
+                // transmitter. A multi-frequency inverse run is
+                // unaffected: its table was already cut along one
+                // bearing and no longer consults the beam.
+                let (ztaz, _) = dazel0(glat, glon, fixed_lat, fixed_lon);
+                if let Some(first) = s.ants.ants.first_mut() {
+                    first.table.beam_main = ztaz;
+                }
+            }
             let h = hour_body(&s, area.hour, &mut lp, &mut fsecv);
-            out.push(area_point(&area.grid, ix, iy, rlat, rlon, &h, nf));
+            out.push(area_point(&area.grid, ix, iy, glat, glon, &h, nf));
         }
     }
     Ok(out)
