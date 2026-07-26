@@ -457,6 +457,46 @@ pub fn layer_parameters(
         .collect()
 }
 
+/// Ground constants at a control point: conductivity (mhos/m) and
+/// relative dielectric constant, from `geom.for`'s land-mass lookup
+/// (`NOISY` map plane 7). Sea gives (5.0, 80.0), land (0.001, 4.0).
+/// The longitude is the east longitude `magvar` computed, exactly as
+/// the Fortran reuses its `CLG` output argument.
+pub fn ground_constants(
+    set: &CoefficientSet,
+    points: &[ControlPoint],
+    mags: &[MagneticVars],
+) -> Vec<(R, R)> {
+    points
+        .iter()
+        .zip(mags)
+        .map(|(pt, mag)| {
+            let rfltd = pt.lat * R2D;
+            let mut clgd = mag.east_lon * R2D;
+            if clgd < 0.0 {
+                clgd += 360.0;
+            }
+            let wld = noisy(&set.fakmap, &set.abmap[0], false, rfltd, clgd);
+            if wld >= 0.0 {
+                (0.001, 4.0)
+            } else {
+                (5.0, 80.0)
+            }
+        })
+        .collect()
+}
+
+/// `ALATD` from the end of `GEOM`: the absolute path latitude in
+/// degrees — the first control point's, or the mean of the first three
+/// when there is more than one.
+pub fn alatd(points: &[ControlPoint]) -> R {
+    if points.len() == 1 {
+        points[0].lat.abs() * R2D
+    } else {
+        ((points[0].lat + points[1].lat + points[2].lat) / 3.0).abs() * R2D
+    }
+}
+
 /// Sporadic-E parameters at one control point: the deciles of the Es
 /// critical frequency and the reflection height (`/ES/`).
 #[derive(Debug, Clone, Copy)]

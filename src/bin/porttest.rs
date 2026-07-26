@@ -19,7 +19,7 @@ use propcore::engine::con::MagneticPole;
 use propcore::engine::ionosphere::{cofion, esind, layer_parameters, virtim, LayerParams};
 use propcore::engine::con::D2R;
 use propcore::engine::ionogram::{alosfv, fobby, genion, sang, selmod};
-use propcore::engine::ionosphere::geotim;
+use propcore::engine::ionosphere::{alatd, geotim, ground_constants};
 use propcore::engine::noise::{anois1, genois};
 use propcore::engine::muf::{curmuf, ionset, lecden, IonoState};
 use propcore::engine::sigdis::sigdis;
@@ -58,6 +58,9 @@ struct GeomTrace {
     btr_deg: f64,
     brt_deg: f64,
     points: Vec<[f64; 4]>,
+    /// Ground constants (conductivity, dielectric) per point.
+    grounds: Vec<[f64; 2]>,
+    alatd: f64,
 }
 
 fn parse_geom_trace(text: &str) -> Vec<GeomTrace> {
@@ -72,6 +75,8 @@ fn parse_geom_trace(text: &str) -> Vec<GeomTrace> {
                     btr_deg: parse(2),
                     brt_deg: parse(3),
                     points: Vec::new(),
+                    grounds: Vec::new(),
+                    alatd: f64::NAN,
                 });
             }
             Some(&"CP") if fields.len() == 5 => {
@@ -80,6 +85,17 @@ fn parse_geom_trace(text: &str) -> Vec<GeomTrace> {
                     current
                         .points
                         .push([parse(1), parse(2), parse(3), parse(4)]);
+                }
+            }
+            Some(&"GC") if fields.len() == 3 => {
+                if let Some(current) = out.last_mut() {
+                    let parse = |i: usize| fields[i].parse::<f64>().unwrap_or(f64::NAN);
+                    current.grounds.push([parse(1), parse(2)]);
+                }
+            }
+            Some(&"AL") if fields.len() == 2 => {
+                if let Some(current) = out.last_mut() {
+                    current.alatd = fields[1].parse().unwrap_or(f64::NAN);
                 }
             }
             _ => {}
@@ -229,6 +245,9 @@ fn main() -> ExitCode {
         Worst::new("control point latitude (deg)"),
         Worst::new("control point longitude (deg)"),
         Worst::new("geomagnetic latitude (deg)"),
+        Worst::new("ground conductivity (mhos/m)"),
+        Worst::new("ground dielectric"),
+        Worst::new("path latitude ALATD (deg)"),
     ];
     let mut mag_worst = [
         Worst::new("gyrofrequency (MHz)"),
@@ -579,6 +598,26 @@ fn main() -> ExitCode {
         }
         let cof = cofion(&set);
         let mags: Vec<_> = rust.points.iter().map(|p| magvar(p.lat, p.lon)).collect();
+        // Ground constants and path latitude, dumped with the geometry.
+        let grounds = ground_constants(&set, &rust.points, &mags);
+        if fortran.grounds.len() == grounds.len() {
+            for ((sig, eps), t) in grounds.iter().zip(&fortran.grounds) {
+                worst[7].update((f64::from(*sig) - t[0]).abs(), &case.id);
+                worst[8].update((f64::from(*eps) - t[1]).abs(), &case.id);
+            }
+        } else {
+            eprintln!(
+                "{}: {} ground-constant dumps for {} points",
+                case.id,
+                fortran.grounds.len(),
+                grounds.len()
+            );
+            structural += 1;
+        }
+        worst[9].update(
+            (f64::from(alatd(&rust.points)) - fortran.alatd).abs(),
+            &case.id,
+        );
         let clats: Vec<f32> = rust.points.iter().map(|p| p.lat).collect();
         // FSECV lives in a COMMON block and carries across hours; the
         // ionogram chain's lecden calls update it after curmuf's.

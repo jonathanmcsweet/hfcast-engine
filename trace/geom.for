@@ -186,15 +186,17 @@ C.....GROUND CONSTANTS FOR LAND
       ALATD=ABS(CLAT(1))*R2D
       IF(KM.NE.1) ALATD=ABS((CLAT(1)+CLAT(2)+CLAT(3))/3.0)*R2D
 ccc      write(12,'(''glat='',5e15.7)') (glat(i),i=1,km)
-      call trace_geom(GCDKM,BTRD,BRTD,KM,RD,CLAT,CLONG,GLAT,R2D)
+      call trace_geom(GCDKM,BTRD,BRTD,KM,RD,CLAT,CLONG,GLAT,R2D,
+     A SIGPAT,EPSPAT,ALATD)
       RETURN
       END
 C--------------------------------
-      SUBROUTINE trace_geom(GCDKM,BTRD,BRTD,KM,RD,CLAT,CLONG,GLAT,R2D)
+      SUBROUTINE trace_geom(GCDKM,BTRD,BRTD,KM,RD,CLAT,CLONG,GLAT,R2D,
+     A SIGPAT,EPSPAT,ALATD)
 C     propcore instrumentation: dumps the path geometry when the
 C     environment variable PROPCORE_TRACE names a directory. The Rust
 C     port is tested stage by stage against these values.
-      DIMENSION RD(5),CLAT(5),CLONG(5),GLAT(5)
+      DIMENSION RD(5),CLAT(5),CLONG(5),GLAT(5),SIGPAT(5),EPSPAT(5)
       character tdir*256
       call get_environment_variable('PROPCORE_TRACE',tdir,ltdir,ist)
       if(ist.ne.0 .or. ltdir.eq.0) return
@@ -204,6 +206,10 @@ C     port is tested stage by stage against these values.
       write(97,'(A,4E16.8)') 'CP ',RD(i),CLAT(i)*R2D,
      A CLONG(i)*R2D,GLAT(i)*R2D
 10    continue
+      do 20 i=1,KM
+      write(97,'(A,2E16.8)') 'GC ',SIGPAT(i),EPSPAT(i)
+20    continue
+      write(97,'(A,E16.8)') 'AL ',ALATD
       close(97)
       RETURN
       END
