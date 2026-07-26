@@ -190,11 +190,11 @@ impl Default for Reflectrix {
     }
 }
 
-/// `/MODES/`: up to six raysets for one hop distance in the controlling
-/// area's column.
-#[derive(Debug, Clone)]
+/// `/MODES/`: up to six raysets for one hop distance, one column per
+/// sample area. `GHOP` is a single scalar shared by all three columns
+/// and lives in [`ModeLoopState`], not here.
+#[derive(Debug, Clone, Default)]
 pub struct HopModes {
-    pub ghop: R,
     pub delmod: [R; 6],
     pub hpmod: [R; 6],
     pub htmod: [R; 6],
@@ -385,6 +385,14 @@ pub struct Son {
 pub struct ModeLoopState {
     pub areas: [AreaTables; 3],
     pub reflectrix: [Reflectrix; 3],
+    /// `/MODES/` `DELMOD`-`AFMOD`, one column per area. A column keeps
+    /// its contents until something writes it again, so a pass whose
+    /// `FDIST` fills one column and whose `INMUF` reads another sees
+    /// what the last write left there.
+    pub modes: [HopModes; 3],
+    /// `/MODES/` `GHOP`: the current hop's angular distance, shared by
+    /// every column and rewritten by `INMUF`.
+    pub ghop: R,
     pub zon: Zon,
     pub all: AllModes,
     pub son: [Son; 13],
@@ -403,6 +411,8 @@ impl Default for ModeLoopState {
         ModeLoopState {
             areas: Default::default(),
             reflectrix: Default::default(),
+            modes: Default::default(),
+            ghop: 0.0,
             zon: Zon::default(),
             all: AllModes::default(),
             son: [Son::default(); 13],
@@ -428,6 +438,16 @@ pub struct PassCtx<'a> {
     pub gcdkm: R,
     /// Controlling sample area (0-based `JMODE - 1`).
     pub jmode: usize,
+    /// The area index `K` left in `LUFFY` after the electron-density
+    /// chain, which is what `FINDF` and `FDIST` are called with. It is
+    /// `jmode` for the systems passes. For the short LUF pass it is the
+    /// receiver-end area instead: the test that ends the chain,
+    /// `IF((IPFG.EQ.100).OR.(K.GT.1))GO TO 87`, only names `IPFG` 100,
+    /// so `IPFG` 300 falls through and runs the long-path receiver area
+    /// as well, leaving `K = KFX`. The mode routines still read column
+    /// `JMODE`, so that pass builds its reflectrix from one area and its
+    /// modes from another. A bug, kept as written.
+    pub kctl: usize,
     pub nang: usize,
     /// `IPFG = 200`: the long-path model.
     pub long: bool,
@@ -868,19 +888,16 @@ pub fn findf(
 
 /// Port of `FDIST`: finds up to six raysets for the hop distance
 /// `ghop` (radians) at `freq` by searching the reflectrix table.
-pub fn fdist(rfx: &Reflectrix, ghop: R, amind: R, freq: R) -> HopModes {
-    let mut m = HopModes {
-        ghop,
-        delmod: [0.0; 6],
-        hpmod: [-1.0; 6],
-        htmod: [0.0; 6],
-        fvmod: [0.0; 6],
-        itmod: [5; 6],
-        afmod: [0.0; 6],
-    };
+pub fn fdist(m: &mut HopModes, rfx: &Reflectrix, ghop: R, amind: R, freq: R) {
+    m.delmod = [0.0; 6];
+    m.hpmod = [-1.0; 6];
+    m.htmod = [0.0; 6];
+    m.fvmod = [0.0; 6];
+    m.itmod = [5; 6];
+    m.afmod = [0.0; 6];
     let dhopkm = ghop * RZ;
     if dhopkm >= rfx.dmaxkm {
-        return m;
+        return;
     }
     let mut ih: usize = 0; // 1-based after the first increment
     let mut il: usize = 0;
@@ -1000,7 +1017,6 @@ pub fn fdist(rfx: &Reflectrix, ghop: R, amind: R, freq: R) -> HopModes {
             continue 'row; // ICEPAC addition: keep searching this slot.
         }
     }
-    m
 }
 
 // ---------------------------------------------------------------------
@@ -1014,6 +1030,7 @@ pub fn fdist(rfx: &Reflectrix, ghop: R, amind: R, freq: R) -> HopModes {
 fn regmod(
     zon: &mut Zon,
     modes: &HopModes,
+    ghop: R,
     ctx: &PassCtx,
     muf: &MufHour,
     noise: &NoiseResult,
@@ -1024,7 +1041,7 @@ fn regmod(
     let l = [1usize, 3, 5][k]; // LX(K)
     let ac = 677.2 * ctx.sig.acav;
     let bc = (freq + ctx.geog.gyz[l - 1]).powf(1.98);
-    let ihop = (ctx.gcd / modes.ghop + 0.01) as i32;
+    let ihop = (ctx.gcd / ghop + 0.01) as i32;
     let hop = ihop as R;
     for im in 0..7 {
         zon.hn[im] = -1.0;
@@ -1037,7 +1054,7 @@ fn regmod(
         }
         let del = (D2R * modes.delmod[im]).min(89.99 * D2R);
         let cdel = del.cos();
-        let psi = modes.ghop * 0.5;
+        let psi = ghop * 0.5;
         let phe = PIO2 - psi - del;
         let path = 2.0 * (modes.hpmod[im] + RZ * (1.0 - psi.cos())) / phe.cos();
         let path = (path * hop).abs();
@@ -1182,6 +1199,7 @@ fn regmod(
 fn inmuf(
     zon: &mut Zon,
     modes: &mut HopModes,
+    ghop: &mut R,
     muf: &mut MufHour,
     ctx: &PassCtx,
     area: &AreaTables,
@@ -1298,7 +1316,7 @@ fn inmuf(
                     modes.afmod[inum] = muf.layers[jh].afmuf;
                     modes.itmod[inum] = jh as i32 + 1;
                     inum += 1;
-                    modes.ghop = 2.0 * psi;
+                    *ghop = 2.0 * psi;
                 }
             }
             done = true;
@@ -1376,7 +1394,7 @@ fn inmuf(
             }
         }
     }
-    regmod(zon, modes, ctx, muf, noise, freq, fsdead);
+    regmod(zon, modes, *ghop, ctx, muf, noise, freq, fsdead);
     if ireset {
         for il in 0..3 {
             muf.layers[il].sigl = osave[il].0;
@@ -2449,25 +2467,29 @@ pub fn luffy_freq_loop(
         };
         if !ctx.long {
             let jm = ctx.jmode;
+            // `K`, which is `JMODE` in this pass: the reflectrix and
+            // the raysets come from the same area the mode routines
+            // read. Only the short LUF pass separates the two.
+            let kc = ctx.kctl;
             findf(
-                &mut lp.reflectrix[jm],
+                &mut lp.reflectrix[kc],
                 ctx.state,
-                &lp.areas[jm],
-                jm,
+                &lp.areas[kc],
+                kc,
                 freq,
                 ctx.deck.amind,
                 ctx.nang,
             );
-            dbg.rfx.push(rfx_snapshot(&lp.reflectrix[jm], jm, khz));
+            dbg.rfx.push(rfx_snapshot(&lp.reflectrix[kc], kc, khz));
             let fsdead = ((lp.areas[jm].ifob[0][2] as R) / 1000.0).min(3.0);
             let (mut ihsrt, ihstp);
-            if lp.reflectrix[jm].dmaxkm <= 0.0 {
+            if lp.reflectrix[kc].dmaxkm <= 0.0 {
                 // Only the over-the-MUF mode is possible.
                 ihsrt = ihmin;
                 ihstp = ihmin;
             } else {
-                ihsrt = (ctx.gcdkm / lp.reflectrix[jm].dmaxkm + 1.0) as i32;
-                let mut ihmax = (ctx.gcdkm / lp.reflectrix[jm].dskpkm) as i32;
+                ihsrt = (ctx.gcdkm / lp.reflectrix[kc].dmaxkm + 1.0) as i32;
+                let mut ihmax = (ctx.gcdkm / lp.reflectrix[kc].dskpkm) as i32;
                 if ihsrt < ihmin {
                     ihsrt = ihmin;
                 }
@@ -2481,11 +2503,19 @@ pub fn luffy_freq_loop(
             }
             for ihop in ihsrt..=ihstp {
                 let hop = ihop as R;
-                let ghop = ctx.gcd / hop;
-                let mut modes = fdist(&lp.reflectrix[jm], ghop, ctx.deck.amind, freq);
+                lp.ghop = ctx.gcd / hop;
+                fdist(
+                    &mut lp.modes[kc],
+                    &lp.reflectrix[kc],
+                    lp.ghop,
+                    ctx.deck.amind,
+                    freq,
+                );
+                let (modes, ghop) = (&mut lp.modes[jm], &mut lp.ghop);
                 inmuf(
                     &mut lp.zon,
-                    &mut modes,
+                    modes,
+                    ghop,
                     muf,
                     ctx,
                     &lp.areas[jm],
@@ -2568,6 +2598,247 @@ pub fn luffy_freq_loop(
         out.push(Some(dbg));
     }
     out
+}
+
+
+/// `FRQCOM`: the 2-40 MHz frequency complement the LUF search sweeps.
+///
+/// Slot 12 (index 11) always carries the circuit MUF. `ifreq = -10`
+/// instead sets slot 1 to the FOT and returns. The remaining slots
+/// spread from 2 MHz up to the HPF (at most 40), inserting the lower
+/// of the E and F2 MUFs as an explicit point when it falls inside the
+/// range.
+pub fn frqcom(muf: &MufHour, ifreq: i32) -> [R; 13] {
+    const FLOW: R = 2.0;
+    const FHIGH: R = 40.0;
+    let mut frea = [0.0 as R; 13];
+    frea[11] = muf.allmuf;
+    if ifreq + 10 == 0 {
+        frea[0] = muf.fot;
+        return frea;
+    }
+    let mut xfl = muf.emuf.min(muf.f2muf);
+    let mut xfh = muf.hpf;
+    xfl = xfl.max(FLOW);
+    xfh = xfh.min(FHIGH);
+    if xfh <= FLOW {
+        // Case 1, "not likely to occur".
+        frea[0] = FLOW;
+        for i in 1..11 {
+            frea[i] = frea[i - 1] + 2.0;
+        }
+        return frea;
+    }
+    if xfl <= FLOW {
+        // Case 2, nighttime.
+        let delf = (xfh - FLOW) / 11.0;
+        frea[0] = FLOW;
+        for i in 1..11 {
+            frea[i] = frea[i - 1] + delf;
+        }
+        frea[12] = 0.0;
+        return frea;
+    }
+    if xfh <= FLOW + 20.0 {
+        // Case 3: insert the smaller MUF within equal increments.
+        let delf = (xfh - FLOW) / 9.0;
+        let mut ne = ((xfl - FLOW) / delf) as i32 + 2;
+        frea[0] = FLOW;
+        for i in 1..ne as usize {
+            frea[i] = frea[i - 1] + delf;
+        }
+        frea[ne as usize - 1] = xfl;
+        frea[ne as usize] = frea[ne as usize - 2] + delf;
+        ne += 2;
+        let ne = (ne as usize).min(11);
+        for i in (ne - 1)..11 {
+            frea[i] = frea[i - 1] + delf;
+        }
+        frea[12] = 0.0;
+        return frea;
+    }
+    if xfl <= FLOW + 2.0 {
+        // Case 4: the lower MUF between 2 and 4 MHz.
+        let delf = (xfh - (FLOW + 2.0)) / 9.0;
+        frea[0] = FLOW;
+        frea[1] = xfl;
+        frea[2] = FLOW + 2.0;
+        for i in 3..11 {
+            frea[i] = frea[i - 1] + delf;
+        }
+        frea[12] = 0.0;
+        return frea;
+    }
+    if FHIGH - 2.0 - FLOW <= 0.0 {
+        // Case 6, unreachable with the fixed 2-40 MHz limits.
+        let delf = ((FHIGH - 2.0) - FLOW) / 9.0;
+        frea[0] = FLOW;
+        for i in 1..10 {
+            frea[i] = frea[i - 1] + delf;
+        }
+        frea[10] = xfl;
+        frea[12] = 0.0;
+        return frea;
+    }
+    // Case 5: equal increments to the lower MUF, then to the limit.
+    let mut ne = (((xfl - FLOW) / 2.0) as i32).min(7);
+    let xne = ne as R;
+    let delf = (xfl - FLOW) / xne;
+    frea[0] = FLOW;
+    for i in 1..ne as usize {
+        frea[i] = frea[i - 1] + delf;
+    }
+    let xne = ne as R;
+    let delf = (xfh - frea[ne as usize - 1]) / (12.0 - xne - 1.0);
+    ne += 1;
+    for i in (ne as usize - 1)..11 {
+        frea[i] = frea[i - 1] + delf;
+    }
+    frea[12] = 0.0;
+    frea
+}
+
+/// `LUFFY` for `IPFG` 300 and 400: the LUF search. Sweeps the
+/// frequency complement, computes the reliability of each frequency
+/// with the same short or long chain as the systems passes, and stops
+/// at the first that meets the required reliability, interpolating the
+/// LUF between it and the one before. Returns the LUF (negative when
+/// no frequency qualified) and the complement with slot 13 filled.
+///
+/// Differences from the systems passes, as the source has them: a
+/// short-path frequency whose reflectrix has no reachable distance is
+/// skipped rather than forced into a single over-the-MUF mode, and no
+/// service probability, multipath or output happens.
+pub fn luffy_luf(
+    lp: &mut ModeLoopState,
+    ctx: &PassCtx,
+    muf: &mut MufHour,
+    noise_for: &dyn Fn(R) -> NoiseResult,
+    lufp: i32,
+) -> (R, [R; 13]) {
+    let mut frea = frqcom(muf, 0);
+    let pluf = 0.01 * lufp as R;
+    let mut ihmin = muf.layers[0].nhopmf;
+    if muf.layers[1].nhopmf > 0 && muf.layers[1].nhopmf < ihmin {
+        ihmin = muf.layers[1].nhopmf;
+    }
+    if muf.layers[2].nhopmf < ihmin {
+        ihmin = muf.layers[2].nhopmf;
+    }
+    lp.son[12].nhp = -1;
+    lp.son[12].mdl = if ctx.long { b'L' } else { b'S' };
+    for son in lp.son.iter_mut().take(12) {
+        son.mdl = b' ';
+    }
+    let itxrcp = [1usize, if ctx.state.kfx == 1 { 2 } else { ctx.state.kfx }];
+    for ifx in 0..12usize {
+        let freq = frea[ifx];
+        lp.son[ifx].reliab = 0.0;
+        lp.all.reset();
+        let noise = noise_for(freq);
+        if !ctx.long {
+            let jm = ctx.jmode;
+            let kc = ctx.kctl;
+            findf(
+                &mut lp.reflectrix[kc],
+                ctx.state,
+                &lp.areas[kc],
+                kc,
+                freq,
+                ctx.deck.amind,
+                ctx.nang,
+            );
+            if lp.reflectrix[kc].dmaxkm <= 0.0 {
+                // Nothing reflects at this frequency: skip it.
+                continue;
+            }
+            let fsdead = ((lp.areas[jm].ifob[0][2] as R) / 1000.0).min(3.0);
+            let mut ihsrt = (ctx.gcdkm / lp.reflectrix[kc].dmaxkm + 1.0) as i32;
+            let mut ihmax = (ctx.gcdkm / lp.reflectrix[kc].dskpkm) as i32;
+            if ihsrt < ihmin {
+                ihsrt = ihmin;
+            }
+            if ihmax < ihsrt {
+                ihmax = ihsrt;
+            }
+            let ihstp = ihmax.min(ihsrt + 2);
+            if ihsrt > ihmin {
+                ihsrt = ihmin.max(ihstp - 2);
+            }
+            for ihop in ihsrt..=ihstp {
+                let hop = ihop as R;
+                lp.ghop = ctx.gcd / hop;
+                fdist(
+                    &mut lp.modes[kc],
+                    &lp.reflectrix[kc],
+                    lp.ghop,
+                    ctx.deck.amind,
+                    freq,
+                );
+                let (modes, ghop) = (&mut lp.modes[jm], &mut lp.ghop);
+                inmuf(
+                    &mut lp.zon,
+                    modes,
+                    ghop,
+                    muf,
+                    ctx,
+                    &lp.areas[jm],
+                    &noise,
+                    freq,
+                    ihop,
+                    fsdead,
+                );
+                lp.all.accumulate(&lp.zon, 1, 6);
+            }
+            esmod(&mut lp.zon, ctx, muf, &noise, freq, fsdead);
+            esreg(&mut lp.zon);
+            lp.all.accumulate(&lp.zon, 4, 5);
+        } else {
+            for &end in &itxrcp {
+                let k = end - 1;
+                findf(
+                    &mut lp.reflectrix[k],
+                    ctx.state,
+                    &lp.areas[k],
+                    k,
+                    freq,
+                    ctx.deck.amind,
+                    ctx.nang,
+                );
+            }
+            gmloss(lp, ctx, muf, freq, itxrcp);
+            let ltxrgm = seltxr(lp, ctx, itxrcp);
+            lngpat(lp, ctx, muf, &noise, freq, itxrcp, ltxrgm);
+        }
+        relbil(lp, ifx, &noise, &ctx.deck, ctx.ants, freq);
+        if lp.son[ifx].reliab >= pluf {
+            let xluf = if ifx == 0 {
+                freq
+            } else {
+                let flow = frea[ifx - 1];
+                let fhigh = frea[ifx];
+                let rlow = lp.son[ifx - 1].reliab;
+                let rhigh = lp.son[ifx].reliab;
+                flow + (fhigh - flow) * (pluf - rlow) / (rhigh - rlow)
+            };
+            frea[12] = xluf;
+            return (xluf, frea);
+        }
+    }
+    // No LUF found: take the highest reliability. The comparison is
+    // against the *first* slot's reliability throughout — REL is never
+    // updated — so IG lands on the last slot beating slot 1, not on
+    // the true maximum. Kept as written.
+    let mut ig = 0usize;
+    let rel = lp.son[0].reliab;
+    for i in 1..12 {
+        if lp.son[i].reliab > rel {
+            ig = i;
+        }
+    }
+    let xluf = -frea[ig];
+    frea[12] = frea[ig];
+    (xluf, frea)
 }
 
 /// One frequency's final values after the smoothing blend.

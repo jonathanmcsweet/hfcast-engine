@@ -215,6 +215,62 @@ Fortran facts the module preserves: `/SON/`, `/REFLX/`, `/ZON/` and
 `/allMODE/` persist across hours and are read stale (a frequency with
 no modes keeps the previous values — `ModeLoopState` carries them per
 case); `OUTBOD` overwrites the MUF slot with "NA" sentinels above
-30 MHz after each hour's output; antennas are the isotrope so `GAIN`
-reduces to constants except its Fresnel ground-reflection branch; and
-`PWRDB` is the single deck power in dBW.
+30 MHz after each hour's output; `/MODES/` keeps one column per sample
+area and `GHOP` as a single shared scalar; and `PWRDB` answers per
+frequency from the transmit card whose band covers it.
+
+## The LUF passes (`run_luf`)
+
+Card methods 26 to 29 are `ITRUN = 8`: instead of the deck's
+frequencies, the engine builds its own complement and searches it for
+the lowest frequency that meets the required reliability. `FRQCOM`
+lays out thirteen slots between 2 and 40 MHz — six cases depending on
+where the lower of the E and F2 MUFs and the HPF fall — and puts the
+circuit MUF in slot 12 without clamping it, so slot 12 can sit above
+40 MHz and, in one case, above a slot the same pass already filled.
+`LUFFY` runs the same short or long chain per slot as a systems pass,
+stops at the first slot reaching the required reliability and
+interpolates the LUF linearly between that slot and the one below it.
+The pass is `IPFG` 300 below 10000 km and 400 at or beyond it.
+
+Three things the pass does that the systems passes do not.
+
+A short-path slot whose reflectrix has no reachable distance is
+skipped outright, leaving its reliability at zero; `IPFG = 100` instead
+forces the single over-the-MUF mode.
+
+When no slot qualifies, the engine reports the negated most reliable
+frequency — except that the scan is written
+
+```
+IG = 1
+REL = RELIAB(1)
+DO 160 IF = 2,12
+IF(RELIAB(IF).GT.REL) IG = IF
+```
+
+with `REL` never reassigned, so it compares every slot against slot 1
+and lands on the _last_ slot beating slot 1 rather than on the
+maximum. The source carries a comment questioning the test. Kept as
+written.
+
+And the electron-density chain ends on the wrong area. It runs for
+`K = JMODE`, then the test `IF((IPFG.EQ.100).OR.(K.GT.1))GO TO 87`
+decides whether to run again for the long-path receiver area. Only
+`IPFG` 100 is named, so the short LUF pass falls through and runs the
+second area too, leaving `K = KFX` for the frequency loop. `FINDF` and
+`FDIST` take `K` as an argument, but `INMUF`, `REGMOD`, `ESMOD`,
+`ESREG` and `SIGDIS` all set `K = JMODE` internally. So when the
+controlling area is area 1 and the path has more than one sample area,
+the pass builds its reflectrix and raysets from the receiver-end area
+and then reads its modes out of the `JMODE` column — which `FDIST`
+never wrote. That column holds whatever the last write left there,
+which is why the reference's reliabilities in this pass often sit at
+the no-modes floor. The port models it: `/MODES/` is three persistent
+columns in `ModeLoopState`, `fdist` writes the column `PassCtx::kctl`
+names and `inmuf` reads the `jmode` one. A bug, kept as written.
+
+`lufcheck` builds a method-26 deck per fuzz case, parses `OUTMUF`'s
+table and compares GMT, LMT, FOT, HPF, the sporadic-E MUF, the circuit
+MUF and the LUF at the two decimals the table prints. 96 cases over
+all six distance bands — 2304 hours, 16,128 cells — are identical.

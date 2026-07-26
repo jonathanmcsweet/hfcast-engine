@@ -27,8 +27,8 @@ use super::antenna::{
 };
 use super::magnetic::magvar;
 use super::modes::{
-    es_slots, luffy_freq_loop, luffy_smooth, outbod_sentinels, setlng, setluf, DeckParams, Geog,
-    HourSaves, ModeLoopState, PassCtx, Son,
+    es_slots, luffy_freq_loop, luffy_luf, luffy_smooth, outbod_sentinels, setlng, setluf,
+    DeckParams, Geog, HourSaves, ModeLoopState, PassCtx, Son,
 };
 use super::muf::{curmuf, ionset, lecden, IonoState};
 use super::noise::{anois1, genois};
@@ -170,6 +170,168 @@ fn build_antennas(itshfbc: &Path, inp: &RunInputs) -> Result<AntennaSet, String>
     .map_err(|e| e.to_string())?;
     ants.install(2, rx.min_freq, rx.max_freq, rx_table, 0.0);
     Ok(ants)
+}
+
+/// One hour of a LUF run (`ITRUN = 8`, card methods 26-29): the MUF
+/// block plus the LUF the search found. A negative LUF means no
+/// frequency met the required reliability, and its magnitude is the
+/// most reliable frequency of the sweep.
+#[derive(Debug, Clone, Copy)]
+pub struct LufHour {
+    pub gmt: R,
+    pub lmt: R,
+    pub fot: R,
+    pub hpf: R,
+    pub esmuf: R,
+    pub allmuf: R,
+    pub xluf: R,
+}
+
+/// Runs the LUF computation for all 24 hours: `LUFFY` with `IPFG` 300
+/// below 10000 km and 400 beyond, sweeping the frequency complement
+/// for the lowest frequency meeting the required reliability.
+pub fn run_luf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<LufHour>, String> {
+    let pole = MagneticPole::for_tree(itshfbc);
+    let geo = path_geometry(
+        inp.from_lat_deg as R,
+        inp.from_lon_deg as R,
+        inp.to_lat_deg as R,
+        inp.to_lon_deg as R,
+        false,
+        pole,
+    );
+    let mags: Vec<_> = geo.points.iter().map(|p| magvar(p.lat, p.lon)).collect();
+    let set: CoefficientSet =
+        redmap(itshfbc, FoF2Model::Ccir, inp.month, inp.ssn).map_err(|e| e.to_string())?;
+    let cof = cofion(&set);
+    let grounds = ground_constants(&set, &geo.points, &mags);
+    let _ = alatd(&geo.points);
+    let clats: Vec<R> = geo.points.iter().map(|p| p.lat).collect();
+    let glats: Vec<R> = geo.points.iter().map(|p| p.gmlat).collect();
+    let psc = [1.0, 1.0, 1.0, if inp.sporadic_e { 1.0 } else { 0.0 }];
+    let nang = sang(geo.gcd_km, 0.1);
+    let ants = build_antennas(itshfbc, inp)?;
+    let deck = DeckParams {
+        amind: 0.1,
+        rsn: inp.required_snr_db,
+        lufp: 90,
+        pmp: 3.0,
+        dmp: 0.1,
+    };
+    let from_lon_rad = inp.from_lon_deg as R * D2R;
+    let to_lon_rad = inp.to_lon_deg as R * D2R;
+    let to_lat_rad = inp.to_lat_deg as R * D2R;
+
+    // GCDLNG: the long model beyond 10000 km.
+    let long = geo.gcd_km >= 10000.0;
+
+    let mut lp = ModeLoopState::default();
+    let mut fsecv_carry = [0.0 as R; 3];
+    let mut out = Vec::with_capacity(24);
+    for jt in 1..=24i32 {
+        let gmt = jt as R;
+        let ab = virtim(&cof, &set.ikim, gmt);
+        let params = layer_parameters(
+            &set,
+            &ab,
+            &geo.points,
+            &mags,
+            inp.month,
+            inp.ssn,
+            gmt,
+            &psc,
+        );
+        let es = esind(&set, &ab, &geo.points, &mags, &psc);
+        let mut state = IonoState::from_layers(&params);
+        state.fsecv = fsecv_carry;
+        ionset(&mut state);
+        let mut es_state = es.clone();
+        let clcks: Vec<R> = params.iter().map(|p| p.clck).collect();
+        let mut hour = curmuf(
+            &mut state,
+            &mut es_state,
+            &set.f2d,
+            &clats,
+            &clcks,
+            geo.gcd,
+            geo.gcd_km,
+            deck.amind,
+            inp.ssn,
+        );
+        let times = geotim(jt, 1, from_lon_rad, to_lon_rad);
+        let an = anois1(&set, times.gmtr, to_lat_rad, to_lon_rad, inp.to_lon_deg as R);
+        let fof2_end = state.fi[state.kfx - 1][2];
+        let noise_for = |f: R| {
+            let reff = ants.gain(2, 0.0, f).1;
+            genois(reff, &set, &an, f, to_lat_rad, fof2_end, inp.noise_dbw)
+        };
+
+        let jmode = selmod(&state);
+        // The electron-density chain, and the area index `K` it leaves
+        // behind. It starts at `JMODE` for the short pass and at area 1
+        // for the long one, and runs a second time for the receiver-end
+        // area unless the first area was already past area 1. The test
+        // that ends it names only `IPFG` 100, so both LUF passes take
+        // the second area even though only the long one uses it, and
+        // the short LUF pass is left with `K = KFX` where the systems
+        // pass has `K = JMODE`.
+        let first = if long { 0 } else { jmode };
+        let (areas, kctl): (Vec<usize>, usize) = if first > 0 {
+            (vec![first], first)
+        } else if state.kfx > 1 {
+            (vec![first, state.kfx - 1], state.kfx - 1)
+        } else {
+            (vec![first], first)
+        };
+        let (mut fs, mut hs) = es_slots(&es_state);
+        let mut geog = Geog::from_points(&params, &mags, &grounds);
+        for &k in &areas {
+            lecden(&mut state, k);
+            let mut ion = genion(&state, k);
+            let table = fobby(&ion, nang);
+            alosfv(&state, k, &mut ion, &hour.layers);
+            lp.areas[k].update(ion, &table);
+        }
+        setlng(&mut state, &mut fs, &mut hs, &mut geog, &mut lp.areas);
+        let sd = sigdis(
+            &set,
+            &state,
+            &hour,
+            &lp.areas[jmode].ion,
+            &glats,
+            &clcks,
+            jmode,
+            geo.gcd_km,
+        );
+        geog.apply_sigdis(&sd);
+        let ctx = PassCtx {
+            state: &state,
+            ants: &ants,
+            fs: &fs,
+            hs: &hs,
+            geog: &geog,
+            sig: &sd,
+            deck,
+            gcd: geo.gcd,
+            gcdkm: geo.gcd_km,
+            jmode,
+            kctl,
+            nang,
+            long,
+        };
+        let (xluf, _frea) = luffy_luf(&mut lp, &ctx, &mut hour, &noise_for, deck.lufp);
+        out.push(LufHour {
+            gmt,
+            lmt: times.lmt_tx,
+            fot: hour.fot,
+            hpf: hour.hpf,
+            esmuf: hour.esmuf,
+            allmuf: hour.allmuf,
+            xluf,
+        });
+        fsecv_carry = state.fsecv;
+    }
+    Ok(out)
 }
 
 /// One hour's outputs: the MUF block and the thirteen `/SON/` slots
@@ -346,6 +508,9 @@ pub fn run(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<HourPrediction>, Strin
                 gcd: geo.gcd,
                 gcdkm: geo.gcd_km,
                 jmode,
+                // The systems passes end their area chain at `JMODE`;
+                // only the short LUF pass differs.
+                kctl: jmode,
                 nang,
                 long: plan.long,
             };
@@ -364,6 +529,9 @@ pub fn run(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<HourPrediction>, Strin
                 gcd: geo.gcd,
                 gcdkm: geo.gcd_km,
                 jmode,
+                // The systems passes end their area chain at `JMODE`;
+                // only the short LUF pass differs.
+                kctl: jmode,
                 nang,
                 long: true,
             };

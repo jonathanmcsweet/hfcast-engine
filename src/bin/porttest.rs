@@ -1487,6 +1487,7 @@ fn main() -> ExitCode {
                     gcd: rust.gcd,
                     gcdkm: rust.gcd_km,
                     jmode,
+                    kctl: jmode,
                     nang,
                     long: plan.long,
                 };
@@ -1535,6 +1536,7 @@ fn main() -> ExitCode {
                     gcd: rust.gcd,
                     gcdkm: rust.gcd_km,
                     jmode,
+                    kctl: jmode,
                     nang,
                     long: true,
                 };

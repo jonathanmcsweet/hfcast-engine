@@ -212,6 +212,7 @@ C.......RAY SET TABLE
         CALL FINDF(K)
         IF( DMAXKM(K) ) 122,122,123
   122   IF(IPFG.EQ.300)then
+          call trace_luf(IFX,1)
           go to 265
         else
 C-----------------------------------------------
@@ -326,6 +327,7 @@ C.......normal ALL MODE OUTPUT
         CALL OUTALL(IFX)
       ELSE
 C.......TEST RELIABILITY
+        call trace_luf(IFX,0)
         IF(RELIAB(IFX).GE.PLUF)GO TO 165
       ENDIF
 C121PC      ******************************************************
@@ -539,6 +541,7 @@ C     NO LUF FOUND. ,FIND HIGHEST RELIABILITY AND QUIT.
   160 CONTINUE
       XLUF(IT) = -FREA(IG)
       FREA(13) =  FREA(IG)
+      call trace_lufig(IG)
       go to 999     !  done
 c********************************************************
 165   IF=IFX
@@ -707,6 +710,58 @@ C     after the 7000-10000 km smoothing blend.
      D VHIGH(IFX),RNEFF(IFX),snxx(IFX),gaint(IFX),gainr(IFX),
      E DU_NOIS(IFX),DL_NOIS(IFX),XMODE,XMODR
       close(80)
+      RETURN
+      END
+C--------------------------------
+      SUBROUTINE trace_luf(IFX,ISKIP)
+C     propcore instrumentation: dumps one slot of the LUF frequency
+C     sweep -- the frequency, its reliability and whether the slot was
+C     skipped for want of a reachable distance.
+      COMMON / TIME / IT, GMT, UTIME(24), GMTR, XLMT(24), ITIM, JTX
+      COMMON/FRQ/FREA(13),FREL(29),FREQ,JMODE,ITXRCP(2)
+      COMMON / SON / ANGLE(13), ANGLER(13), CPROB(13), DBLOS(13),
+     A DBLOSL(13), DBLOSU(13), DBU(13), DELAY(13), DBW(13), NHP(13),
+     B XNYNOIS(13), PROBMP(13), RELIAB(13), SNDB(13), SNPR(13),
+     C SNRLW(13), SNRUP(13), SPROB(13), VHIGH(13), RNEFF(13),MDL(13)
+      CHARACTER MDL*1
+      COMMON/REFLX/DELFX(45,3),HPFLX(45,3),HTFLX(45,3),GDFLX(45,3),FVFLX
+     A (45,3),DSKPKM(3),DELSKP(3),HPSKP(3),HTSKP(3),DMAXKM(3),FVSKP(3)
+     B ,ISKP(3),IMODE(45,3),AFFLX(45,3),DELPEN(3,5),GML(45,3),FHP(45,3)
+      common /gh_ipfg/ ipfg
+      COMMON / allMODE /ABPS(20),CREL(20),FLDST(20),HN(20),HP(20),
+     1PROB(20),RELY(20),RGAIN(20),SIGPOW(20),SN(20),
+     2SPRO(20),TGAIN(20),TIMED(20),TLOSS(20),B(20),FSLOS(20),
+     3grlos(20),adv(20),obf(20),
+     CNMODE(20),TLLOW(20),TLHGH(20),EFF(20),NREL,NMMOD
+      character tdir*256
+      call get_environment_variable('PROPCORE_TRACE',tdir,ltdir,ist)
+      if(ist.ne.0 .or. ltdir.eq.0) return
+      open(86,file=tdir(1:ltdir)//'/luf.txt',position='append')
+      write(86,'(A,I4,I4,I3,I5,I4,I4)') 'SLOT',NINT(GMT),IFX,ISKIP,
+     A IPFG,JMODE,NMMOD
+      write(86,'(5E18.9)') FREA(IFX),RELIAB(IFX),DMAXKM(1),
+     A DMAXKM(2),DMAXKM(3)
+      write(86,'(5E18.9)') SIGPOW(1),SN(1),TLOSS(1),B(1),FLOAT(NMODE(1))
+      close(86)
+      RETURN
+      END
+C--------------------------------
+      SUBROUTINE trace_lufig(IG)
+C     propcore instrumentation: dumps the slot the no-LUF-found scan
+C     settled on and the LUF it produced.
+      COMMON / TIME / IT, GMT, UTIME(24), GMTR, XLMT(24), ITIM, JTX
+      COMMON/FRQ/FREA(13),FREL(29),FREQ,JMODE,ITXRCP(2)
+      COMMON/MUFS/EMUF(24),F1MUF(24),F2MUF(24),ESMUF(24),ALLMUF(24),FOT
+     A (24),XLUF(24),HPF(24),ANGMUF(24),MODMUF,SIGL(4),SIGU(4),DELMUF(4)
+     B ,HPMUF(4),HTMUF(4),FVMUF(4),AFMUF(4),NHOPMF(4),YFOT(4),YHPF(4)
+     C ,YMUF(4)
+      character tdir*256
+      call get_environment_variable('PROPCORE_TRACE',tdir,ltdir,ist)
+      if(ist.ne.0 .or. ltdir.eq.0) return
+      open(86,file=tdir(1:ltdir)//'/luf.txt',position='append')
+      write(86,'(A,I4,I4,I3)') 'IGXX',NINT(GMT),IG,0
+      write(86,'(5E18.9)') FREA(IG),XLUF(IT),0.,0.
+      close(86)
       RETURN
       END
 C--------------------------------

@@ -306,6 +306,7 @@ mod tests {
     fn a_case() -> DeckCase {
         DeckCase {
             id: "med-eu".into(),
+            method: 30,
             from_lat: 35.8,
             from_lon: -5.9,
             to_lat: 44.9,

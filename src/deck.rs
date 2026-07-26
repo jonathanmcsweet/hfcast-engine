@@ -36,6 +36,8 @@ pub struct DeckCase {
     pub from_lon: f64,
     pub to_lat: f64,
     pub to_lon: f64,
+    /// The METHOD card's number; 30 is the smoothed systems model.
+    pub method: u32,
     /// 1-12.
     pub month: u32,
     pub year: u32,
@@ -224,7 +226,7 @@ pub fn build_deck(c: &DeckCase) -> Result<String, DeckError> {
             field("0.0000", 10)?
         ),
         format!("FREQUENCY {freq_card}"),
-        format!("METHOD    {}{}", field("30", 5)?, field("0", 5)?),
+        format!("METHOD    {}{}", field(&c.method.to_string(), 5)?, field("0", 5)?),
         "EXECUTE".to_string(),
         "QUIT".to_string(),
     ];
@@ -241,6 +243,7 @@ mod tests {
     fn a_case() -> DeckCase {
         DeckCase {
             id: "med-eu".to_string(),
+            method: 30,
             from_lat: 35.8,
             from_lon: -5.9,
             to_lat: 44.9,
