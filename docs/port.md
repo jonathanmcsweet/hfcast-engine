@@ -49,7 +49,7 @@ geometry trace only matches this way.
 | ------------------------------------- | ------------------------------------- | ------------------ | ---------------------------------------- |
 | constants, magnetic pole              | `blkdat`, `set_magnetic_pole`         | `engine::con`      | via geometry                             |
 | path geometry, control points         | `geom.for`                            | `engine::geometry` | worst 3e-4 km / 1.3e-5 deg over 96 cases |
-| magnetic field at control points      | `magvar.for`                          | —                  |                                          |
+| magnetic field at control points      | `magvar.for`, `magfin.for`            | `engine::magnetic` | worst 5e-8 over 408 control points       |
 | coefficient loading                   | `redmap.for`                          | —                  |                                          |
 | map evaluation (foF2, M3000, etc.)    | `geotim`, `virtim`, `timvar`, `f2var` | —                  |                                          |
 | sporadic E                            | `esind`, `esreg`, `esmod`             | —                  |                                          |

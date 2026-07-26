@@ -16,6 +16,7 @@ use std::process::ExitCode;
 use propcore::deck::build_deck;
 use propcore::engine::con::MagneticPole;
 use propcore::engine::geometry::{path_geometry, PathGeometry};
+use propcore::engine::magnetic::magvar;
 use propcore::runner::{run_deck_with_env, variant_bin, IsolatedRoot};
 use propcore::sweep::sweep_cases;
 
@@ -106,8 +107,14 @@ fn main() -> ExitCode {
         Worst::new("control point longitude (deg)"),
         Worst::new("geomagnetic latitude (deg)"),
     ];
+    let mut mag_worst = [
+        Worst::new("gyrofrequency (MHz)"),
+        Worst::new("Rawer dip (rad)"),
+        Worst::new("east longitude (rad)"),
+    ];
     let mut structural = 0usize;
     let mut compared = 0usize;
+    let mut mag_points = 0usize;
 
     for case in &cases {
         let deck = match build_deck(case) {
@@ -182,6 +189,30 @@ fn main() -> ExitCode {
             worst[5].update(dlon, &case.id);
             worst[6].update((r.gmlat as f64 * 57.295779513 - f[3]).abs(), &case.id);
         }
+
+        // The magnetic stage: MAGVAR is called once per control point in
+        // the same order, so the dumps line up with the Rust points.
+        let mag_dump = std::fs::read_to_string(trace_dir.join("magvar.txt")).unwrap_or_default();
+        let mags: Vec<Vec<f64>> = mag_dump
+            .lines()
+            .filter(|l| l.starts_with("MAG "))
+            .map(|l| {
+                l.split_whitespace()
+                    .skip(1)
+                    .map(|t| t.parse().unwrap_or(f64::NAN))
+                    .collect()
+            })
+            .collect();
+        for (r, f) in rust.points.iter().zip(&mags) {
+            if f.len() != 7 {
+                continue;
+            }
+            let rust_mag = magvar(r.lat, r.lon);
+            mag_points += 1;
+            mag_worst[0].update((rust_mag.gyz as f64 - f[2]).abs(), &case.id);
+            mag_worst[1].update((rust_mag.gmdip as f64 - f[3]).abs(), &case.id);
+            mag_worst[2].update((rust_mag.east_lon as f64 - f[1]).abs(), &case.id);
+        }
     }
 
     println!("## Stage: geometry (geom.for)\n");
@@ -189,6 +220,14 @@ fn main() -> ExitCode {
     println!("| field | worst difference | case |");
     println!("| --- | --: | --- |");
     for w in &worst {
+        println!("| {} | {:.2e} | {} |", w.name, w.value, w.case);
+    }
+
+    println!("\n## Stage: magnetic field (magvar.for, magfin.for)\n");
+    println!("Compared {mag_points} control points.\n");
+    println!("| field | worst difference | case |");
+    println!("| --- | --: | --- |");
+    for w in &mag_worst {
         println!("| {} | {:.2e} | {} |", w.name, w.value, w.case);
     }
 
