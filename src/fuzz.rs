@@ -176,8 +176,8 @@ pub fn fuzz_case(index: u64) -> DeckCase {
         required_snr_db: rng.int(0, 90) as f64,
         noise_dbw: rng.int(100, 170) as f64,
         sporadic_e: rng.chance(0.5),
-        tx_antenna: pick_antenna(&mut rng),
-        rx_antenna: pick_antenna(&mut rng),
+        tx_antennas: pick_antennas(&mut rng, 1),
+        rx_antennas: pick_antennas(&mut rng, 2),
         freqs_mhz,
     }
 }
@@ -206,17 +206,66 @@ const ANTENNAS: &[&str] = &[
     "samples/sample.48",
 ];
 
-/// Half the cases stay isotropic; the rest draw an antenna and a beam.
-fn pick_antenna(rng: &mut Rng) -> Option<AntennaChoice> {
+/// The `ANTENNA` cards for one end: half the ends stay isotropic, and
+/// the rest draw one to three cards.
+///
+/// Several cards per end adds no physics — each card's table is computed
+/// the way one card's always was — so what these draws have to exercise
+/// is `GAIN`'s search over the cards. The three arrangements that search
+/// can meet are all drawn here: ranges that meet exactly, ranges that
+/// leave a gap so some frequency has no antenna and takes zero gain, and
+/// ranges that overlap so the card's position decides which one answers.
+///
+/// A transmit card also carries its own power, which `PWRDB` looks up per
+/// frequency, so cards at that end sometimes get different powers. On a
+/// receive card the same column is a gain that replaces the design
+/// frequency.
+fn pick_antennas(rng: &mut Rng, iat: i32) -> Vec<AntennaChoice> {
     if rng.chance(0.5) {
-        return None;
+        return Vec::new();
     }
-    let file = ANTENNAS[rng.int(0, ANTENNAS.len() as i64 - 1) as usize];
-    Some(AntennaChoice {
-        file: file.to_string(),
-        design_freq: 0.0,
-        beam_deg: (rng.int(0, 359) as f64 * 10.0).round() / 10.0,
-    })
+    let draw = |rng: &mut Rng| -> AntennaChoice {
+        let file = ANTENNAS[rng.int(0, ANTENNAS.len() as i64 - 1) as usize];
+        AntennaChoice::whole_band(file, (rng.int(0, 3590) as f64) / 10.0)
+    };
+    let count = match rng.int(1, 100) {
+        n if n <= 60 => 1,
+        n if n <= 85 => 2,
+        _ => 3,
+    };
+    let mut cards: Vec<AntennaChoice> = (0..count).map(|_| draw(rng)).collect();
+
+    // Split 2 to 30 MHz at `count - 1` interior points, then move the
+    // later cards' lower edge to make the bands meet, leave a gap or
+    // overlap.
+    let mut splits: Vec<i32> = (1..count).map(|_| rng.int(4, 27) as i32).collect();
+    splits.sort_unstable();
+    let shift = match rng.int(1, 3) {
+        1 => 1,                       // the bands meet
+        2 => rng.int(2, 4) as i32,    // a gap: some frequency has no card
+        _ => -(rng.int(1, 3) as i32), // an overlap: the first card wins
+    };
+    let mut lo = 2;
+    for (i, card) in cards.iter_mut().enumerate() {
+        card.min_freq = lo;
+        card.max_freq = splits.get(i).copied().unwrap_or(30);
+        lo = (card.max_freq + shift).clamp(2, 30);
+    }
+
+    if iat == 1 && count > 1 && rng.chance(0.5) {
+        // Each band on its own power, in kilowatts.
+        for card in cards.iter_mut() {
+            card.last_field = Some(round2(10f64.powf(rng.range(-3.0, 2.7))));
+        }
+    }
+    if iat == 2 && rng.chance(0.2) {
+        // The receive card's gain column, which stands in for the design
+        // frequency once it is not zero.
+        for card in cards.iter_mut() {
+            card.last_field = Some(round2(rng.range(2.0, 30.0)));
+        }
+    }
+    cards
 }
 
 /// Cases `from` up to but not including `from + count`.

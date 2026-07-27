@@ -141,8 +141,8 @@ pub fn sweep_cases() -> Vec<DeckCase> {
                     required_snr_db: system.required_snr_db,
                     noise_dbw: system.noise_dbw,
                     freqs_mhz: AMATEUR_FREQS_MHZ.to_vec(),
-                    tx_antenna: None,
-                    rx_antenna: None,
+                    tx_antennas: Vec::new(),
+                    rx_antennas: Vec::new(),
                     // The validated server configuration runs with the
                     // sporadic-E layer on, so the tolerance must cover the
                     // code paths that setting exercises.

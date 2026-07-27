@@ -35,27 +35,36 @@ use super::muf::{curmuf, ionset, lecden, nommuf, IonoState};
 use super::noise::{anois1, genois};
 use super::sigdis::{sigdis, SignalDistribution};
 
-/// One `ANTENNA` card's fields, minus the end and power.
+/// One `ANTENNA` card's fields, minus the end it serves.
 #[derive(Debug, Clone)]
 pub struct AntennaCardSpec {
     /// Path under `<itshfbc>/antennas`, e.g. `samples/sample.21`.
     pub file: String,
     pub design_freq: R,
     pub beam_deg: R,
+    /// The card's frequency range in whole MHz. `GAIN` takes the first
+    /// card serving the end whose range holds the frequency, so several
+    /// cards split the bands between them and a frequency in no card's
+    /// range gets no antenna.
     pub min_freq: i32,
     pub max_freq: i32,
+    /// The card's last field: kilowatts on a transmit card, and on a
+    /// receive card a gain that replaces the design frequency when it is
+    /// not zero.
+    pub power_field: R,
 }
 
 impl AntennaCardSpec {
     /// The default card every prediction used before antennas were
     /// wired in.
-    pub fn isotrope() -> Self {
+    pub fn isotrope(power_field: R) -> Self {
         Self {
             file: "default/isotrope".to_string(),
             design_freq: 0.0,
             beam_deg: 0.0,
             min_freq: 2,
             max_freq: 30,
+            power_field,
         }
     }
 }
@@ -75,17 +84,15 @@ pub struct RunInputs {
     pub required_snr_db: R,
     /// Man-made noise at 3 MHz, dB below 1 W (positive).
     pub noise_dbw: i32,
-    pub watts: R,
     /// Whether the deck's `FPROB` card leaves sporadic E on. Kept for
     /// callers that describe a case that way; the engine reads
     /// [`RunInputs::psc`].
     pub sporadic_e: bool,
-    /// `None` is the isotrope card at that end.
-    pub tx_antenna: Option<AntennaCardSpec>,
-    pub rx_antenna: Option<AntennaCardSpec>,
-    /// The receive card's last field: a non-zero value becomes the
-    /// receive isotrope's gain.
-    pub rx_gain_field: R,
+    /// The `ANTENNA` cards at each end, in card order. There is no
+    /// separate transmit power: the deck carries it on the transmit card,
+    /// and `PWRDB` reads it from the card matching the frequency.
+    pub tx_antennas: Vec<AntennaCardSpec>,
+    pub rx_antennas: Vec<AntennaCardSpec>,
     /// The `METHOD` card's first field, before `DECRED` rewrites 30 to
     /// 20. It selects which model runs and which lines print.
     pub method: u32,
@@ -113,23 +120,11 @@ impl From<&DeckCase> for RunInputs {
             freqs_mhz: c.freqs_mhz.iter().map(|f| *f as R).collect(),
             required_snr_db: c.required_snr_db as R,
             noise_dbw: c.noise_dbw as i32,
-            watts: c.watts as R,
             sporadic_e: c.sporadic_e,
-            tx_antenna: c.tx_antenna.as_ref().map(|a| AntennaCardSpec {
-                file: a.file.clone(),
-                design_freq: a.design_freq as R,
-                beam_deg: a.beam_deg as R,
-                min_freq: 2,
-                max_freq: 30,
-            }),
-            rx_antenna: c.rx_antenna.as_ref().map(|a| AntennaCardSpec {
-                file: a.file.clone(),
-                design_freq: a.design_freq as R,
-                beam_deg: a.beam_deg as R,
-                min_freq: 2,
-                max_freq: 30,
-            }),
-            rx_gain_field: 0.0,
+            // The same resolved card list the deck text is written from,
+            // so the two descriptions of one case cannot disagree.
+            tx_antennas: card_specs(c, 1),
+            rx_antennas: card_specs(c, 2),
             method: c.method,
             fof2: if c.ursi {
                 FoF2Model::Ursi
@@ -141,10 +136,35 @@ impl From<&DeckCase> for RunInputs {
     }
 }
 
-/// `ANTCALC` for one run: computes both ends' gain tables from their
-/// definition files and installs them as `DECRED` reads them back.
+/// The `ANTENNA` cards of one end, as the engine takes them.
+///
+/// [`DeckCase::antenna_cards`] resolves the defaults — an empty list is
+/// one isotrope, and a card without a last field takes the deck's
+/// power — so the deck text and this list are written from one decision.
+fn card_specs(c: &DeckCase, iat: i32) -> Vec<AntennaCardSpec> {
+    c.antenna_cards()
+        .into_iter()
+        .filter(|(end, _)| *end == iat)
+        .map(|(_, card)| AntennaCardSpec {
+            file: card.file,
+            design_freq: card.design_freq as R,
+            beam_deg: card.beam_deg as R,
+            min_freq: card.min_freq,
+            max_freq: card.max_freq,
+            power_field: card.last_field.unwrap_or(0.0) as R,
+        })
+        .collect()
+}
+
+/// `ANTCALC` for one run: computes every card's gain table from its
+/// definition file and installs them as `DECRED` reads them back.
+///
+/// The order is every transmit card then every receive card, which is how
+/// the deck numbers them and therefore the order `GAIN` searches. Within
+/// one end the first card whose frequency range holds the frequency wins,
+/// so overlapping cards are resolved by position and a frequency in no
+/// card's range gets no antenna at all.
 fn build_antennas(itshfbc: &Path, inp: &RunInputs) -> Result<AntennaSet, String> {
-    let pwrkw = inp.watts / 1000.0;
     let (taz, _) = dazel0(
         inp.from_lat_deg as R,
         inp.from_lon_deg as R,
@@ -157,36 +177,31 @@ fn build_antennas(itshfbc: &Path, inp: &RunInputs) -> Result<AntennaSet, String>
         inp.from_lat_deg as R,
         inp.from_lon_deg as R,
     );
-    let iso = AntennaCardSpec::isotrope();
-    let tx = inp.tx_antenna.as_ref().unwrap_or(&iso);
-    let rx = inp.rx_antenna.as_ref().unwrap_or(&iso);
+    let ends = [
+        (1, AntennaEnd::Transmit, taz, &inp.tx_antennas),
+        (2, AntennaEnd::Receive, raz, &inp.rx_antennas),
+    ];
     let mut ants = AntennaSet::default();
-    let txf = read_antenna(itshfbc, &tx.file)?;
-    let tx_table = point_to_point_table(&AntennaSetup {
-        file: &txf,
-        end: AntennaEnd::Transmit,
-        min_freq: tx.min_freq,
-        max_freq: tx.max_freq,
-        design_freq: tx.design_freq,
-        beam_deg: tx.beam_deg,
-        power_field: pwrkw,
-        azimuth_deg: taz,
-    })
-    .map_err(|e| e.to_string())?;
-    ants.install(1, tx.min_freq, tx.max_freq, tx_table, pwrkw);
-    let rxf = read_antenna(itshfbc, &rx.file)?;
-    let rx_table = point_to_point_table(&AntennaSetup {
-        file: &rxf,
-        end: AntennaEnd::Receive,
-        min_freq: rx.min_freq,
-        max_freq: rx.max_freq,
-        design_freq: rx.design_freq,
-        beam_deg: rx.beam_deg,
-        power_field: inp.rx_gain_field,
-        azimuth_deg: raz,
-    })
-    .map_err(|e| e.to_string())?;
-    ants.install(2, rx.min_freq, rx.max_freq, rx_table, 0.0);
+    for (iat, end, azimuth_deg, cards) in ends {
+        for card in cards {
+            let file = read_antenna(itshfbc, &card.file)?;
+            let table = point_to_point_table(&AntennaSetup {
+                file: &file,
+                end,
+                min_freq: card.min_freq,
+                max_freq: card.max_freq,
+                design_freq: card.design_freq,
+                beam_deg: card.beam_deg,
+                power_field: card.power_field,
+                azimuth_deg,
+            })
+            .map_err(|e| e.to_string())?;
+            // Only a transmit card carries power; the receive card's
+            // last field is a gain and never becomes a `pwrdba`.
+            let kw = if iat == 1 { card.power_field } else { 0.0 };
+            ants.install(iat, card.min_freq, card.max_freq, table, kw);
+        }
+    }
     Ok(ants)
 }
 
@@ -935,12 +950,11 @@ pub struct AreaInputs {
     /// file still calls that end `Transmit`, and so do these fields,
     /// because `HFAREA` swaps the roles rather than the file.
     pub inverse: bool,
-    /// `None` is the isotrope card at that end.
+    /// `None` is the isotrope card at that end. An area run has one card
+    /// per end: the input file has one line for each, and the reference's
+    /// area gain table holds two antennas.
     pub tx_antenna: Option<AntennaCardSpec>,
     pub rx_antenna: Option<AntennaCardSpec>,
-    /// The receive card's last field: a non-zero value becomes the
-    /// receive isotrope's gain.
-    pub rx_gain_field: R,
 }
 
 /// One grid point's output row: the indices, the coordinates and
@@ -1066,11 +1080,11 @@ pub fn run_area(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<AreaPoint>, Str
                 freqs_mhz: area.freqs_mhz.clone(),
                 required_snr_db: area.required_snr_db,
                 noise_dbw: area.noise_dbw,
-                watts: area.watts,
                 sporadic_e: area.psc[3] != 0.0,
-                tx_antenna: None,
-                rx_antenna: None,
-                rx_gain_field: 0.0,
+                // The antennas are built once for the whole grid and
+                // passed to `hour_setup`, so this list stays empty.
+                tx_antennas: Vec::new(),
+                rx_antennas: Vec::new(),
                 method: area.method,
                 fof2: area.fof2,
                 psc: area.psc,
@@ -1119,9 +1133,10 @@ fn build_area_antennas(
     nf: usize,
 ) -> Result<AntennaSet, String> {
     let pwrkw = area.watts / 1000.0;
-    let iso = AntennaCardSpec::isotrope();
-    let tx = area.tx_antenna.as_ref().unwrap_or(&iso);
-    let rx = area.rx_antenna.as_ref().unwrap_or(&iso);
+    let tx_iso = AntennaCardSpec::isotrope(pwrkw);
+    let rx_iso = AntennaCardSpec::isotrope(0.0);
+    let tx = area.tx_antenna.as_ref().unwrap_or(&tx_iso);
+    let rx = area.rx_antenna.as_ref().unwrap_or(&rx_iso);
     let txf = read_antenna(itshfbc, &tx.file)?;
     let rxf = read_antenna(itshfbc, &rx.file)?;
     let centre = (area.grid.plat, area.grid.plon);
@@ -1138,12 +1153,12 @@ fn build_area_antennas(
         area.tx_lon_deg as R,
     );
     let ends = [
-        (1, tx, &txf, AntennaEnd::Transmit, pwrkw, taz),
-        (2, rx, &rxf, AntennaEnd::Receive, area.rx_gain_field, raz),
+        (1, tx, &txf, AntennaEnd::Transmit, taz),
+        (2, rx, &rxf, AntennaEnd::Receive, raz),
     ];
 
     let mut ants = AntennaSet::default();
-    for (iat, card, file, end, power_field, azimuth_deg) in ends {
+    for (iat, card, file, end, azimuth_deg) in ends {
         let setup = AntennaSetup {
             file,
             end,
@@ -1151,7 +1166,7 @@ fn build_area_antennas(
             max_freq: card.max_freq,
             design_freq: card.design_freq,
             beam_deg: card.beam_deg,
-            power_field,
+            power_field: card.power_field,
             azimuth_deg,
         };
         let kw = if iat == 1 { pwrkw } else { 0.0 };

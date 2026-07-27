@@ -162,7 +162,7 @@ Status over the 73 definition files in the tree (`antcheck`):
 | IONCAP       | 21-30          |    10 | yes    |
 | CCIR REC705  | 1-9            |    34 | yes    |
 | NTIA curtain | 12             |     1 | yes    |
-| HFMUFES      | 31-47          |    14 | no     |
+| HFMUFES      | 31-47          |    14 | yes    |
 | Harris       | 90+            |     2 | no     |
 
 The ported families match on every cell: 196,386 compared — 71 of
@@ -228,9 +228,48 @@ engine computes with the file's decimals, not the unrounded gain. The
 mode loop asks it at every `GAIN` call site (`regmod`, `esmod`,
 `settxr`, `genois`) and `PWRDB(freq)` picks the matching transmit
 card's power. The fuzz corpus draws directional antennas from every
-computable family at both ends with random beam headings; 300 cases
-are identical to the reference — 1,011,360 printed cells — and the
+computable family at both ends with random beam headings; 600 cases
+are identical to the reference — 2,031,840 printed cells — and the
 isotrope sweep is unchanged.
+
+### Several `ANTENNA` cards per end
+
+A deck may carry up to twenty cards, and `/cantenna/` is one flat table
+of twenty slots. The card's second field is the slot, so the slots are
+numbered across both ends together, not per end: transmit cards first,
+then receive. Reusing a slot overwrites it, which is why the deck
+builder numbers from one and keeps counting through the receive cards.
+
+`GAIN` then walks slots 1 to `numants` and takes the **first** whose end
+matches and whose `[minfreq, maxfreq]` holds the frequency. Three
+consequences, all of them exercised by the corpus:
+
+- Bands that meet split the frequencies between cards.
+- Bands that leave a gap leave some frequency with no antenna at all,
+  and `GAIN` answers zero gain and zero efficiency. `PWRDB` does the
+  same and returns its default 30 dBW, which is one kilowatt however
+  much the cards asked for.
+- Bands that overlap are resolved by position: the earlier card wins.
+
+The frequency range comes from the card, not the gain file's own
+computed extent — `ANTCALC` clears the whole 30-row table and fills only
+`minfreq` to `maxfreq`, then writes all 30 rows and the range in the
+header. Power is per card too, so a deck can transmit at a different
+power on each band.
+
+Card order, the frequency range, the gap rule, the per-frequency power
+lookup and the slot numbering are each pinned by a deliberate-breakage
+run (see "Traps"). One detail is **not** observable and is right by
+transcription only: the zero rows outside a card's range. A matching
+card has integer range bounds, so `I = FMC` and `I+1` can never index
+past `maxfreq` with a non-zero weight — filling the whole table instead
+changes nothing in 300 cases.
+
+The deck writer and the engine's inputs both come from
+`DeckCase::antenna_cards`, so the number written in a column and the
+number the port is given cannot drift apart. There is no separate
+transmit-power input any more: the reference has none either, since
+`PWRDB` reads power out of the antenna table.
 
 ## Sporadic E off
 
@@ -323,6 +362,19 @@ that is to break the new code on purpose and re-run: a case that stays
 green under a deliberate error never reached the code. That is how the
 area antenna cases were checked, and it is how the one detail no printed
 cell can distinguish — the `.0174533` elevation constant — was found.
+
+The several-cards-per-end stage was checked the same way, and the counts
+are worth keeping because they say how much of the corpus reaches each
+rule. Over 300 cases: reversing the card order within an end breaks 30,
+taking the last matching card instead of the first breaks the same 30,
+falling back to the end's first card when none matches breaks 32,
+ignoring the frequency in `PWRDB` breaks 40, ignoring the receive card's
+gain column breaks 5, giving every card the whole 2 to 30 MHz range
+breaks 93, and renumbering each end's slots from one breaks 296 — that
+last one collides even with a single card per end, since the receive card
+would take slot 1 from the transmit card. Filling the whole gain table
+regardless of the card's range breaks nothing, and that is recorded as
+unobservable rather than verified.
 
 **The listing does not print everything.** A difference in a value the
 listing never shows is invisible to `portcheck` and `fuzz`. That is what

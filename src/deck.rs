@@ -18,7 +18,12 @@ pub const FREQ_SLOTS: usize = 11;
 /// Isotropic at both ends unless the case names an antenna.
 const ANTENNA_FILE: &str = "default/isotrope";
 
-/// A directional antenna on one end's `ANTENNA` card.
+/// One `ANTENNA` card.
+///
+/// An end may have several. `GAIN` walks the cards in order and takes the
+/// first one serving that end whose frequency range holds the frequency,
+/// so several cards split the bands between them, and a frequency in no
+/// card's range gets no antenna at all.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AntennaChoice {
     /// Path under `<itshfbc>/antennas`, at most the card's 21 columns.
@@ -26,6 +31,33 @@ pub struct AntennaChoice {
     pub design_freq: f64,
     /// Main beam bearing, degrees.
     pub beam_deg: f64,
+    /// The card's frequency range in whole MHz (`minfreq`, `maxfreq`).
+    pub min_freq: i32,
+    pub max_freq: i32,
+    /// The card's last field, ten columns wide. A transmit card carries
+    /// kilowatts there and `None` writes [`DeckCase::watts`]; a receive
+    /// card carries a gain that replaces the design frequency when it is
+    /// not zero.
+    pub last_field: Option<f64>,
+}
+
+impl AntennaChoice {
+    /// One card over the whole 2 to 30 MHz range, taking the deck's power.
+    pub fn whole_band(file: &str, beam_deg: f64) -> Self {
+        Self {
+            file: file.to_string(),
+            design_freq: 0.0,
+            beam_deg,
+            min_freq: 2,
+            max_freq: 30,
+            last_field: None,
+        }
+    }
+
+    /// The isotrope every end gets when the case names no antenna.
+    pub fn isotrope() -> Self {
+        Self::whole_band(ANTENNA_FILE, 0.0)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -52,9 +84,10 @@ pub struct DeckCase {
     pub noise_dbw: f64,
     /// Frequencies in MHz, ascending, at most [`FREQ_SLOTS`] of them.
     pub freqs_mhz: Vec<f64>,
-    /// Directional antennas; `None` is the isotrope.
-    pub tx_antenna: Option<AntennaChoice>,
-    pub rx_antenna: Option<AntennaChoice>,
+    /// The transmitter's `ANTENNA` cards, in the order the deck writes
+    /// them. Empty is one isotrope over 2 to 30 MHz.
+    pub tx_antennas: Vec<AntennaChoice>,
+    pub rx_antennas: Vec<AntennaChoice>,
     /// Enables VOACAP's sporadic-E layer (the FPROB card's fourth value).
     ///
     /// Standard practice runs with it off, because VOACAP's sporadic-E model
@@ -80,6 +113,33 @@ impl DeckCase {
     pub fn fprob(&self) -> [f64; 4] {
         self.fprob
             .unwrap_or([1.0, 1.0, 1.0, if self.sporadic_e { 1.0 } else { 0.0 }])
+    }
+
+    /// The `ANTENNA` cards this case writes, paired with the end each
+    /// serves: every transmit card, then every receive card, which is the
+    /// order they are numbered and the order `GAIN` searches. Each card's
+    /// last field is resolved to the number that goes in the column, so
+    /// the deck text and the engine's inputs cannot disagree about it.
+    pub fn antenna_cards(&self) -> Vec<(i32, AntennaChoice)> {
+        let kw = self.watts / 1000.0;
+        let one_end = |iat: i32, listed: &[AntennaChoice]| -> Vec<(i32, AntennaChoice)> {
+            let cards = if listed.is_empty() {
+                vec![AntennaChoice::isotrope()]
+            } else {
+                listed.to_vec()
+            };
+            cards
+                .into_iter()
+                .map(|mut card| {
+                    let default = if iat == 1 { kw } else { 0.0 };
+                    card.last_field = Some(card.last_field.unwrap_or(default));
+                    (iat, card)
+                })
+                .collect()
+        };
+        let mut out = one_end(1, &self.tx_antennas);
+        out.extend(one_end(2, &self.rx_antennas));
+        out
     }
 }
 
@@ -168,23 +228,30 @@ pub fn build_deck(c: &DeckCase) -> Result<String, DeckError> {
         freq_card.push_str(&field(&format!("{mhz:.2}"), 5)?);
     }
 
-    // VOACAP takes transmit power in kilowatts.
-    let kw = c.watts / 1000.0;
-
-    let tx_file = c.tx_antenna.as_ref().map(|a| a.file.as_str()).unwrap_or(ANTENNA_FILE);
-    let rx_file = c.rx_antenna.as_ref().map(|a| a.file.as_str()).unwrap_or(ANTENNA_FILE);
-    let tx_design = c.tx_antenna.as_ref().map(|a| a.design_freq).unwrap_or(0.0);
-    let rx_design = c.rx_antenna.as_ref().map(|a| a.design_freq).unwrap_or(0.0);
-    let tx_beam = c.tx_antenna.as_ref().map(|a| a.beam_deg).unwrap_or(0.0);
-    let rx_beam = c.rx_antenna.as_ref().map(|a| a.beam_deg).unwrap_or(0.0);
-    if tx_file.len() > 21 || rx_file.len() > 21 {
-        return Err(DeckError::FieldOverflow {
-            value: if tx_file.len() > 21 { tx_file } else { rx_file }.to_string(),
-            width: 21,
-        });
+    // The cards are numbered from one across both ends, because the
+    // second field is the slot in the engine's own antenna table.
+    let mut antenna_lines = Vec::new();
+    for (slot, (iat, card)) in c.antenna_cards().into_iter().enumerate() {
+        if card.file.len() > 21 {
+            return Err(DeckError::FieldOverflow {
+                value: card.file,
+                width: 21,
+            });
+        }
+        antenna_lines.push(format!(
+            "ANTENNA   {}{}{}{}{}{}{}{}",
+            field(&iat.to_string(), 5)?,
+            field(&(slot + 1).to_string(), 5)?,
+            field(&card.min_freq.to_string(), 5)?,
+            field(&card.max_freq.to_string(), 5)?,
+            field(&format!("{:.3}", card.design_freq), 10)?,
+            antenna_ref(&card.file),
+            field(&format!("{:.1}", card.beam_deg), 5)?,
+            field(&format!("{:.4}", card.last_field.unwrap_or(0.0)), 10)?
+        ));
     }
 
-    let lines = vec![
+    let mut lines = vec![
         "LINEMAX      55       number of lines-per-page".to_string(),
         if c.ursi {
             "COEFFS    URSI88".to_string()
@@ -233,28 +300,9 @@ pub fn build_deck(c: &DeckCase) -> Result<String, DeckError> {
                 field(&format!("{:.2}", p[3]), 5)?
             )
         },
-        format!(
-            "ANTENNA   {}{}{}{}{}{}{}{}",
-            field("1", 5)?,
-            field("1", 5)?,
-            field("2", 5)?,
-            field("30", 5)?,
-            field(&format!("{tx_design:.3}"), 10)?,
-            antenna_ref(tx_file),
-            field(&format!("{tx_beam:.1}"), 5)?,
-            field(&format!("{kw:.4}"), 10)?
-        ),
-        format!(
-            "ANTENNA   {}{}{}{}{}{}{}{}",
-            field("2", 5)?,
-            field("2", 5)?,
-            field("2", 5)?,
-            field("30", 5)?,
-            field(&format!("{rx_design:.3}"), 10)?,
-            antenna_ref(rx_file),
-            field(&format!("{rx_beam:.1}"), 5)?,
-            field("0.0000", 10)?
-        ),
+    ];
+    lines.append(&mut antenna_lines);
+    lines.extend([
         format!("FREQUENCY {freq_card}"),
         // The BOTLINES card takes fourteen I5 fields; the unused ones
         // stay blank, which reads as zero and selects no line.
@@ -271,7 +319,7 @@ pub fn build_deck(c: &DeckCase) -> Result<String, DeckError> {
         format!("METHOD    {}{}", field(&c.method.to_string(), 5)?, field("0", 5)?),
         "EXECUTE".to_string(),
         "QUIT".to_string(),
-    ];
+    ]);
     let lines: Vec<String> = lines.into_iter().filter(|l| !l.is_empty()).collect();
 
     let mut deck = lines.join("\n");
@@ -301,8 +349,8 @@ mod tests {
             required_snr_db: 24.0,
             noise_dbw: 145.0,
             freqs_mhz: vec![6.07, 7.2, 9.7, 11.85],
-            tx_antenna: None,
-            rx_antenna: None,
+            tx_antennas: Vec::new(),
+            rx_antennas: Vec::new(),
             sporadic_e: false,
         }
     }
@@ -359,6 +407,60 @@ mod tests {
         c.watts = 1500.0;
         let deck = build_deck(&c).expect("deck");
         assert!(line_starting(&deck, "ANTENNA   ").ends_with("    1.5000"));
+    }
+
+    /// Two bands at the transmitter and one at the receiver: the slot
+    /// numbers run 1, 2, 3 across both ends, each card carries its own
+    /// frequency range, and the receive card's last field stays zero.
+    #[test]
+    fn several_cards_per_end_are_numbered_across_both_ends() {
+        let mut c = a_case();
+        c.watts = 1000.0;
+        c.tx_antennas = vec![
+            AntennaChoice {
+                max_freq: 13,
+                ..AntennaChoice::whole_band("samples/sample.21", 45.0)
+            },
+            AntennaChoice {
+                min_freq: 14,
+                last_field: Some(0.25),
+                ..AntennaChoice::whole_band("samples/sample.31", 90.0)
+            },
+        ];
+        c.rx_antennas = vec![AntennaChoice::whole_band("samples/sample.48", 0.0)];
+        let deck = build_deck(&c).expect("deck");
+        let cards: Vec<&str> = deck.lines().filter(|l| l.starts_with("ANTENNA   ")).collect();
+        assert_eq!(cards.len(), 3);
+        assert_eq!(
+            cards[0],
+            "ANTENNA       1    1    2   13     0.000[samples/sample.21    ] 45.0    1.0000"
+        );
+        assert_eq!(
+            cards[1],
+            "ANTENNA       1    2   14   30     0.000[samples/sample.31    ] 90.0    0.2500"
+        );
+        assert_eq!(
+            cards[2],
+            "ANTENNA       2    3    2   30     0.000[samples/sample.48    ]  0.0    0.0000"
+        );
+    }
+
+    /// A receive card's last field is a gain, not a power, so the deck's
+    /// kilowatts must not leak into it.
+    #[test]
+    fn a_receive_card_carries_a_gain_in_its_last_field() {
+        let mut c = a_case();
+        c.rx_antennas = vec![AntennaChoice {
+            last_field: Some(3.5),
+            ..AntennaChoice::isotrope()
+        }];
+        let deck = build_deck(&c).expect("deck");
+        let card = deck
+            .lines()
+            .filter(|l| l.starts_with("ANTENNA   "))
+            .nth(1)
+            .expect("a receive card");
+        assert!(card.ends_with("    3.5000"), "got {card:?}");
     }
 
     #[test]

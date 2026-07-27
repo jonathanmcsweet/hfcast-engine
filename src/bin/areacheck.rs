@@ -440,9 +440,8 @@ fn main() -> ExitCode {
             inverse: case.inverse,
             // The transmit card carries a design frequency and the
             // receive card a gain, in the same field.
-            tx_antenna: Some(spec(&case.tx, case.tx.value)),
-            rx_antenna: Some(spec(&case.rx, 0.0)),
-            rx_gain_field: case.rx.value,
+            tx_antenna: Some(spec(&case.tx, case.tx.value, WATTS / 1000.0)),
+            rx_antenna: Some(spec(&case.rx, 0.0, case.rx.value)),
         };
         let ported = match port_area(root.path(), &inputs) {
             Ok(p) => p,
@@ -543,13 +542,14 @@ fn main() -> ExitCode {
 /// The card as the port reads it, from the same fields the input file
 /// carries. `AREAMAP` writes the transmit card's design frequency from
 /// the input file and the receive card's as zero.
-fn spec(ant: &Ant, design_freq: f32) -> AntennaCardSpec {
+fn spec(ant: &Ant, design_freq: f32, power_field: f32) -> AntennaCardSpec {
     AntennaCardSpec {
         file: format!("{}/{}", ant.dir, ant.name),
         design_freq,
         beam_deg: ant.beam,
         min_freq: 2,
         max_freq: 30,
+        power_field,
     }
 }
 
