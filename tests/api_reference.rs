@@ -178,28 +178,62 @@ fn a_request_finer_than_the_cards_still_prints_the_reference_listing() {
     }
 }
 
-/// The model switch exists but fixes nothing yet, so both tiers must
-/// still be the reference's own output.
+/// `Compatible` is the reference's own output; `Corrected` is not.
 ///
-/// This is what says adding the switch changed no behaviour. When the
-/// first fix lands, the `Corrected` half of this test is expected to
-/// fail and moves to `corrected.md`'s differential record — that
-/// failure is the fix becoming visible, and it should be read as
-/// such rather than as a regression.
+/// Both halves matter. The first is the guarantee the whole port rests
+/// on and must never break. The second says the corrected tier is
+/// actually reaching the engine — a `Corrected` run that still matched
+/// the reference byte for byte would mean the fixes were not wired up,
+/// which is a silent failure a passing test would otherwise hide.
+///
+/// What the difference consists of is recorded in `docs/corrected.md`,
+/// measured by `correctcheck` rather than asserted here.
 #[test]
-fn both_tiers_still_print_the_reference_listing() {
+fn compatible_matches_the_reference_and_corrected_does_not() {
     let Some((bin, root)) = reference("api-model") else {
         return;
     };
-    let req = a_request();
+    // A high-latitude path, because the implemented fix moves the
+    // magnetic pole and a mid-latitude path barely notices.
+    let mut req = a_request();
+    req.tx = Site {
+        name: "REYKJAVIK".to_string(),
+        lat_deg: 64.15,
+        lon_deg: -21.94,
+    };
+    req.rx = Site {
+        name: "TROMSO".to_string(),
+        lat_deg: 69.65,
+        lon_deg: 18.96,
+    };
+
     let cards = deck(&req, Task::Systems).expect("deck");
     let fortran = run_deck(&bin, root.path(), &cards).expect("reference run");
 
-    for model in [Model::Compatible, Model::Corrected] {
-        let ported = listing(root.path(), &Request { model, ..req.clone() }, Task::Systems)
-            .expect("ported run");
-        assert_eq!(ported, fortran, "{model:?} differs from the reference");
-    }
+    let compatible = listing(
+        root.path(),
+        &Request {
+            model: Model::Compatible,
+            ..req.clone()
+        },
+        Task::Systems,
+    )
+    .expect("compatible run");
+    assert_eq!(compatible, fortran, "Compatible must be the reference");
+
+    let corrected = listing(
+        root.path(),
+        &Request {
+            model: Model::Corrected,
+            ..req.clone()
+        },
+        Task::Systems,
+    )
+    .expect("corrected run");
+    assert_ne!(
+        corrected, fortran,
+        "Corrected should differ — the fixes are not reaching the engine"
+    );
 }
 
 #[test]

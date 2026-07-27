@@ -48,9 +48,11 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use propcore::deck::{build_deck, DeckCase};
+use propcore::engine::model::{Fixes, Model};
+use propcore::engine::output::render;
 use propcore::itu::{parse_report, run_case, ItuPaths};
 use propcore::listing::parse_listing;
-use propcore::runner::{map_limit, run_deck, variant_bin, IsolatedRoot};
+use propcore::runner::{itshfbc_dir, map_limit, run_deck, variant_bin, IsolatedRoot};
 use propcore::stats::{correlation, fit_line, median, rms};
 use propcore::wspr::{self, smoothed_ssn, WsprPath, WSPR_BANDWIDTH_HZ, WSPR_BANDWIDTH_OFFSET_DB};
 
@@ -163,6 +165,30 @@ fn main() -> ExitCode {
     // Used by the summer-mechanism experiment; affects VOACAP only.
     let sporadic_e = std::env::args().any(|a| a == "--es");
 
+    // `--fix NAME` scores the Rust engine with one of the documented
+    // VOACAP defects fixed, against the same measured radio. That is
+    // the only way to say whether fixing a defect makes predictions
+    // better, which "it is a defect" does not answer: the model's
+    // empirical constants were fitted with the defect present.
+    //
+    // The Rust engine is used for both halves of such a run, so the
+    // comparison is one fix rather than one fix plus a change of
+    // engine. Without the flag, the Fortran binary runs as before.
+    let engine = match arg_value("--fix") {
+        Some(name) => match fix_by_name(&name) {
+            Some(fixes) => Engine::Ported(Model::from_fixes(fixes)),
+            None => {
+                eprintln!("unknown fix {name:?}");
+                eprintln!("one of: {}", FIX_NAMES.join(", "));
+                return ExitCode::FAILURE;
+            }
+        },
+        None if std::env::args().any(|a| a == "--ported") => {
+            Engine::Ported(Model::Compatible)
+        }
+        None => Engine::Reference,
+    };
+
     eprintln!(
         "{} paths from {}, smoothed sunspot number {ssn}, sporadic-E {}",
         data.paths.len(),
@@ -182,6 +208,7 @@ fn main() -> ExitCode {
             &data,
             &itu,
             &voacap_bin,
+            engine,
         )
     });
 
@@ -231,6 +258,29 @@ fn dump_hours(outcomes: &[PathOutcome], to: &Path) -> std::io::Result<()> {
     fs::write(to, text)
 }
 
+/// One listing, from whichever engine the run selected.
+///
+/// The reference needs a private tree because it writes scratch files
+/// named from a global counter. The port writes nothing, so it reads
+/// the installed tree directly — which is also what makes a `--fix`
+/// run fast enough to do eight months of paths.
+fn listing_text(
+    engine: Engine,
+    voacap_bin: &Path,
+    case: &DeckCase,
+    deck: &str,
+    index: usize,
+) -> Result<String, String> {
+    match engine {
+        Engine::Reference => {
+            let root =
+                IsolatedRoot::create(&format!("val-{index}")).map_err(|e| format!("tree: {e}"))?;
+            run_deck(voacap_bin, root.path(), deck).map_err(|e| format!("voacapl: {e}"))
+        }
+        Engine::Ported(model) => render(&itshfbc_dir(), case, deck, model),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_path(
     path: &WsprPath,
@@ -242,6 +292,7 @@ fn run_path(
     data: &wspr::WsprData,
     itu: &ItuPaths,
     voacap_bin: &Path,
+    engine: Engine,
 ) -> PathOutcome {
     let mut outcome = PathOutcome {
         label: path.label(),
@@ -295,9 +346,9 @@ fn run_path(
     // `S DBW` is kept alongside so the signal can be scored with the noise
     // held out; the per-path offset makes its absolute unit irrelevant.
     let voacap: Option<[Option<(f64, f64)>; 24]> =
-        match IsolatedRoot::create(&format!("val-{index}")) {
-            Ok(root) => match run_deck(voacap_bin, root.path(), &deck) {
-                Ok(text) => {
+        match listing_text(engine, voacap_bin, &case, &deck, index) {
+            Ok(text) => {
+                {
                     let listing = parse_listing(&text);
                     let mut snr = [None; 24];
                     let mut signal = [None; 24];
@@ -318,13 +369,9 @@ fn run_path(
                     }
                     Some(day)
                 }
-                Err(e) => {
-                    outcome.failure = Some(format!("voacap: {e}"));
-                    None
-                }
-            },
+            }
             Err(e) => {
-                outcome.failure = Some(format!("isolate: {e}"));
+                outcome.failure = Some(format!("engine: {e}"));
                 None
             }
         };
@@ -385,9 +432,47 @@ fn run_path(
 }
 
 fn arg(name: &str) -> Option<PathBuf> {
+    arg_value(name).map(PathBuf::from)
+}
+
+fn arg_value(name: &str) -> Option<String> {
     let argv: Vec<String> = std::env::args().collect();
     let i = argv.iter().position(|a| a == name)?;
-    argv.get(i + 1).map(PathBuf::from)
+    argv.get(i + 1).cloned()
+}
+
+/// Which engine produces the listing being scored.
+#[derive(Debug, Clone, Copy)]
+enum Engine {
+    /// The Fortran binary, as every earlier run of this harness used.
+    Reference,
+    /// The Rust port, at a chosen tier. `Model::Compatible` is
+    /// byte-identical to `Reference`, so it is the control a `--fix`
+    /// run is compared against.
+    Ported(Model),
+}
+
+const FIX_NAMES: [&str; 6] = [
+    "pole_file",
+    "curtain_elevation",
+    "luf_scan_best",
+    "luf_pass_area",
+    "area_centre_nudge",
+    "area_antenna_end",
+];
+
+fn fix_by_name(name: &str) -> Option<Fixes> {
+    let mut f = Fixes::default();
+    match name {
+        "pole_file" => f.pole_file = true,
+        "curtain_elevation" => f.curtain_elevation = true,
+        "luf_scan_best" => f.luf_scan_best = true,
+        "luf_pass_area" => f.luf_pass_area = true,
+        "area_centre_nudge" => f.area_centre_nudge = true,
+        "area_antenna_end" => f.area_antenna_end = true,
+        _ => return None,
+    }
+    Some(f)
 }
 
 fn scratch(name: &str) -> PathBuf {

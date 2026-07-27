@@ -438,7 +438,7 @@ pub struct ParRow {
 /// card method 1. Returns one row per control point per hour, in the
 /// order `OUTPAR` prints them.
 pub fn run_par(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<ParRow>, String> {
-    let pole = MagneticPole::for_tree(itshfbc);
+    let pole = MagneticPole::for_tree_with(itshfbc, inp.model);
     let geo = path_geometry(
         inp.from_lat_deg as R,
         inp.from_lon_deg as R,
@@ -556,7 +556,7 @@ pub struct IonPlot {
 /// `IONSET` left them and the sporadic-E deciles are untouched by
 /// `CURMUF`.
 pub fn run_ion(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<Vec<IonPlot>>, String> {
-    let pole = MagneticPole::for_tree(itshfbc);
+    let pole = MagneticPole::for_tree_with(itshfbc, inp.model);
     let geo = path_geometry(
         inp.from_lat_deg as R,
         inp.from_lon_deg as R,
@@ -647,7 +647,7 @@ pub struct MufHourOut {
 /// 3 to 6 (`ITRUN = 3`) take them from the manual nomogram method with
 /// `NOMMUF`, which fills no per-layer detail.
 pub fn run_muf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<MufHourOut>, String> {
-    let pole = MagneticPole::for_tree(itshfbc);
+    let pole = MagneticPole::for_tree_with(itshfbc, inp.model);
     let geo = path_geometry(
         inp.from_lat_deg as R,
         inp.from_lon_deg as R,
@@ -731,7 +731,7 @@ pub fn run_muf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<MufHourOut>, Strin
 /// LUF means no frequency met the required reliability, and its
 /// magnitude is the most reliable frequency of the sweep.
 pub fn run_luf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<MufHourOut>, String> {
-    let pole = MagneticPole::for_tree(itshfbc);
+    let pole = MagneticPole::for_tree_with(itshfbc, inp.model);
     let geo = path_geometry(
         inp.from_lat_deg as R,
         inp.from_lon_deg as R,
@@ -968,7 +968,7 @@ fn hour_setup<'a>(
     set: &'a CoefficientSet,
     ants: Option<AntennaSet>,
 ) -> Result<HourSetup<'a>, String> {
-    let pole = MagneticPole::for_tree(itshfbc);
+    let pole = MagneticPole::for_tree_with(itshfbc, inp.model);
     let geo = path_geometry(
         inp.from_lat_deg as R,
         inp.from_lon_deg as R,

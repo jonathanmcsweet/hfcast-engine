@@ -49,42 +49,48 @@
 
 /// Which of the documented defects are fixed.
 ///
-/// Not public: a caller chooses [`Model::Compatible`] or
-/// [`Model::Corrected`], and the combinations exist only so a
-/// measurement can attribute a change to one fix.
+/// **Not the API.** A caller chooses [`Model::Compatible`] or
+/// [`Model::Corrected`]; the individual toggles exist so that a
+/// measurement can attribute one change to one fix, which is the only
+/// way `docs/corrected.md` can say what a fix did. It is `pub` and
+/// hidden rather than `pub(crate)` because the `correctcheck` harness
+/// is a separate crate that links this one, and reachable-but-hidden
+/// is a more honest statement of "for measuring, not for building on"
+/// than a public promise would be.
 ///
 /// Every field here is unused until the fix it names is implemented
 /// and takes its branch at the defect's own site. That is why the
 /// allow is on the whole type rather than on individual fields: a
 /// field with no reader yet is the expected state, and the allow
 /// comes off when the last fix lands.
+#[doc(hidden)]
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) struct Fixes {
+pub struct Fixes {
     /// `MagneticPole::for_tree` builds the database path without a
     /// separator, so the installed `database/north_pole.txt` is never
     /// read and every run uses the built-in pole.
-    pub(crate) pole_file: bool,
+    pub pole_file: bool,
     /// The IONCAP curtain compares an elevation against `0001` — one
     /// radian, where `.0001` was meant — so every elevation above
     /// about 33 degrees takes the floor gain.
-    pub(crate) curtain_elevation: bool,
+    pub curtain_elevation: bool,
     /// The no-LUF-found scan never reassigns its running best, so it
     /// compares every slot against slot 1 and returns the last slot
     /// beating slot 1 rather than the most reliable one.
-    pub(crate) luf_scan_best: bool,
+    pub luf_scan_best: bool,
     /// The short LUF pass reads its modes from whichever column was
     /// written last, because `FINDF` and `FDIST` take the area as an
     /// argument while the mode routines set it internally.
-    pub(crate) luf_pass_area: bool,
+    pub luf_pass_area: bool,
     /// An area run's nudge off the transmitter compares a folded
     /// longitude against an unfolded one, so a transmitter at a
     /// negative longitude computes a zero-length path at the grid's
     /// own centre.
-    pub(crate) area_centre_nudge: bool,
+    pub area_centre_nudge: bool,
     /// `GAIN`'s area branch picks the path bearing from the antenna's
     /// position in the list rather than from the end it serves.
-    pub(crate) area_antenna_end: bool,
+    pub area_antenna_end: bool,
 }
 
 #[allow(dead_code)]
@@ -119,18 +125,30 @@ pub enum Model {
     /// identical to the reference; `docs/corrected.md` records what
     /// each fix changes and what it measured against real radio.
     Corrected,
+    /// One arbitrary set of fixes, for attributing a change to a
+    /// single one of them.
+    ///
+    /// **Not a supported configuration.** The two above are what a
+    /// caller chooses; this exists because `docs/corrected.md` cannot
+    /// say what a fix did without running that fix alone, and the
+    /// harness that does so is a separate crate.
+    #[doc(hidden)]
+    Measuring(Fixes),
 }
 
-/// The accessors below have no callers until their fix is
-/// implemented. Each loses this allow when its site starts reading
-/// it.
-#[allow(dead_code)]
 impl Model {
     pub(crate) fn fixes(self) -> Fixes {
         match self {
             Model::Compatible => Fixes::NONE,
             Model::Corrected => Fixes::ALL,
+            Model::Measuring(fixes) => fixes,
         }
+    }
+
+    /// A model with exactly these fixes on. See [`Model::Measuring`].
+    #[doc(hidden)]
+    pub fn from_fixes(fixes: Fixes) -> Self {
+        Model::Measuring(fixes)
     }
 
     /// Reads the magnetic pole from the tree's `database` directory,
@@ -138,7 +156,13 @@ impl Model {
     pub(crate) fn reads_pole_file(self) -> bool {
         self.fixes().pole_file
     }
+}
 
+/// The accessors below have no callers until their fix is
+/// implemented. Each loses this allow when its site starts reading
+/// it.
+#[allow(dead_code)]
+impl Model {
     /// Compares a curtain elevation against `.0001` radians rather
     /// than `0001`.
     pub(crate) fn curtain_elevation_threshold(self) -> bool {

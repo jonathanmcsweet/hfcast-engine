@@ -110,16 +110,17 @@ propcore/tools/build-trace.sh      # the instrumented build the stage traces rea
 
 Then, from `propcore/`, with `cargo` as above:
 
-| harness       | what it proves                                        | flags                                                                                                                                          |
-| ------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `porttest`    | each stage's intermediates against the trace build    | `--cases N` `--only ID` `--seed N` `--fuzz N [--from N]`                                                                                       |
-| `portcheck`   | whole listings over the 96 sweep cases                | `--cases N`                                                                                                                                    |
-| `fuzz`        | whole listing files over generated decks              | `--cases N` `--from N` `--jobs J` `--seed N` `--show N` `--method M` `--coeffs URSI88` `--fprob a,b,c,d` `--botlines a,b,c` `--toplines a,b,c` |
-| `antcheck`    | antenna gain tables against the reference's own files | `--only NAME` `--verbose`                                                                                                                      |
-| `lufcheck`    | `OUTMUF`'s table from a method-26 deck                | `--cases N` `--from N` `--jobs J`                                                                                                              |
-| `mufcheck`    | methods 1, 3 and 7 tables                             | `--method 1\|3\|7` `--cases N` `--from N` `--jobs J`                                                                                           |
-| `areacheck`   | area coverage rows and antennas against the grid file | `--jobs J`                                                                                                                                     |
-| `paritycheck` | the fields the server reads, both production paths    | `--jobs J`                                                                                                                                     |
+| harness        | what it proves                                        | flags                                                                                                                                          |
+| -------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `porttest`     | each stage's intermediates against the trace build    | `--cases N` `--only ID` `--seed N` `--fuzz N [--from N]`                                                                                       |
+| `portcheck`    | whole listings over the 96 sweep cases                | `--cases N`                                                                                                                                    |
+| `fuzz`         | whole listing files over generated decks              | `--cases N` `--from N` `--jobs J` `--seed N` `--show N` `--method M` `--coeffs URSI88` `--fprob a,b,c,d` `--botlines a,b,c` `--toplines a,b,c` |
+| `antcheck`     | antenna gain tables against the reference's own files | `--only NAME` `--verbose`                                                                                                                      |
+| `lufcheck`     | `OUTMUF`'s table from a method-26 deck                | `--cases N` `--from N` `--jobs J`                                                                                                              |
+| `mufcheck`     | methods 1, 3 and 7 tables                             | `--method 1\|3\|7` `--cases N` `--from N` `--jobs J`                                                                                           |
+| `areacheck`    | area coverage rows and antennas against the grid file | `--jobs J`                                                                                                                                     |
+| `paritycheck`  | the fields the server reads, both production paths    | `--jobs J`                                                                                                                                     |
+| `correctcheck` | what one corrected-tier fix changes                   | `--fix NAME` `--cases N` `--jobs J`                                                                                                            |
 
 `porttest --fuzz` is not currently usable: it reports stage mismatches
 on generated decks where `fuzz` finds the finished listings identical,
@@ -1234,3 +1235,24 @@ with only that fix on. `docs/corrected.md` holds the results —
 including for any fix that measured worse and was therefore left off,
 because a VOACAP defect can be load-bearing when the model's empirical
 constants were tuned with it present.
+
+### `correctcheck`
+
+Runs a corpus twice — compatible, and the same cases with one fix on —
+and reports which printed cells move and by how much. That change set
+is part of a fix's documentation: "it is fixed" says nothing without
+"and here is what it did".
+
+It is not an accuracy measurement. It says what moved, not whether the
+movement is an improvement; only the WSPR pipeline answers that, and
+only for defects that touch the point-to-point systems path.
+`validate --fix NAME` does that half, against `validate --ported` as
+the control, so both sides are the same engine and the comparison is
+one fix rather than a fix plus a change of engine.
+
+A trap worth knowing: `correctcheck` over the sweep corpus reports zero
+movement for four of the six fixes **whether or not they are
+implemented**, because the sweep is method 30, point-to-point and
+isotropic, and those fixes live on the LUF, area and curtain-antenna
+paths. A zero there is not evidence the fix is harmless; it is evidence
+the corpus never reached it. Each of those needs its own corpus.

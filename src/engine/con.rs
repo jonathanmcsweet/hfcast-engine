@@ -14,6 +14,8 @@
 
 use std::path::{Path, PathBuf};
 
+use super::model::Model;
+
 /// The working precision of the engine, matching Fortran 4-byte REAL.
 pub type R = f32;
 
@@ -77,10 +79,30 @@ impl MagneticPole {
     /// The pole for a given `itshfbc` tree, with the Fortran's precedence
     /// (including its broken database path — see the type comment).
     pub fn for_tree(itshfbc: &Path) -> Self {
-        let broken_database_path =
-            PathBuf::from(format!("{}database/north_pole.txt", itshfbc.display()));
+        Self::for_tree_with(itshfbc, Model::Compatible)
+    }
+
+    /// The pole a run uses.
+    ///
+    /// The reference builds the database path without a separator, so
+    /// `<tree>database/north_pole.txt` is what it looks for and the
+    /// installed `<tree>/database/north_pole.txt` is never found. Every
+    /// run therefore uses the built-in pole, and the file the
+    /// distribution ships — which exists precisely so the pole can be
+    /// moved — has no effect.
+    ///
+    /// [`Model::reads_pole_file`] joins the path properly. A
+    /// `run/north_pole.txt` still wins, as it does either way, so the
+    /// fix only changes runs where the tree has a database file and no
+    /// run file.
+    pub fn for_tree_with(itshfbc: &Path, model: Model) -> Self {
+        let database = if model.reads_pole_file() {
+            itshfbc.join("database/north_pole.txt")
+        } else {
+            PathBuf::from(format!("{}database/north_pole.txt", itshfbc.display()))
+        };
         pole_from_file(&itshfbc.join("run/north_pole.txt"))
-            .or_else(|| pole_from_file(&broken_database_path))
+            .or_else(|| pole_from_file(&database))
             .unwrap_or_default()
     }
 }
@@ -113,6 +135,35 @@ mod tests {
         assert_eq!(MagneticPole::for_tree(&base).lat_deg, 82.0);
         std::fs::write(base.join("run/north_pole.txt"), "10.0 -82.0\n").expect("write");
         assert_eq!(MagneticPole::for_tree(&base).lat_deg, 78.5);
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn the_corrected_tier_reads_the_database_file() {
+        let base = std::env::temp_dir().join("propcore-pole-corrected");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("database")).expect("dirs");
+        std::fs::create_dir_all(base.join("run")).expect("dirs");
+        std::fs::write(base.join("database/north_pole.txt"), "79.5 -69.0\nrest\n").expect("write");
+
+        // The whole defect: the same tree, the same file, read only by
+        // the tier that joins the path properly.
+        assert_eq!(
+            MagneticPole::for_tree_with(&base, Model::Compatible).lat_deg,
+            78.5
+        );
+        assert_eq!(
+            MagneticPole::for_tree_with(&base, Model::Corrected).lat_deg,
+            79.5
+        );
+
+        // A run file still wins on both tiers, so a caller who wants
+        // the old pole under `Corrected` can still ask for it.
+        std::fs::write(base.join("run/north_pole.txt"), "78.5 -69.0\n").expect("write");
+        for model in [Model::Compatible, Model::Corrected] {
+            assert_eq!(MagneticPole::for_tree_with(&base, model).lat_deg, 78.5);
+        }
 
         let _ = std::fs::remove_dir_all(&base);
     }
