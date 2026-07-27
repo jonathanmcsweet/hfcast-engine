@@ -241,7 +241,7 @@ impl IonoCarry {
         &mut self,
         set: &CoefficientSet,
         cof: &[R],
-        points: &[crate::engine::geometry::ControlPoint],
+        points: &[crate::voacap::geometry::ControlPoint],
         mags: &[MagneticVars],
         month: u32,
         ssn: R,
@@ -952,7 +952,7 @@ struct HourSetup<'a> {
     /// area run and the long one point to point.
     area: bool,
     /// Which behaviour this run reproduces. Read at the defect sites
-    /// a fix touches; see `engine::model`.
+    /// a fix touches; see `voacap::model`.
     #[allow(dead_code)]
     model: Model,
     /// Whether this method's output goes through `OUTBOD`, which is the

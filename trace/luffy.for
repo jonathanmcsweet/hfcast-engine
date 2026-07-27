@@ -563,8 +563,8 @@ C.....USE LINEAR INTERPOLATION
 C--------------------------------
 C--------------------------------
       SUBROUTINE trace_zon(IHOPX)
-C     propcore instrumentation: dumps /ZON/ after INMUF (per hop) and
-C     after ESREG (IHOPX = 99) when PROPCORE_TRACE names a directory.
+C     hfcast instrumentation: dumps /ZON/ after INMUF (per hop) and
+C     after ESREG (IHOPX = 99) when HFCAST_TRACE names a directory.
       COMMON / TIME / IT, GMT, UTIME(24), GMTR, XLMT(24), ITIM, JTX
       COMMON/FRQ/FREA(13),FREL(29),FREQ,JMODE,ITXRCP(2)
       COMMON / ZON / ABPS(7), CREL(7), EFF(7), FLDST(7), GRLOS(7),
@@ -572,7 +572,7 @@ C     after ESREG (IHOPX = 99) when PROPCORE_TRACE names a directory.
      2 SPRO(7), TGAIN(7), TIMED(7), TLOSS(7), B(7), FSLOS(7), ADV(7),
      3 OBF(7),NMODE(7),TLLOW(7),TLHGH(7)
       character tdir*256
-      call get_environment_variable('PROPCORE_TRACE',tdir,ltdir,ist)
+      call get_environment_variable('HFCAST_TRACE',tdir,ltdir,ist)
       if(ist.ne.0 .or. ltdir.eq.0) return
       open(84,file=tdir(1:ltdir)//'/zon.txt',position='append')
       write(84,'(A,I4,I8,I4)') 'ZON ',NINT(GMT),NINT(FREQ*1000.),IHOPX
@@ -587,7 +587,7 @@ C     after ESREG (IHOPX = 99) when PROPCORE_TRACE names a directory.
       END
 C--------------------------------
       SUBROUTINE trace_amd
-C     propcore instrumentation: dumps the accumulated modes after the
+C     hfcast instrumentation: dumps the accumulated modes after the
 C     final ALLMODES call (short path) or LNGPAT (long path).
       COMMON / TIME / IT, GMT, UTIME(24), GMTR, XLMT(24), ITIM, JTX
       COMMON/FRQ/FREA(13),FREL(29),FREQ,JMODE,ITXRCP(2)
@@ -597,7 +597,7 @@ C     final ALLMODES call (short path) or LNGPAT (long path).
      3zgrlos(20),zadv(20),zobf(20),
      CizNMODE(20),zTLLOW(20),zTLHGH(20),zEFF(20),NREL,NMMOD
       character tdir*256
-      call get_environment_variable('PROPCORE_TRACE',tdir,ltdir,ist)
+      call get_environment_variable('HFCAST_TRACE',tdir,ltdir,ist)
       if(ist.ne.0 .or. ltdir.eq.0) return
       NDMP = MAX0(NMMOD,2)
       open(83,file=tdir(1:ltdir)//'/amd.txt',position='append')
@@ -614,7 +614,7 @@ C     final ALLMODES call (short path) or LNGPAT (long path).
       END
 C--------------------------------
       SUBROUTINE trace_los
-C     propcore instrumentation: dumps the long-path loss tables and the
+C     hfcast instrumentation: dumps the long-path loss tables and the
 C     selected rows after SELTXR.
       COMMON / TIME / IT, GMT, UTIME(24), GMTR, XLMT(24), ITIM, JTX
       COMMON/FRQ/FREA(13),FREL(29),FREQ,JMODE,ITXRCP(2)
@@ -622,7 +622,7 @@ C     selected rows after SELTXR.
       COMMON/LOSX/ANDVX(45,3),ADVX(45,3),AOFX(45,3),ARFX(45,3),GRLOSX(45
      A ,3),TGAINX(45,3),TLSKM(45,3),EFFlp(45),IAFTXR(3)
       character tdir*256
-      call get_environment_variable('PROPCORE_TRACE',tdir,ltdir,ist)
+      call get_environment_variable('HFCAST_TRACE',tdir,ltdir,ist)
       if(ist.ne.0 .or. ltdir.eq.0) return
       open(82,file=tdir(1:ltdir)//'/los.txt',position='append')
       write(82,'(A,I4,I8,2I4)') 'LOS ',NINT(GMT),NINT(FREQ*1000.),
@@ -639,7 +639,7 @@ C     selected rows after SELTXR.
       END
 C--------------------------------
       SUBROUTINE trace_son(IFX,IPFGX)
-C     propcore instrumentation: dumps the frequency's /SON/ slot after
+C     hfcast instrumentation: dumps the frequency's /SON/ slot after
 C     the reliability chain, before the smoothing save block.
       COMMON / TIME / IT, GMT, UTIME(24), GMTR, XLMT(24), ITIM, JTX
       COMMON/FRQ/FREA(13),FREL(29),FREQ,JMODE,ITXRCP(2)
@@ -661,7 +661,7 @@ C     the reliability chain, before the smoothing save block.
       common /cgains/ gaint(13),gainr(13)
       COMMON /DUDL_NOIS/ DU_NOIS(13),DL_NOIS(13)
       character tdir*256
-      call get_environment_variable('PROPCORE_TRACE',tdir,ltdir,ist)
+      call get_environment_variable('HFCAST_TRACE',tdir,ltdir,ist)
       if(ist.ne.0 .or. ltdir.eq.0) return
       XMODE = ICHAR(MODE(IFX)(1:1))*256 + ICHAR(MODE(IFX)(2:2))
       XMODR = ICHAR(MODER(IFX)(1:1))*256 + ICHAR(MODER(IFX)(2:2))
@@ -679,7 +679,7 @@ C     the reliability chain, before the smoothing save block.
       END
 C--------------------------------
       SUBROUTINE trace_smo(IFX)
-C     propcore instrumentation: dumps the frequency's final /SON/ slot
+C     hfcast instrumentation: dumps the frequency's final /SON/ slot
 C     after the 7000-10000 km smoothing blend.
       COMMON / TIME / IT, GMT, UTIME(24), GMTR, XLMT(24), ITIM, JTX
       COMMON/FRQ/FREA(13),FREL(29),FREQ,JMODE,ITXRCP(2)
@@ -696,7 +696,7 @@ C     after the 7000-10000 km smoothing blend.
       common /cgains/ gaint(13),gainr(13)
       COMMON /DUDL_NOIS/ DU_NOIS(13),DL_NOIS(13)
       character tdir*256
-      call get_environment_variable('PROPCORE_TRACE',tdir,ltdir,ist)
+      call get_environment_variable('HFCAST_TRACE',tdir,ltdir,ist)
       if(ist.ne.0 .or. ltdir.eq.0) return
       XMODE = ICHAR(MODE(IFX)(1:1))*256 + ICHAR(MODE(IFX)(2:2))
       XMODR = ICHAR(MODER(IFX)(1:1))*256 + ICHAR(MODER(IFX)(2:2))
@@ -714,7 +714,7 @@ C     after the 7000-10000 km smoothing blend.
       END
 C--------------------------------
       SUBROUTINE trace_luf(IFX,ISKIP)
-C     propcore instrumentation: dumps one slot of the LUF frequency
+C     hfcast instrumentation: dumps one slot of the LUF frequency
 C     sweep -- the frequency, its reliability and whether the slot was
 C     skipped for want of a reachable distance.
       COMMON / TIME / IT, GMT, UTIME(24), GMTR, XLMT(24), ITIM, JTX
@@ -734,7 +734,7 @@ C     skipped for want of a reachable distance.
      3grlos(20),adv(20),obf(20),
      CNMODE(20),TLLOW(20),TLHGH(20),EFF(20),NREL,NMMOD
       character tdir*256
-      call get_environment_variable('PROPCORE_TRACE',tdir,ltdir,ist)
+      call get_environment_variable('HFCAST_TRACE',tdir,ltdir,ist)
       if(ist.ne.0 .or. ltdir.eq.0) return
       open(86,file=tdir(1:ltdir)//'/luf.txt',position='append')
       write(86,'(A,I4,I4,I3,I5,I4,I4)') 'SLOT',NINT(GMT),IFX,ISKIP,
@@ -747,7 +747,7 @@ C     skipped for want of a reachable distance.
       END
 C--------------------------------
       SUBROUTINE trace_lufig(IG)
-C     propcore instrumentation: dumps the slot the no-LUF-found scan
+C     hfcast instrumentation: dumps the slot the no-LUF-found scan
 C     settled on and the LUF it produced.
       COMMON / TIME / IT, GMT, UTIME(24), GMTR, XLMT(24), ITIM, JTX
       COMMON/FRQ/FREA(13),FREL(29),FREQ,JMODE,ITXRCP(2)
@@ -756,7 +756,7 @@ C     settled on and the LUF it produced.
      B ,HPMUF(4),HTMUF(4),FVMUF(4),AFMUF(4),NHOPMF(4),YFOT(4),YHPF(4)
      C ,YMUF(4)
       character tdir*256
-      call get_environment_variable('PROPCORE_TRACE',tdir,ltdir,ist)
+      call get_environment_variable('HFCAST_TRACE',tdir,ltdir,ist)
       if(ist.ne.0 .or. ltdir.eq.0) return
       open(86,file=tdir(1:ltdir)//'/luf.txt',position='append')
       write(86,'(A,I4,I4,I3)') 'IGXX',NINT(GMT),IG,0

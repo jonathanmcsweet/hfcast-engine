@@ -179,7 +179,7 @@ pub fn magvar(lat: R, lon: R) -> MagneticVars {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::con::PIO2;
+    use crate::voacap::con::PIO2;
 
     #[test]
     fn the_field_is_dipole_like() {

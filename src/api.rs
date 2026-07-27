@@ -49,16 +49,16 @@
 use std::path::Path;
 
 use crate::deck::{build_deck, DeckCase};
-use crate::engine::output::render;
-use crate::engine::run::{run_ion, run_listing, run_luf, run_muf, run_par, RunInputs};
+use crate::voacap::output::render;
+use crate::voacap::run::{run_ion, run_listing, run_luf, run_muf, run_par, RunInputs};
 
 // Everything a caller needs to build a request or read a report, so
 // nothing forces them into the harness or engine modules.
 pub use crate::deck::{AntennaChoice, Edp, EfVar, EsVar, FREQ_SLOTS};
-pub use crate::engine::coefficients::FoF2Model;
-pub use crate::engine::model::Model;
-pub use crate::engine::modes::{AllModesOut, Son};
-pub use crate::engine::run::{
+pub use crate::voacap::coefficients::FoF2Model;
+pub use crate::voacap::model::Model;
+pub use crate::voacap::modes::{AllModesOut, Son};
+pub use crate::voacap::run::{
     HourPrediction, IonPlot, MufHourOut, ParRow, PathReport, Prediction,
 };
 
@@ -347,7 +347,7 @@ fn validate(req: &Request) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::output::{itout, itrun};
+    use crate::voacap::output::{itout, itrun};
 
     fn a_request() -> Request {
         Request {

@@ -17,11 +17,11 @@
 
 use std::process::ExitCode;
 
-use propcore::engine::area::{Grid, Projection};
-use propcore::engine::coefficients::FoF2Model;
-use propcore::engine::model::Model;
-use propcore::engine::run::{f_fixed, run_area as port_area, AntennaCardSpec, AreaInputs};
-use propcore::runner::{map_limit, run_area, variant_bin, IsolatedRoot};
+use hfcast::voacap::area::{Grid, Projection};
+use hfcast::voacap::coefficients::FoF2Model;
+use hfcast::voacap::model::Model;
+use hfcast::voacap::run::{f_fixed, run_area as port_area, AntennaCardSpec, AreaInputs};
+use hfcast::runner::{map_limit, run_area, variant_bin, IsolatedRoot};
 
 /// The values the area file holds fixed. What varies between cases is
 /// the geometry.

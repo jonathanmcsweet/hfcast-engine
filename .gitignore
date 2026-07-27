@@ -1,5 +1,21 @@
+# Rust build output
+target/
+
+# The reference engine and its builds, fetched rather than vendored.
+# tools/build-variants.sh writes one source copy and build per
+# optimisation level, and the ITU-R P.533 checkout is about 700 MB.
+vendor/
+
 # Fetched WSPR aggregates and generated per-path detail
 data/
+
+# A soak run's working files, which belong on the results branch rather
+# than here.
+dumps/
+parity.md
+flux.json
+kp.json
+swx.txt
 
 # A run with a negative OUTGRAPH method writes to a Fortran unit the
 # driver never opens, so the reference leaves this behind next to

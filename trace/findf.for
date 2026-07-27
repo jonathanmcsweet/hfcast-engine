@@ -245,16 +245,16 @@ C.....END OF INSERT CUSP  (IE CUSP FINISHED)
 C--------------------------------
 C--------------------------------
       SUBROUTINE trace_findf(K, NROWS)
-C     propcore instrumentation: dumps the reflectrix rows this call
+C     hfcast instrumentation: dumps the reflectrix rows this call
 C     wrote, the skip/max distances and the penetration angles when
-C     PROPCORE_TRACE names a directory.
+C     HFCAST_TRACE names a directory.
       COMMON / TIME / IT, GMT, UTIME(24), GMTR, XLMT(24), ITIM, JTX
       COMMON/FRQ/FREA(13),FREL(29),FREQ,JMODE,ITXRCP(2)
       COMMON/REFLX/DELFX(45,3),HPFLX(45,3),HTFLX(45,3),GDFLX(45,3),FVFLX
      A (45,3),DSKPKM(3),DELSKP(3),HPSKP(3),HTSKP(3),DMAXKM(3),FVSKP(3)
      B ,ISKP(3),IMODE(45,3),AFFLX(45,3),DELPEN(3,5),GML(45,3),FHP(45,3)
       character tdir*256
-      call get_environment_variable('PROPCORE_TRACE',tdir,ltdir,ist)
+      call get_environment_variable('HFCAST_TRACE',tdir,ltdir,ist)
       if(ist.ne.0 .or. ltdir.eq.0) return
       KHZ = NINT(FREQ*1000.)
       open(85,file=tdir(1:ltdir)//'/findf.txt',position='append')

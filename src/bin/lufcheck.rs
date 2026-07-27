@@ -14,10 +14,10 @@
 
 use std::process::ExitCode;
 
-use propcore::deck::build_deck;
-use propcore::engine::run::{run_luf, RunInputs};
-use propcore::fuzz::fuzz_cases;
-use propcore::runner::{map_limit, run_deck, variant_bin, IsolatedRoot};
+use hfcast::deck::build_deck;
+use hfcast::voacap::run::{run_luf, RunInputs};
+use hfcast::fuzz::fuzz_cases;
+use hfcast::runner::{map_limit, run_deck, variant_bin, IsolatedRoot};
 
 /// One parsed table row: GMT, LMT, FOT, HPF, ES MUF, MUF, LUF.
 type Row = [f64; 7];

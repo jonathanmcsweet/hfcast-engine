@@ -109,8 +109,8 @@ c*****************************************************************
       END
 C--------------------------------
       SUBROUTINE trace_redmap(SSN,MONTH)
-C     propcore instrumentation: dumps the interpolated coefficient set
-C     when the environment variable PROPCORE_TRACE names a directory.
+C     hfcast instrumentation: dumps the interpolated coefficient set
+C     when the environment variable HFCAST_TRACE names a directory.
 C     Arrays are written whole, so they appear in Fortran storage order
 C     (first index fastest).
       COMMON /FONE/ ANEW(3),BNEW(3),ACHI(2),BCHI(2)
@@ -121,7 +121,7 @@ C     (first index fastest).
      +             FAKABP(2,6),ABMAP(2,3),
      +             DUD(5,12,5),FAM(14,12),SYS(9,16,6),PERR(9,4,6)
       character tdir*256
-      call get_environment_variable('PROPCORE_TRACE',tdir,ltdir,ist)
+      call get_environment_variable('HFCAST_TRACE',tdir,ltdir,ist)
       if(ist.ne.0 .or. ltdir.eq.0) return
       open(95,file=tdir(1:ltdir)//'/redmap.txt',position='append')
       write(95,'(A,E18.9,I4)') 'REDMAP ',SSN,MONTH

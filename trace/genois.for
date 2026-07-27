@@ -343,14 +343,14 @@ CQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ
       END
 C--------------------------------
       SUBROUTINE trace_genois(FREQ,ATNOS,GNOS,XNOIS,reff)
-C     propcore instrumentation: dumps the combined noise outputs when
-C     PROPCORE_TRACE names a directory.
+C     hfcast instrumentation: dumps the combined noise outputs when
+C     HFCAST_TRACE names a directory.
       COMMON / TIME / IT, GMT, UTIME(24), GMTR, XLMT(24), ITIM, JTX
       COMMON/ANOIS/ATNU,ATNY,CC,TM,RCNSE,DU,DL,SIGM,SYGU,SYGL,KJ,JK
       COMMON /TON /ADJ, ADS, GNOS2, GOT, REL, SL, SLS
      1, SPR, SU, SUS, XNOISE, ZNOISE, NF
       character tdir*256
-      call get_environment_variable('PROPCORE_TRACE',tdir,ltdir,ist)
+      call get_environment_variable('HFCAST_TRACE',tdir,ltdir,ist)
       if(ist.ne.0 .or. ltdir.eq.0) return
       open(86,file=tdir(1:ltdir)//'/genois.txt',position='append')
       write(86,'(A,E18.9,2I4)') 'NOI ',GMT,KJ,JK

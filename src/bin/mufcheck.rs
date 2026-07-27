@@ -18,10 +18,10 @@
 
 use std::process::ExitCode;
 
-use propcore::deck::build_deck;
-use propcore::engine::run::{run_muf, run_par, RunInputs};
-use propcore::fuzz::fuzz_cases;
-use propcore::runner::{map_limit, run_deck, variant_bin, IsolatedRoot};
+use hfcast::deck::build_deck;
+use hfcast::voacap::run::{run_muf, run_par, RunInputs};
+use hfcast::fuzz::fuzz_cases;
+use hfcast::runner::{map_limit, run_deck, variant_bin, IsolatedRoot};
 
 /// Comparisons round half to even, the way the Fortran runtime's
 /// formatted output does: a value that lands exactly on a printing

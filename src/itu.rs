@@ -351,7 +351,7 @@ mod tests {
 
     #[test]
     fn input_lists_every_hour_and_frequency() {
-        let dir = std::env::temp_dir().join("propcore-itu-input-test");
+        let dir = std::env::temp_dir().join("hfcast-itu-input-test");
         fs::create_dir_all(&dir).expect("temp dir");
         let file = dir.join("case.in");
         write_input(&a_case(), &file, Path::new("/data/"), 2500.0).expect("write");

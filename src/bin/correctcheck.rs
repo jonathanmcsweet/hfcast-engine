@@ -34,16 +34,16 @@
 use std::collections::BTreeMap;
 use std::process::ExitCode;
 
-use propcore::deck::{build_deck, AntennaChoice, DeckCase};
-use propcore::engine::area::{Grid, Projection};
-use propcore::engine::coefficients::FoF2Model;
-use propcore::engine::model::{Fixes, Model};
-use propcore::engine::output::render;
-use propcore::engine::run::{run_area, AreaInputs};
-use propcore::fuzz::fuzz_cases;
-use propcore::listing::{parse_listing, ModeSample, Sample};
-use propcore::runner::{map_limit, IsolatedRoot};
-use propcore::sweep::sweep_cases;
+use hfcast::deck::{build_deck, AntennaChoice, DeckCase};
+use hfcast::voacap::area::{Grid, Projection};
+use hfcast::voacap::coefficients::FoF2Model;
+use hfcast::voacap::model::{Fixes, Model};
+use hfcast::voacap::output::render;
+use hfcast::voacap::run::{run_area, AreaInputs};
+use hfcast::fuzz::fuzz_cases;
+use hfcast::listing::{parse_listing, ModeSample, Sample};
+use hfcast::runner::{map_limit, IsolatedRoot};
+use hfcast::sweep::sweep_cases;
 
 const CONCURRENCY: usize = 2;
 
@@ -472,7 +472,7 @@ fn main() -> ExitCode {
 /// in the public API.
 fn render_with(
     root: &std::path::Path,
-    case: &propcore::deck::DeckCase,
+    case: &hfcast::deck::DeckCase,
     deck: &str,
     fixes: Fixes,
 ) -> Result<String, String> {

@@ -472,7 +472,7 @@ mod tests {
             paths_run: 150,
             failures: 2,
         };
-        let path = std::env::temp_dir().join("propcore-spread-cache-test.csv");
+        let path = std::env::temp_dir().join("hfcast-spread-cache-test.csv");
         save_month(&path, &m).expect("writable");
         let back = load_month(&path).expect("parses");
         std::fs::remove_file(&path).ok();

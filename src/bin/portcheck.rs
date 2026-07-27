@@ -2,7 +2,7 @@
 //! Fortran, judged by the tolerance envelope of `docs/sensitivity.md`.
 //!
 //! Per sweep case the reference `-O2` binary runs the deck and its
-//! listing is parsed; the Rust engine (`engine::run`) computes the same
+//! listing is parsed; the Rust engine (`voacap::run`) computes the same
 //! prediction and renders the same listing body. The two parsed
 //! listings are compared cell by cell. The port passes when every field
 //! stays within the envelope — no further from the reference than
@@ -13,12 +13,12 @@
 
 use std::process::ExitCode;
 
-use propcore::compare::{compare_listings, Comparison};
-use propcore::deck::build_deck;
-use propcore::engine::run::{body_lines, listing_text, run, RunInputs};
-use propcore::listing::parse_listing;
-use propcore::runner::{run_deck, variant_bin, IsolatedRoot};
-use propcore::sweep::sweep_cases;
+use hfcast::compare::{compare_listings, Comparison};
+use hfcast::deck::build_deck;
+use hfcast::voacap::run::{body_lines, listing_text, run, RunInputs};
+use hfcast::listing::parse_listing;
+use hfcast::runner::{run_deck, variant_bin, IsolatedRoot};
+use hfcast::sweep::sweep_cases;
 
 /// `docs/sensitivity.md`, "Derived tolerance": the widest disagreement
 /// between IEEE-conformant builds of the reference.

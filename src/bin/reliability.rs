@@ -4,7 +4,7 @@
 //! probability comes from VOACAP's day-to-day spread deciles (`SNR LW`,
 //! `SNR UP`). This program checks those claims against what actually happened,
 //! day by day, in the WSPR record. The measurement method — offset-free
-//! deviations, censor-safe counting — lives in [`propcore::spread`], shared
+//! deviations, censor-safe counting — lives in [`hfcast::spread`], shared
 //! with the `storm` binary.
 //!
 //! Usage: `reliability --fit <month-dir> --test <month-dir> [--test …]`
@@ -12,14 +12,14 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use propcore::runner::variant_bin;
-use propcore::spread::{calibration, fit_scale, gather, SpreadRecord, VOACAP_VARIANT};
+use hfcast::runner::variant_bin;
+use hfcast::spread::{calibration, fit_scale, gather, SpreadRecord, VOACAP_VARIANT};
 
 fn print_calibration(records: &[SpreadRecord], lower: bool, raw_scale: f64, fitted_scale: f64) {
     let side = if lower { "below" } else { "above" };
     println!("| deviation | engine says | with fitted scale | actually happened | path-hours |");
     println!("| --- | --: | --: | --: | --: |");
-    let keep = |_: &SpreadRecord, _: &propcore::spread::DaySample| true;
+    let keep = |_: &SpreadRecord, _: &hfcast::spread::DaySample| true;
     let raw = calibration(records, lower, raw_scale, &keep);
     let fitted = calibration(records, lower, fitted_scale, &keep);
     for (label, bin) in &raw {

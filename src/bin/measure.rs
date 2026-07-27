@@ -16,11 +16,11 @@ use std::fs;
 use std::process::ExitCode;
 use std::time::Instant;
 
-use propcore::compare::{compare_listings, Comparison, FieldStats};
-use propcore::deck::build_deck;
-use propcore::listing::{parse_listing, ParsedListing};
-use propcore::runner::{map_limit, run_deck, variant_bin, IsolatedRoot};
-use propcore::sweep::{sweep_cases, PATHS};
+use hfcast::compare::{compare_listings, Comparison, FieldStats};
+use hfcast::deck::build_deck;
+use hfcast::listing::{parse_listing, ParsedListing};
+use hfcast::runner::{map_limit, run_deck, variant_bin, IsolatedRoot};
+use hfcast::sweep::{sweep_cases, PATHS};
 
 /// `-O2` matches how the vendored and installed binaries are built.
 const REFERENCE: &str = "O2";

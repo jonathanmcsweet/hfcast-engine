@@ -120,7 +120,7 @@ mod tests {
 
     #[test]
     fn pole_file_precedence_matches_the_broken_fortran_lookup() {
-        let base = std::env::temp_dir().join("propcore-pole-test");
+        let base = std::env::temp_dir().join("hfcast-pole-test");
         let _ = std::fs::remove_dir_all(&base);
         std::fs::create_dir_all(base.join("database")).expect("dirs");
         std::fs::create_dir_all(base.join("run")).expect("dirs");
@@ -141,7 +141,7 @@ mod tests {
 
     #[test]
     fn the_corrected_tier_reads_the_database_file() {
-        let base = std::env::temp_dir().join("propcore-pole-corrected");
+        let base = std::env::temp_dir().join("hfcast-pole-corrected");
         let _ = std::fs::remove_dir_all(&base);
         std::fs::create_dir_all(base.join("database")).expect("dirs");
         std::fs::create_dir_all(base.join("run")).expect("dirs");

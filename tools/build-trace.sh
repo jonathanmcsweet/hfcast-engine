@@ -5,13 +5,13 @@
 # the reference flags (-O2). Each file in trace/ is a complete replacement
 # for the same-named file under src/voacapw/, identical except for an added
 # trace subroutine. The patched binary behaves identically unless the
-# environment variable PROPCORE_TRACE names a directory, in which case each
+# environment variable HFCAST_TRACE names a directory, in which case each
 # instrumented stage appends its intermediate values there. The Rust port
 # is tested stage by stage against those values.
 set -euo pipefail
 
-SRC="${SRC:-/home/dev/workspace/vendor/voacapl}"
-OUT="${OUT:-/home/dev/workspace/vendor/voacapl-variants}"
+SRC="${SRC:-vendor/voacapl}"
+OUT="${OUT:-vendor/voacapl-variants}"
 JOBS="${JOBS:-4}"
 
 cd "$(dirname "$0")/.."

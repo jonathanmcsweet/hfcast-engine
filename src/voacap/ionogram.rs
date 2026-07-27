@@ -321,8 +321,8 @@ pub fn alosfv(s: &IonoState, k: usize, ion: &mut Ionogram, layers: &[LayerMuf; 4
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::ionosphere::LayerParams;
-    use crate::engine::muf::{ionset, lecden};
+    use crate::voacap::ionosphere::LayerParams;
+    use crate::voacap::muf::{ionset, lecden};
 
     fn state() -> IonoState {
         let p = LayerParams {

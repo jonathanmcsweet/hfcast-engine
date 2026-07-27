@@ -26,7 +26,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use propcore::stats::median;
+use hfcast::stats::median;
 
 /// The four predictors carried in a dump, in column order.
 const PREDICTORS: [&str; 4] = [
@@ -181,7 +181,7 @@ fn evaluate(
     }
 
     let med = median(&mut errors.clone());
-    let rms = propcore::stats::rms(&errors);
+    let rms = hfcast::stats::rms(&errors);
     (med, rms)
 }
 
@@ -194,7 +194,7 @@ fn evaluate_flat(paths: &[PathSeries]) -> (f64, f64) {
         errors.extend(p.observed.iter().map(|o| (o - centre).abs()));
     }
     let med = median(&mut errors.clone());
-    let rms = propcore::stats::rms(&errors);
+    let rms = hfcast::stats::rms(&errors);
     (med, rms)
 }
 
@@ -359,7 +359,7 @@ mod tests {
 
     #[test]
     fn loads_a_dump_grouped_by_path() {
-        let dir = std::env::temp_dir().join("propcore-calib-test");
+        let dir = std::env::temp_dir().join("hfcast-calib-test");
         fs::create_dir_all(&dir).expect("dir");
         let file = dir.join("dump.csv");
         fs::write(

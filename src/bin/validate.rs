@@ -47,14 +47,14 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Instant;
 
-use propcore::deck::{build_deck, DeckCase};
-use propcore::engine::model::{Fixes, Model};
-use propcore::engine::output::render;
-use propcore::itu::{parse_report, run_case, ItuPaths};
-use propcore::listing::parse_listing;
-use propcore::runner::{itshfbc_dir, map_limit, run_deck, variant_bin, IsolatedRoot};
-use propcore::stats::{correlation, fit_line, median, rms};
-use propcore::wspr::{self, smoothed_ssn, WsprPath, WSPR_BANDWIDTH_HZ, WSPR_BANDWIDTH_OFFSET_DB};
+use hfcast::deck::{build_deck, DeckCase};
+use hfcast::voacap::model::{Fixes, Model};
+use hfcast::voacap::output::render;
+use hfcast::itu::{parse_report, run_case, ItuPaths};
+use hfcast::listing::parse_listing;
+use hfcast::runner::{itshfbc_dir, map_limit, run_deck, variant_bin, IsolatedRoot};
+use hfcast::stats::{correlation, fit_line, median, rms};
+use hfcast::wspr::{self, smoothed_ssn, WsprPath, WSPR_BANDWIDTH_HZ, WSPR_BANDWIDTH_OFFSET_DB};
 
 const VOACAP_VARIANT: &str = "O2";
 const CONCURRENCY: usize = 4;
@@ -122,12 +122,7 @@ struct PathOutcome {
 
 fn main() -> ExitCode {
     let data_dir = arg("--data").unwrap_or_else(|| PathBuf::from("data"));
-    let itu_root = arg("--itu").unwrap_or_else(|| {
-        std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .unwrap_or_default()
-            .join("workspace/vendor/itu-r-hf")
-    });
+    let itu_root = arg("--itu").unwrap_or_else(|| PathBuf::from("vendor/itu-r-hf"));
 
     let data = match wspr::load(&data_dir) {
         Ok(d) => d,
@@ -157,7 +152,7 @@ fn main() -> ExitCode {
     let itu = ItuPaths::from_checkout(&itu_root);
     let voacap_bin = variant_bin(VOACAP_VARIANT);
     if !itu.is_built() || !voacap_bin.is_file() {
-        eprintln!("both engines must be built; see propcore/README.md");
+        eprintln!("both engines must be built; see hfcast/README.md");
         return ExitCode::FAILURE;
     }
 
@@ -376,7 +371,7 @@ fn run_path(
             }
         };
 
-    let work = scratch(&format!("propcore-val-{index}"));
+    let work = scratch(&format!("hfcast-val-{index}"));
     let itu_day: Option<[Option<(f64, f64)>; 24]> = match fs::create_dir_all(&work)
         .map_err(|e| e.to_string())
         .and_then(|()| run_case(itu, &case, &work, WSPR_BANDWIDTH_HZ).map_err(|e| e.to_string()))
@@ -476,7 +471,7 @@ fn fix_by_name(name: &str) -> Option<Fixes> {
 }
 
 fn scratch(name: &str) -> PathBuf {
-    std::env::var_os("PROPCORE_SCRATCH")
+    std::env::var_os("HFCAST_SCRATCH")
         .map(PathBuf::from)
         .unwrap_or_else(std::env::temp_dir)
         .join(name)

@@ -28,11 +28,11 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Instant;
 
-use propcore::deck::build_deck;
-use propcore::itu::{parse_report, run_case, ItuPaths, ItuRow};
-use propcore::listing::{parse_listing, ParsedListing, MUF_ROW, MUF_SLOT};
-use propcore::runner::{map_limit, run_deck, variant_bin, IsolatedRoot};
-use propcore::sweep::{sweep_cases, AMATEUR_FREQS_MHZ};
+use hfcast::deck::build_deck;
+use hfcast::itu::{parse_report, run_case, ItuPaths, ItuRow};
+use hfcast::listing::{parse_listing, ParsedListing, MUF_ROW, MUF_SLOT};
+use hfcast::runner::{map_limit, run_deck, variant_bin, IsolatedRoot};
+use hfcast::sweep::{sweep_cases, AMATEUR_FREQS_MHZ};
 
 /// The VOACAP build used as the comparison point.
 const VOACAP_VARIANT: &str = "O2";
@@ -189,7 +189,7 @@ fn main() -> ExitCode {
             }
         };
 
-        let work = scratch_dir(&format!("propcore-itu-{index}"));
+        let work = scratch_dir(&format!("hfcast-itu-{index}"));
         let itu = match fs::create_dir_all(&work)
             .map_err(|e| e.to_string())
             .and_then(|()| run_case(&paths, case, &work, 3000.0).map_err(|e| e.to_string()))
@@ -414,18 +414,13 @@ fn itu_root_arg() -> PathBuf {
             return PathBuf::from(v);
         }
     }
-    std::env::var_os("PROPCORE_ITU")
+    std::env::var_os("HFCAST_ITU")
         .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            std::env::var_os("HOME")
-                .map(PathBuf::from)
-                .unwrap_or_default()
-                .join("workspace/vendor/itu-r-hf")
-        })
+        .unwrap_or_else(|| PathBuf::from("vendor/itu-r-hf"))
 }
 
 fn scratch_dir(name: &str) -> PathBuf {
-    std::env::var_os("PROPCORE_SCRATCH")
+    std::env::var_os("HFCAST_SCRATCH")
         .map(PathBuf::from)
         .unwrap_or_else(std::env::temp_dir)
         .join(name)

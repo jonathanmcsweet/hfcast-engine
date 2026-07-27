@@ -19,12 +19,12 @@
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::process::ExitCode;
 
-use propcore::deck::{build_deck, DeckCase};
-use propcore::engine::model::Model;
-use propcore::engine::output::render;
-use propcore::fuzz::{band_for, fuzz_cases};
-use propcore::listing::{parse_listing, ParsedListing};
-use propcore::runner::{map_limit, run_deck, variant_bin, IsolatedRoot};
+use hfcast::deck::{build_deck, DeckCase};
+use hfcast::voacap::model::Model;
+use hfcast::voacap::output::render;
+use hfcast::fuzz::{band_for, fuzz_cases};
+use hfcast::listing::{parse_listing, ParsedListing};
+use hfcast::runner::{map_limit, run_deck, variant_bin, IsolatedRoot};
 
 /// Concurrent runs. Each one copies the `itshfbc` tree, so this trades
 /// disk and memory for wall clock; four is what the other harness
@@ -470,7 +470,7 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
 
 /// Every differing cell, and how many were compared.
 ///
-/// [`propcore::compare`] keeps per-row aggregates, which is what a
+/// [`hfcast::compare`] keeps per-row aggregates, which is what a
 /// tolerance needs; chasing one failing case needs the cell's hour,
 /// row and slot, so the two listings are walked directly here.
 fn cell_diffs(a: &ParsedListing, b: &ParsedListing) -> (Vec<CellDiff>, usize) {

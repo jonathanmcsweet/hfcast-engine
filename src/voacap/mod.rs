@@ -12,7 +12,7 @@
 //!
 //! 1. **Stage traces.** `tools/build-trace.sh` builds the Fortran with the
 //!    patches in `trace/*.patch`, which dump each ported stage's
-//!    intermediate values when `PROPCORE_TRACE` names a directory. Each
+//!    intermediate values when `HFCAST_TRACE` names a directory. Each
 //!    Rust stage is compared against those dumps over the sweep cases
 //!    (`porttest` binary). This localises any disagreement to the stage
 //!    that caused it — indispensable in a program built from global state

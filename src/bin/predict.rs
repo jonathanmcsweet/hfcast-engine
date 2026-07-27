@@ -16,7 +16,7 @@
 //! two decimals, SNR to the nearest dB, the deciles to one. Its
 //! correction factors were fitted against those numbers. So this
 //! renders the listing with the verified formatter and parses it with
-//! [`propcore::listing`], which makes the values identical to the
+//! [`hfcast::listing`], which makes the values identical to the
 //! reference's by construction rather than by a second implementation
 //! of `OUTBOD`'s rounding, its at-the-MUF column and its rule for
 //! which frequency slots print at all.
@@ -30,10 +30,10 @@ use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use propcore::api::{listing, FoF2Model, Ionosphere, Model, Request, Site, Task};
-use propcore::json::{self, num, obj, str_of, Json};
-use propcore::listing::{parse_listing, MUF_ROW, MUF_SLOT};
-use propcore::runner::itshfbc_dir;
+use hfcast::api::{listing, FoF2Model, Ionosphere, Model, Request, Site, Task};
+use hfcast::json::{self, num, obj, str_of, Json};
+use hfcast::listing::{parse_listing, MUF_ROW, MUF_SLOT};
+use hfcast::runner::itshfbc_dir;
 
 /// The rows the server reads, and the key each becomes in the output.
 const ROWS: [(&str, &str); 4] = [
@@ -117,7 +117,7 @@ fn build_request(req: &Json) -> Result<(Request, Vec<f64>), String> {
         noise_dbw: req.number("noiseDbw")?,
         fof2: FoF2Model::Ccir,
         // The fourth value enables sporadic E. Eight months of WSPR
-        // validation put it on; see propcore/docs/accuracy.md.
+        // validation put it on; see docs/accuracy.md.
         layer_multipliers: [1.0, 1.0, 1.0, 1.0],
         tx_antennas: Vec::new(),
         rx_antennas: Vec::new(),

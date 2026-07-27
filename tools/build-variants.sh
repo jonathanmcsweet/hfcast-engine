@@ -13,8 +13,8 @@
 # binary at ~/.local/bin/voacapl untouched. A copy is about 12 MB.
 set -euo pipefail
 
-SRC="${SRC:-/home/dev/workspace/vendor/voacapl}"
-OUT="${OUT:-/home/dev/workspace/vendor/voacapl-variants}"
+SRC="${SRC:-vendor/voacapl}"
+OUT="${OUT:-vendor/voacapl-variants}"
 
 # The host has 16 cores but under 3 GB of usable RAM. Sizing the job count from
 # core count gets the compiler OOM-killed, which surfaces as a bare "Killed".

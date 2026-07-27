@@ -1,4 +1,4 @@
-# propcore
+# hfcast
 
 Characterisation harness for porting the HF propagation engine off Fortran.
 

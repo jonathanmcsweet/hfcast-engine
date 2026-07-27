@@ -398,15 +398,15 @@ C.....NOTE THAT ES IS NOT INCLUDED HERE
       END
 C--------------------------------
       SUBROUTINE trace_curmuf(KS)
-C     propcore instrumentation: dumps the hour's MUF outputs when
-C     PROPCORE_TRACE names a directory.
+C     hfcast instrumentation: dumps the hour's MUF outputs when
+C     HFCAST_TRACE names a directory.
       COMMON / TIME / IT, GMT, UTIME(24), GMTR, XLMT(24), ITIM, JTX
       COMMON/MUFS/EMUF(24),F1MUF(24),F2MUF(24),ESMUF(24),ALLMUF(24)
      A,FOT(24),XLUF(24),HPF(24),ANGMUF(24),MODMUF,SIGL(4),SIGU(4),DELMUF
      B (4),HPMUF(4),HTMUF(4),FVMUF(4),AFMUF(4),NHOPMF(4),YFOT(4),YHPF(4)
      C ,YMUF(4)
       character tdir*256
-      call get_environment_variable('PROPCORE_TRACE',tdir,ltdir,ist)
+      call get_environment_variable('HFCAST_TRACE',tdir,ltdir,ist)
       if(ist.ne.0 .or. ltdir.eq.0) return
       open(90,file=tdir(1:ltdir)//'/curmuf.txt',position='append')
       write(90,'(A,E18.9)') 'MUF ',GMT

@@ -5,7 +5,7 @@
 //! minutes from ionosonde soundings, and its archive covers the validation
 //! months. This program runs VOACAP twice per path: once as shipped
 //! (climatology), and once per day with that day's IRTAM foF2 map written
-//! into the run's private tree (see [`propcore::irtam`]). Both are scored
+//! into the run's private tree (see [`hfcast::irtam`]). Both are scored
 //! against the per-day WSPR medians.
 //!
 //! The decisive metric is the day-to-day one: correlation between predicted
@@ -22,13 +22,13 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use propcore::deck::{build_deck, DeckCase};
-use propcore::geomag::{self, GeomagTable};
-use propcore::irtam;
-use propcore::listing::parse_listing;
-use propcore::runner::{map_limit, run_deck, variant_bin, IsolatedRoot};
-use propcore::stats::{correlation, fit_line, median};
-use propcore::wspr::{self, smoothed_ssn};
+use hfcast::deck::{build_deck, DeckCase};
+use hfcast::geomag::{self, GeomagTable};
+use hfcast::irtam;
+use hfcast::listing::parse_listing;
+use hfcast::runner::{map_limit, run_deck, variant_bin, IsolatedRoot};
+use hfcast::stats::{correlation, fit_line, median};
+use hfcast::wspr::{self, smoothed_ssn};
 
 const VOACAP_VARIANT: &str = "O2";
 const CONCURRENCY: usize = 4;

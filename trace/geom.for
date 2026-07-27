@@ -193,12 +193,12 @@ ccc      write(12,'(''glat='',5e15.7)') (glat(i),i=1,km)
 C--------------------------------
       SUBROUTINE trace_geom(GCDKM,BTRD,BRTD,KM,RD,CLAT,CLONG,GLAT,R2D,
      A SIGPAT,EPSPAT,ALATD)
-C     propcore instrumentation: dumps the path geometry when the
-C     environment variable PROPCORE_TRACE names a directory. The Rust
+C     hfcast instrumentation: dumps the path geometry when the
+C     environment variable HFCAST_TRACE names a directory. The Rust
 C     port is tested stage by stage against these values.
       DIMENSION RD(5),CLAT(5),CLONG(5),GLAT(5),SIGPAT(5),EPSPAT(5)
       character tdir*256
-      call get_environment_variable('PROPCORE_TRACE',tdir,ltdir,ist)
+      call get_environment_variable('HFCAST_TRACE',tdir,ltdir,ist)
       if(ist.ne.0 .or. ltdir.eq.0) return
       open(97,file=tdir(1:ltdir)//'/geom.txt',position='append')
       write(97,'(A,3E16.8,I3)') 'GEOM ',GCDKM,BTRD,BRTD,KM

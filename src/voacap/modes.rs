@@ -1835,7 +1835,7 @@ fn serprb(
     // slot 1 of two arrays the Fortran leaves uninitialised; the port
     // reads its own zeros instead, which only method 25's table would
     // show, and only for an hour whose output `OUTALL` cannot print at
-    // all (see [`crate::engine::tables::outall`]).
+    // all (see [`crate::voacap::tables::outall`]).
     lp.d10s = d10sa[imax];
     lp.d50s = d50sa[imax];
     lp.d90s = lp.d10s;

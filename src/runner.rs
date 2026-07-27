@@ -44,10 +44,13 @@ pub fn itshfbc_dir() -> PathBuf {
         .unwrap_or_else(|| home().join("itshfbc"))
 }
 
+/// Where `tools/build-variants.sh` puts its builds. The default is
+/// relative to the repository root, which is where `cargo run` starts
+/// the harnesses from.
 pub fn variants_dir() -> PathBuf {
-    env::var_os("PROPCORE_VARIANTS")
+    env::var_os("HFCAST_VARIANTS")
         .map(PathBuf::from)
-        .unwrap_or_else(|| home().join("workspace/vendor/voacapl-variants"))
+        .unwrap_or_else(|| PathBuf::from("vendor/voacapl-variants"))
 }
 
 fn home() -> PathBuf {
@@ -116,10 +119,10 @@ impl IsolatedRoot {
     /// truncates one run's reference output and reports the missing
     /// cells as differences.
     pub fn create(tag: &str) -> io::Result<Self> {
-        let base = env::var_os("PROPCORE_SCRATCH")
+        let base = env::var_os("HFCAST_SCRATCH")
             .map(PathBuf::from)
             .unwrap_or_else(env::temp_dir);
-        let path = base.join(format!("propcore-itshfbc-{}-{tag}", std::process::id()));
+        let path = base.join(format!("hfcast-itshfbc-{}-{tag}", std::process::id()));
         // A leftover from an interrupted run would otherwise be reused.
         let _ = fs::remove_dir_all(&path);
         copy_dir_all(&itshfbc_dir(), &path)?;
@@ -217,7 +220,7 @@ pub fn run_deck(bin: &Path, root: &Path, deck: &str) -> Result<String, RunError>
 
 /// Like [`run_deck`], with extra environment variables for the engine.
 ///
-/// The trace variant reads `PROPCORE_TRACE` and dumps stage intermediates
+/// The trace variant reads `HFCAST_TRACE` and dumps stage intermediates
 /// into the directory it names; the stock engine ignores it.
 pub fn run_deck_with_env(
     bin: &Path,
@@ -226,8 +229,8 @@ pub fn run_deck_with_env(
     env: &[(&str, &str)],
 ) -> Result<String, RunError> {
     let run_dir = root.join("run");
-    let input_name = "propcore.dat";
-    let output_name = "propcore.out";
+    let input_name = "hfcast.dat";
+    let output_name = "hfcast.out";
 
     fs::write(run_dir.join(input_name), deck)?;
     run_to_completion(bin, root, input_name, output_name, env)?;
@@ -399,7 +402,7 @@ mod tests {
 
     #[test]
     fn copy_dir_all_reproduces_a_nested_tree() {
-        let base = env::temp_dir().join("propcore-copy-test");
+        let base = env::temp_dir().join("hfcast-copy-test");
         let src = base.join("src");
         let dst = base.join("dst");
         let _ = fs::remove_dir_all(&base);
@@ -424,7 +427,7 @@ mod tests {
     fn copy_dir_all_keeps_symlinks_as_links() {
         // A stock itshfbc links `coeffs` into the share directory. Following
         // the link would copy the whole coefficient set for every run.
-        let base = env::temp_dir().join("propcore-symlink-test");
+        let base = env::temp_dir().join("hfcast-symlink-test");
         let src = base.join("src");
         let dst = base.join("dst");
         let _ = fs::remove_dir_all(&base);
@@ -462,7 +465,7 @@ mod tests {
     #[test]
     fn replace_file_materialises_a_linked_directory_without_touching_the_share() {
         // Simulate a stock tree: root/coeffs is a symlink to a shared dir.
-        let base = env::temp_dir().join("propcore-replace-test");
+        let base = env::temp_dir().join("hfcast-replace-test");
         let share = base.join("share");
         let root_dir = base.join("root");
         let _ = fs::remove_dir_all(&base);

@@ -324,7 +324,7 @@ mod tests {
 
     #[test]
     fn prbmuf_is_a_falling_probability_through_the_muf() {
-        let mut hour = crate::engine::muf::MufHour {
+        let mut hour = crate::voacap::muf::MufHour {
             emuf: 0.0,
             f1muf: 0.0,
             f2muf: 10.0,

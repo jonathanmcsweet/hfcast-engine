@@ -15,12 +15,12 @@
 //! The tests skip (and say so) without the data tree, so `cargo test`
 //! stays runnable anywhere.
 
-use propcore::deck::{build_deck, AntennaChoice, DeckCase};
-use propcore::engine::model::{Fixes, Model};
-use propcore::engine::output::render;
-use propcore::fuzz::fuzz_cases;
-use propcore::runner::{itshfbc_dir, IsolatedRoot};
-use propcore::sweep::sweep_cases;
+use hfcast::deck::{build_deck, AntennaChoice, DeckCase};
+use hfcast::voacap::model::{Fixes, Model};
+use hfcast::voacap::output::render;
+use hfcast::fuzz::fuzz_cases;
+use hfcast::runner::{itshfbc_dir, IsolatedRoot};
+use hfcast::sweep::sweep_cases;
 
 /// The first few method-26 cases from the fuzz corpus: the decks that
 /// run the LUF search. Their frequencies are ignored — the LUF methods

@@ -19,7 +19,7 @@ Three licences apply to the vendored distribution
 programs that convert `.DST` binary files to text, built as their own
 `bin_PROGRAMS` under `voacapl/itshfbc/bin/dst/`. The port is a
 translation of `src/voacapw/` and `src/hfmufesw/`, and nothing in
-`propcore` reads, calls or derives from either file or from the
+`hfcast` reads, calls or derives from either file or from the
 `f90getopt` module they use.
 
 So the ported engine derives only from the public-domain original and

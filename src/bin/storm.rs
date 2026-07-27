@@ -5,7 +5,7 @@
 //! under-predicts the rare deep fades. The suspected cause is geomagnetic
 //! storms. This program tests that directly: every measured day-hour is
 //! tagged with the Kp index around its own 3-hour block (from the GFZ
-//! record, see [`propcore::geomag`]), and the spread is measured separately
+//! record, see [`hfcast::geomag`]), and the spread is measured separately
 //! for quiet and disturbed conditions.
 //!
 //! ## Method
@@ -29,13 +29,13 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use propcore::geomag::{self, GeomagTable};
-use propcore::runner::variant_bin;
-use propcore::spread::{
+use hfcast::geomag::{self, GeomagTable};
+use hfcast::runner::variant_bin;
+use hfcast::spread::{
     calibration, gather, load_month, save_month, DaySample, MonthSpread, SpreadRecord,
     CENSOR_SAFE_DB, DECILE_TO_SIGMA, DEVIATIONS, TOP_SAFE_DB, VOACAP_VARIANT,
 };
-use propcore::stats::quantile;
+use hfcast::stats::quantile;
 
 /// The spread scales the server ships (`server/src/voacap/correct.ts`).
 const SHIPPED_SCALE_LOW: f64 = 0.40;
@@ -357,8 +357,8 @@ fn rule_check(months: &[TaggedMonth], table: &GeomagTable) {
                         continue;
                     }
                     let s = &mut sums[band][i];
-                    s.shipped += propcore::stats::phi(-delta / sigma);
-                    s.ruled += propcore::stats::phi(-delta / (sigma * rule_widening(kp)));
+                    s.shipped += hfcast::stats::phi(-delta / sigma);
+                    s.ruled += hfcast::stats::phi(-delta / (sigma * rule_widening(kp)));
                     s.beyond += usize::from(d.value <= r.centre - delta);
                     s.total += 1;
                 }

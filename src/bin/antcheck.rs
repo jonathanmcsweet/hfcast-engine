@@ -19,11 +19,11 @@
 use std::path::Path;
 use std::process::ExitCode;
 
-use propcore::engine::antenna::{
+use hfcast::voacap::antenna::{
     dazel0, point_to_point_table, read_antenna, AntennaEnd, AntennaSetup, GainTable, ELEVS, FREQS,
 };
-use propcore::engine::model::Model;
-use propcore::runner::{itshfbc_dir, run_deck, variant_bin, IsolatedRoot};
+use hfcast::voacap::model::Model;
+use hfcast::runner::{itshfbc_dir, run_deck, variant_bin, IsolatedRoot};
 
 /// The circuit every probe deck uses. Only the azimuth from these two
 /// points reaches the pattern, so one circuit is enough. Held as `f32`
@@ -292,7 +292,7 @@ fn check_one(reference: &Path, tree: &Path, name: &str) -> Outcome {
 /// A deck naming `antenna` at the transmitter.
 ///
 /// The bracketed antenna field is exactly 21 columns; the fields around
-/// it are the same fixed widths `propcore::deck` writes.
+/// it are the same fixed widths `hfcast::deck` writes.
 fn probe_deck(antenna: &str) -> String {
     let lat = |v: f32, width: usize| {
         format!(

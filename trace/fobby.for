@@ -53,12 +53,12 @@ C.....TRUE HEIGHT SO NO K FACTOR
       END
 C--------------------------------
       SUBROUTINE trace_fobby(K)
-C     propcore instrumentation: dumps the reflectrix for area K when
-C     PROPCORE_TRACE names a directory.
+C     hfcast instrumentation: dumps the reflectrix for area K when
+C     HFCAST_TRACE names a directory.
       COMMON / TIME / IT, GMT, UTIME(24), GMTR, XLMT(24), ITIM, JTX
       COMMON/RAYS/ANG(40),IFOB(40,30,5),NANG
       character tdir*256
-      call get_environment_variable('PROPCORE_TRACE',tdir,ltdir,ist)
+      call get_environment_variable('HFCAST_TRACE',tdir,ltdir,ist)
       if(ist.ne.0 .or. ltdir.eq.0) return
       open(88,file=tdir(1:ltdir)//'/fobby.txt',position='append')
       write(88,'(A,E18.9,2I4)') 'FOB ',GMT,K,NANG

@@ -75,8 +75,8 @@ C  F1 IS ALSO CLOSE TO F2 IN FREQUENCY, FORCE F1 YM TO F2 YM.
       END
 C--------------------------------
       SUBROUTINE trace_f2var
-C     propcore instrumentation: dumps the layer parameters at every
-C     control point after F2VAR, when PROPCORE_TRACE names a directory.
+C     hfcast instrumentation: dumps the layer parameters at every
+C     control point after F2VAR, when HFCAST_TRACE names a directory.
       COMMON / TIME / IT, GMT, UTIME(24), GMTR, XLMT(24), ITIM, JTX
       COMMON / MFAC / F2M3(5),HPF2(5),ZENANG(5),ZENMAX(5),IEDP,FSECV(3)
       COMMON /RON /CLAT(5), CLONG(5), GLAT(5), RD(5), FI(3,5), YI(3,5),
@@ -85,7 +85,7 @@ C     control point after F2VAR, when PROPCORE_TRACE names a directory.
       COMMON /GEOG /GYZ (5), RAT (5), GMDIP (5), CLCK (5), ABIY (5), ART
      1IC (5), SIGPAT (5), EPSPAT (5)
       character tdir*256
-      call get_environment_variable('PROPCORE_TRACE',tdir,ltdir,ist)
+      call get_environment_variable('HFCAST_TRACE',tdir,ltdir,ist)
       if(ist.ne.0 .or. ltdir.eq.0) return
       open(93,file=tdir(1:ltdir)//'/f2var.txt',position='append')
       write(93,'(A,E18.9,I4)') 'F2V ',GMT,KM

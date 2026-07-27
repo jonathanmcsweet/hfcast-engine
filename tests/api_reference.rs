@@ -2,18 +2,18 @@
 //!
 //! For every [`Task`], the deck the request resolves to is run through
 //! the reference `voacapl` build and the text is compared with
-//! [`propcore::api::listing`]'s. The unit tests prove the request
+//! [`hfcast::api::listing`]'s. The unit tests prove the request
 //! resolves consistently; this proves the whole answer is the
 //! reference's answer.
 //!
 //! The tests skip (and say so) on a machine without the reference
 //! binary and data tree, so `cargo test` stays runnable anywhere.
 
-use propcore::api::{
+use hfcast::api::{
     deck, listing, predict, AntennaChoice, EfVar, EsVar, FoF2Model, Heights, Ionosphere, Model,
     Recompute, Report, Request, Site, Task,
 };
-use propcore::runner::{itshfbc_dir, run_deck, variant_bin, IsolatedRoot};
+use hfcast::runner::{itshfbc_dir, run_deck, variant_bin, IsolatedRoot};
 
 const ALL_TASKS: [Task; 7] = [
     Task::Parameters,

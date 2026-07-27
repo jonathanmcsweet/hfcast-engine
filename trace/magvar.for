@@ -44,11 +44,11 @@ C.....GMDIP(II) IS THE RAWER MAGNETIC DIP ANGLE
       END
 C--------------------------------
       SUBROUTINE trace_magvar(CENLAT,CLG,GYZ1,GMDIP1,UNE)
-C     propcore instrumentation: dumps the magnetic field values when the
-C     environment variable PROPCORE_TRACE names a directory.
+C     hfcast instrumentation: dumps the magnetic field values when the
+C     environment variable HFCAST_TRACE names a directory.
       DIMENSION UNE(3)
       character tdir*256
-      call get_environment_variable('PROPCORE_TRACE',tdir,ltdir,ist)
+      call get_environment_variable('HFCAST_TRACE',tdir,ltdir,ist)
       if(ist.ne.0 .or. ltdir.eq.0) return
       open(96,file=tdir(1:ltdir)//'/magvar.txt',position='append')
       write(96,'(A,7E16.8)') 'MAG ',CENLAT,CLG,GYZ1,GMDIP1,

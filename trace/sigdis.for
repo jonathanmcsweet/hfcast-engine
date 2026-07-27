@@ -235,8 +235,8 @@ C LOWER DECILE SIGNAL LEVEL ADJUSTMENT TO MEDIAN
       END
 C--------------------------------
       SUBROUTINE trace_sigdis
-C     propcore instrumentation: dumps the signal-distribution outputs
-C     when PROPCORE_TRACE names a directory.
+C     hfcast instrumentation: dumps the signal-distribution outputs
+C     when HFCAST_TRACE names a directory.
       COMMON / TIME / IT, GMT, UTIME(24), GMTR, XLMT(24), ITIM, JTX
       COMMON/SIGD/DSL,ASM,DSU,AGLAT,DSLF,ASMF,DSUF,ACAV,FEAV,AFE,BFE,HNU
      A ,HTLOSS,XNUZ,XVE
@@ -248,7 +248,7 @@ C     when PROPCORE_TRACE names a directory.
      1HI(3,5), HPRIM(30,5), HTRUE(30,5), FVERT(30,5),KM,KFX, AFAC(30,5),
      2HTR(50,3), FNSQ(50,3)
       character tdir*256
-      call get_environment_variable('PROPCORE_TRACE',tdir,ltdir,ist)
+      call get_environment_variable('HFCAST_TRACE',tdir,ltdir,ist)
       if(ist.ne.0 .or. ltdir.eq.0) return
       open(87,file=tdir(1:ltdir)//'/sigdis.txt',position='append')
       write(87,'(A,E18.9,I4)') 'SIG ',GMT,KFX

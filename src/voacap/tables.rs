@@ -428,10 +428,10 @@ mod tests {
 
     #[test]
     fn outmuf_drops_the_luf_column_for_every_method_but_26() {
-        let header = crate::engine::output::Header {
+        let header = crate::voacap::output::Header {
             coeff: "CCIR".into(),
             method: 3,
-            model: crate::engine::output::MODEL.into(),
+            model: crate::voacap::output::MODEL.into(),
             version: "16.1207W".into(),
             month: 1,
             year: "  1990".into(),
@@ -452,7 +452,7 @@ mod tests {
             brtd: 0.0,
             gcd_km: 0.0,
             antennas: Vec::new(),
-            top: crate::engine::output::top_lines(3, None),
+            top: crate::voacap::output::top_lines(3, None),
         };
         let hour = MufHourOut {
             gmt: 1.0,

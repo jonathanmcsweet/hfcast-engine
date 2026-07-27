@@ -2,7 +2,7 @@
 //!
 //! `tools/build-trace.sh` builds the `trace` variant: the reference engine
 //! plus dump statements at every ported stage boundary, active only when
-//! `PROPCORE_TRACE` names a directory. This program runs that binary over
+//! `HFCAST_TRACE` names a directory. This program runs that binary over
 //! the sweep cases, parses the dumps, computes the same stage in Rust, and
 //! reports the worst disagreement per field. A port error shows up here as
 //! a disagreement in the *first* stage that contains it, not as a mystery
@@ -13,25 +13,25 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use propcore::deck::build_deck;
-use propcore::engine::coefficients::{redmap, FoF2Model};
-use propcore::engine::con::MagneticPole;
-use propcore::engine::ionosphere::{cofion, esind, layer_parameters, virtim, LayerParams};
-use propcore::engine::con::D2R;
-use propcore::engine::ionogram::{alosfv, fobby, genion, sang, selmod};
-use propcore::engine::ionosphere::{alatd, geotim, ground_constants};
-use propcore::engine::noise::{anois1, genois};
-use propcore::engine::modes::{
+use hfcast::deck::build_deck;
+use hfcast::voacap::coefficients::{redmap, FoF2Model};
+use hfcast::voacap::con::MagneticPole;
+use hfcast::voacap::ionosphere::{cofion, esind, layer_parameters, virtim, LayerParams};
+use hfcast::voacap::con::D2R;
+use hfcast::voacap::ionogram::{alosfv, fobby, genion, sang, selmod};
+use hfcast::voacap::ionosphere::{alatd, geotim, ground_constants};
+use hfcast::voacap::noise::{anois1, genois};
+use hfcast::voacap::modes::{
     es_slots, luffy_freq_loop, luffy_smooth, outbod_sentinels, setlng, AllModes, DeckParams,
     FreqDebug, Geog, HourSaves, ModeLoopState, PassCtx, Son, Zon,
 };
-use propcore::engine::muf::{curmuf, ionset, lecden, IonoState};
-use propcore::engine::sigdis::sigdis;
-use propcore::engine::geometry::{path_geometry, PathGeometry};
-use propcore::engine::magnetic::magvar;
-use propcore::runner::{run_deck_with_env, variant_bin, IsolatedRoot};
-use propcore::fuzz::fuzz_cases;
-use propcore::sweep::sweep_cases;
+use hfcast::voacap::muf::{curmuf, ionset, lecden, IonoState};
+use hfcast::voacap::sigdis::sigdis;
+use hfcast::voacap::geometry::{path_geometry, PathGeometry};
+use hfcast::voacap::magnetic::magvar;
+use hfcast::runner::{run_deck_with_env, variant_bin, IsolatedRoot};
+use hfcast::fuzz::fuzz_cases;
+use hfcast::sweep::sweep_cases;
 
 /// One worst-case tracker per compared field.
 struct Worst {
@@ -823,7 +823,7 @@ fn main() -> ExitCode {
             &trace_bin,
             root.path(),
             &deck,
-            &[("PROPCORE_TRACE", &trace_path.to_string_lossy())],
+            &[("HFCAST_TRACE", &trace_path.to_string_lossy())],
         ) {
             eprintln!("{}: engine failed: {e}", case.id);
             return ExitCode::FAILURE;
@@ -1070,7 +1070,7 @@ fn main() -> ExitCode {
         let mut lp = ModeLoopState::default();
         // The sweep is isotropic at both ends; the fuzz corpus covers
         // directional antennas through the whole-engine check instead.
-        let ants = propcore::engine::antenna::AntennaSet::isotropes(case.watts as f32);
+        let ants = hfcast::voacap::antenna::AntennaSet::isotropes(case.watts as f32);
         let deck_params = DeckParams {
             method: case.method,
             amind: 0.1,

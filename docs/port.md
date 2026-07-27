@@ -1,7 +1,7 @@
 # The VOACAP port — method and status
 
 The engine is being translated from Fortran 77 (`vendor/voacapl`, the
-maintained ITS VOACAP) to Rust, module `propcore::engine`.
+maintained ITS VOACAP) to Rust, module `hfcast::engine`.
 
 The first target was the point-to-point path this app exercises —
 method 30, isotropic antennas, single power — and that is finished and
@@ -28,7 +28,7 @@ scratch files, deployment anywhere Rust runs, and code a person can read.
 
 1. **Stage traces.** `tools/build-trace.sh` builds the `trace` variant:
    the reference source with the instrumented files in `trace/` copied in.
-   Each ported stage dumps its intermediates when `PROPCORE_TRACE` names a
+   Each ported stage dumps its intermediates when `HFCAST_TRACE` names a
    directory. The `porttest` binary runs that engine over the 96 sweep
    cases and compares every dumped value with the Rust stage, reporting the
    worst difference per field. A porting mistake surfaces in the first
@@ -55,48 +55,43 @@ scratch files, deployment anywhere Rust runs, and code a person can read.
    port is bit-identical at the listing level — 463,104 printed cells and
    23,040 mode labels over the 96 sweep cases with zero differences.**
 
-## Host limits and toolchain
+## What a run needs
 
-Nothing is on `PATH`. Cargo is `~/.cargo/bin/cargo`, run from
-`propcore/`. `dprint` is `./node_modules/.bin/dprint` at the repository
-root. There is no `node`, `npm` or `pnpm` on `PATH`: the only Node is the
-editor server's, at `/home/dev/.vscodium-server/bin/<hash>/node`, and it
-needs `unset ELECTRON_RUN_AS_NODE VSCODE_ESM_ENTRYPOINT` first or it
-starts the extension host instead of running the script.
+A Rust toolchain, `gfortran` to build the reference, and a checkout of
+`voacapl`. Every harness is a binary in this crate and is run from the
+repository root.
 
-The host has **2 GB of RAM, no swap, and 16 CPUs**. Any tool that sizes a
-pool from core count is killed by the kernel, reporting a bare `Killed`
-or exit code 137 and nothing else — this has cost time in both the
-Fortran builds and the Node bundler. Give every parallel step an explicit
-count: `--jobs 3` to the harnesses, `JOBS=4` to the build scripts. Three
-concurrent harness jobs is the measured comfortable figure; each one runs
-a Fortran binary and copies a tree.
+Each concurrent harness job runs a Fortran binary and copies a private
+`itshfbc` tree, so the harnesses are heavier than their CPU use
+suggests. Sizing a pool from core count alone has repeatedly been the
+wrong choice.
 
-The other limit is file descriptors: 4096 per process, soft and hard,
-so it cannot be raised. A harness run holds them while it builds
-private trees. `fuzz --cases 200 --jobs 4` exhausted them, and the
-failure does not look like a resource problem — the report says the
-harness could not run 145 of the cases and ends with "the port and the
-reference disagree", while the shell itself starts failing to load
-shared libraries. Keep to `--jobs 2` above about a hundred cases, and
-read a mass failure with no printed difference as this rather than as
-a regression.
+The port was developed on a constrained host, and two of its
+workarounds are worth keeping because the failures they cause are
+misleading rather than obvious:
 
-The same limit stops `cargo test` from linking at all, with pages of
-`rust-lld: error: cannot open ...rcgu.o: Too many open files`. The dev
-profile splits the crate into 256 codegen units and the linker opens
-every one at once. Build with one unit instead:
+- **Memory.** A tool that sizes a pool from core count can be killed by
+  the kernel, which reports a bare `Killed` or exit 137 and nothing
+  else. Give every parallel step an explicit count: `--jobs 3` to the
+  harnesses, `JOBS=4` to the build scripts.
+- **File descriptors.** Where the per-process limit is low, a large
+  fuzz run exhausts it, and the report then says the harness could not
+  run some cases and ends with "the port and the reference disagree" —
+  which reads as a regression rather than as a resource problem. Keep
+  to `--jobs 2` above about a hundred cases. The same limit can stop
+  `cargo test` from linking, with pages of `rust-lld: error: cannot
+  open ...rcgu.o: Too many open files`, because the dev profile splits
+  the crate into 256 codegen units and the linker opens every one at
+  once. Build with one unit instead:
 
-```
-CARGO_PROFILE_DEV_CODEGEN_UNITS=1 CARGO_PROFILE_TEST_CODEGEN_UNITS=1 \
-  ~/.cargo/bin/cargo test --jobs 2
-```
+  ```
+  CARGO_PROFILE_DEV_CODEGEN_UNITS=1 CARGO_PROFILE_TEST_CODEGEN_UNITS=1 \
+    cargo test --jobs 2
+  ```
 
-Compilation is slower and linking succeeds. This is worth reaching for
-straight away: the failure is intermittent, so retrying looks like it
-is working and then fails again minutes later.
-
-A foreground `sleep` is blocked. Wait on a condition instead.
+  Compilation is slower and linking succeeds. Reach for it straight
+  away: the failure is intermittent, so retrying looks like it is
+  working and then fails again minutes later.
 
 ## The harnesses
 
@@ -104,11 +99,11 @@ Two builds of the reference are needed once, into
 `vendor/voacapl-variants/`:
 
 ```
-propcore/tools/build-variants.sh   # O0 O1 O2 O3 fastmath — O2 is the reference
-propcore/tools/build-trace.sh      # the instrumented build the stage traces read
+tools/build-variants.sh   # O0 O1 O2 O3 fastmath — O2 is the reference
+tools/build-trace.sh      # the instrumented build the stage traces read
 ```
 
-Then, from `propcore/`, with `cargo` as above:
+Then, from the repository root:
 
 | harness        | what it proves                                        | flags                                                                                                                                          |
 | -------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1086,7 +1081,7 @@ the two bearings are swapped, and the isotrope, inverted-cone and
 multi-frequency cases do not, which is what says each case reaches the
 branch it is meant to.
 
-## The public API (`propcore::api`)
+## The public API (`hfcast::api`)
 
 The port's own interface, for callers who are not writing card decks.
 `predict` returns data, `listing` returns the reference's text, `deck`
@@ -1208,7 +1203,7 @@ run time by `api::Request::model`:
 
 Three rules keep this from spreading:
 
-1. **Every divergence is named in `engine/model.rs`.** Engine code
+1. **Every divergence is named in `src/voacap/model.rs`.** Engine code
    never asks "am I corrected?"; it asks about one defect, such as
    `Model::reads_pole_file`. The methods on `Model` are therefore the
    complete list of ways the tiers can differ, and counting them

@@ -49,11 +49,11 @@ C.....THE NUMBER TO 318.
       END
 C--------------------------------
       SUBROUTINE trace_virtim(GMT)
-C     propcore instrumentation: dumps the time-evaluated map coefficients
-C     AB(318) when PROPCORE_TRACE names a directory.
+C     hfcast instrumentation: dumps the time-evaluated map coefficients
+C     AB(318) when HFCAST_TRACE names a directory.
       COMMON /TWO_AB/ AB(318)
       character tdir*256
-      call get_environment_variable('PROPCORE_TRACE',tdir,ltdir,ist)
+      call get_environment_variable('HFCAST_TRACE',tdir,ltdir,ist)
       if(ist.ne.0 .or. ltdir.eq.0) return
       open(94,file=tdir(1:ltdir)//'/virtim.txt',position='append')
       write(94,'(A,E18.9)') 'VIR ',GMT

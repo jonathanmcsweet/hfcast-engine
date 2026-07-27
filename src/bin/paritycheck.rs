@@ -11,7 +11,7 @@
 //! Both sides run the whole production chain:
 //!
 //! - **Fortran**: the deck the server writes, through `voacapl`,
-//!   parsed by [`propcore::listing`].
+//!   parsed by [`hfcast::listing`].
 //! - **Rust**: the same request as JSON, through the `predict` binary
 //!   as a subprocess, so the JSON boundary is under test too.
 //!
@@ -22,10 +22,10 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, ExitCode, Stdio};
 
-use propcore::deck::{build_deck, DeckCase};
-use propcore::json::{self, num, obj, str_of, Json};
-use propcore::listing::{parse_listing, MUF_ROW, MUF_SLOT};
-use propcore::runner::{map_limit, run_deck, variant_bin, IsolatedRoot};
+use hfcast::deck::{build_deck, DeckCase};
+use hfcast::json::{self, num, obj, str_of, Json};
+use hfcast::listing::{parse_listing, MUF_ROW, MUF_SLOT};
+use hfcast::runner::{map_limit, run_deck, variant_bin, IsolatedRoot};
 
 const VOACAP_VARIANT: &str = "O2";
 const CONCURRENCY: usize = 2;
@@ -121,7 +121,7 @@ const CASES: &[Case] = &[
 
 /// The deck the server writes for a case.
 ///
-/// `server/src/voacap/deck.ts` and `propcore::deck` write the same
+/// `server/src/voacap/deck.ts` and `hfcast::deck` write the same
 /// cards for this shape — isotropes at both ends, sporadic E on,
 /// CCIR, method 30 — so building it here rather than shelling out to
 /// Node keeps the check to one language without changing the

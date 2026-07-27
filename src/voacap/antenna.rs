@@ -1377,7 +1377,7 @@ pub fn gain_lookup(table: &GainTable, fmc: R, delta_rad: R) -> (R, R) {
 /// point to another.
 ///
 /// This is the antenna half's own geometry, separate from
-/// `engine::geometry`, and it differs on purpose: it computes in double
+/// `voacap::geometry`, and it differs on purpose: it computes in double
 /// precision and uses a 6370 km Earth, so the azimuth a pattern is cut
 /// along is not bit-identical to the path azimuth the propagation model
 /// uses. Both are reproduced as they are.
@@ -1507,7 +1507,7 @@ mod tests {
             beam_deg: 0.0,
             power_field: 0.1,
             azimuth_deg: 57.0,
-            model: crate::engine::model::Model::Compatible,
+            model: crate::voacap::model::Model::Compatible,
         })
         .expect("isotrope table");
         // Row 1 is outside the card's range and stays zero.
@@ -1531,7 +1531,7 @@ mod tests {
             beam_deg: 0.0,
             power_field: 6.0,
             azimuth_deg: 0.0,
-            model: crate::engine::model::Model::Compatible,
+            model: crate::voacap::model::Model::Compatible,
         })
         .expect("isotrope table");
         assert_eq!(table.gains[9][0], 6.0);
@@ -1553,7 +1553,7 @@ mod tests {
             beam_deg: 0.0,
             power_field: 0.0,
             azimuth_deg: 0.0,
-            model: crate::engine::model::Model::Compatible,
+            model: crate::voacap::model::Model::Compatible,
         })
         .expect("table");
         assert_eq!(table.gains[9][0], -20.0);
@@ -1576,7 +1576,7 @@ mod tests {
             beam_deg: 0.0,
             power_field: 0.1,
             azimuth_deg: 57.0,
-            model: crate::engine::model::Model::Compatible,
+            model: crate::voacap::model::Model::Compatible,
         })
         .expect_err("Harris cannot be computed");
         assert_eq!(err.jant, 90);
@@ -1701,7 +1701,7 @@ mod tests {
                 beam_deg: 0.0,
                 power_field: 0.1,
                 azimuth_deg: 57.0,
-                model: crate::engine::model::Model::Compatible,
+                model: crate::voacap::model::Model::Compatible,
             },
             11.85,
         )

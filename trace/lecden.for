@@ -182,15 +182,15 @@ C.....USE THE MAXIMUM
       END
 C--------------------------------
       SUBROUTINE trace_lecden(K)
-C     propcore instrumentation: dumps the density profile and the F1
-C     layer as reshaped, when PROPCORE_TRACE names a directory.
+C     hfcast instrumentation: dumps the density profile and the F1
+C     layer as reshaped, when HFCAST_TRACE names a directory.
       COMMON / TIME / IT, GMT, UTIME(24), GMTR, XLMT(24), ITIM, JTX
       COMMON / MFAC / F2M3(5),HPF2(5),ZENANG(5),ZENMAX(5),IEDP,FSECV(3)
       COMMON /RON /CLAT(5), CLONG(5), GLAT(5), RD(5), FI(3,5), YI(3,5),
      1HI(3,5), HPRIM(30,5), HTRUE(30,5), FVERT(30,5),KM,KFX, AFAC(30,5),
      2HTR(50,3), FNSQ(50,3)
       character tdir*256
-      call get_environment_variable('PROPCORE_TRACE',tdir,ltdir,ist)
+      call get_environment_variable('HFCAST_TRACE',tdir,ltdir,ist)
       if(ist.ne.0 .or. ltdir.eq.0) return
       open(91,file=tdir(1:ltdir)//'/lecden.txt',position='append')
       write(91,'(A,E18.9,I4)') 'LEC ',GMT,K
