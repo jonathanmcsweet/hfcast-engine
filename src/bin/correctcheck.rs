@@ -15,10 +15,11 @@
 //! looks identical to a fix that changes nothing. `--corpus` chooses
 //! the corpus, and every fix names the one that reaches it:
 //!
-//! | corpus  | cases                        | fixes it can see            |
-//! | ------- | ---------------------------- | --------------------------- |
-//! | `sweep` | 96 method-30 systems runs    | `pole_file`                 |
-//! | `luf`   | fuzz cases rewritten to 26   | `luf_scan_best`, `luf_pass_area` |
+//! | corpus    | cases                          | fixes it can see                 |
+//! | --------- | ------------------------------ | -------------------------------- |
+//! | `sweep`   | 96 method-30 systems runs      | `pole_file`                      |
+//! | `luf`     | fuzz cases rewritten to 26     | `luf_scan_best`, `luf_pass_area` |
+//! | `curtain` | sweep paths with a KOP=6 aerial | `curtain_elevation`             |
 //!
 //! Usage: `cargo run --release --bin correctcheck -- [--fix NAME]
 //! [--corpus NAME] [--cases N] [--jobs J]`
@@ -29,7 +30,7 @@
 use std::collections::BTreeMap;
 use std::process::ExitCode;
 
-use propcore::deck::{build_deck, DeckCase};
+use propcore::deck::{build_deck, AntennaChoice, DeckCase};
 use propcore::engine::model::{Fixes, Model};
 use propcore::engine::output::render;
 use propcore::fuzz::fuzz_cases;
@@ -57,12 +58,18 @@ fn fix_by_name(name: &str) -> Option<Fixes> {
 /// Every fix, with the corpus that reaches its site.
 const FIX_NAMES: [(&str, &str); 6] = [
     ("pole_file", "sweep"),
-    ("curtain_elevation", "needs a curtain-antenna corpus"),
+    ("curtain_elevation", "curtain"),
     ("luf_scan_best", "luf"),
     ("luf_pass_area", "luf"),
     ("area_centre_nudge", "needs an area corpus"),
     ("area_antenna_end", "needs an area corpus"),
 ];
+
+/// The one sample file in the tree whose antenna type is the IONCAP
+/// curtain, `KOP = 6`. `antcheck` verifies its whole gain table against
+/// the reference's own `gain01.dat`, which is what makes the compatible
+/// half of the curtain corpus trustworthy.
+const CURTAIN_FILE: &str = "samples/sample.26";
 
 /// Which cases to run, and how to read what they print.
 #[derive(Clone, Copy, PartialEq)]
@@ -75,6 +82,14 @@ enum Corpus {
     /// complement. This is the corpus `lufcheck` verifies the
     /// compatible tier on against the reference.
     Luf,
+    /// The sweep paths with a curtain at both ends, which is the only
+    /// way anything reaches the `KOP = 6` pattern: every other corpus
+    /// here uses `default/isotrope`, whose gain is a constant.
+    ///
+    /// Both ends rather than one, because the two ends read the same
+    /// table at different elevations and a fix at either end can move
+    /// a printed cell.
+    Curtain,
 }
 
 impl Corpus {
@@ -82,6 +97,7 @@ impl Corpus {
         match name {
             "sweep" => Some(Corpus::Sweep),
             "luf" => Some(Corpus::Luf),
+            "curtain" => Some(Corpus::Curtain),
             _ => None,
         }
     }
@@ -93,6 +109,18 @@ impl Corpus {
                 let mut cases = fuzz_cases(0, limit.unwrap_or(48) as u64);
                 for case in cases.iter_mut() {
                     case.method = 26;
+                }
+                cases
+            }
+            Corpus::Curtain => {
+                let mut cases = sweep_cases();
+                for case in cases.iter_mut() {
+                    // Beam bearings left at zero: the pattern is cut at
+                    // the path azimuth relative to the beam, so a beam
+                    // of zero still exercises every elevation the path
+                    // uses.
+                    case.tx_antennas = vec![AntennaChoice::whole_band(CURTAIN_FILE, 0.0)];
+                    case.rx_antennas = vec![AntennaChoice::whole_band(CURTAIN_FILE, 0.0)];
                 }
                 cases
             }
@@ -108,7 +136,7 @@ impl Corpus {
     /// so each corpus reads its own.
     fn samples(self, text: &str) -> (Vec<Sample>, Vec<ModeSample>) {
         match self {
-            Corpus::Sweep => {
+            Corpus::Sweep | Corpus::Curtain => {
                 let parsed = parse_listing(text);
                 (parsed.numeric, parsed.modes)
             }

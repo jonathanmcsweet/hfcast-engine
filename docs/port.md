@@ -120,7 +120,7 @@ Then, from `propcore/`, with `cargo` as above:
 | `mufcheck`     | methods 1, 3 and 7 tables                             | `--method 1\|3\|7` `--cases N` `--from N` `--jobs J`                                                                                           |
 | `areacheck`    | area coverage rows and antennas against the grid file | `--jobs J`                                                                                                                                     |
 | `paritycheck`  | the fields the server reads, both production paths    | `--jobs J`                                                                                                                                     |
-| `correctcheck` | what one corrected-tier fix changes                   | `--fix NAME` `--corpus sweep\|luf` `--cases N` `--jobs J`                                                                                      |
+| `correctcheck` | what one corrected-tier fix changes                   | `--fix NAME` `--corpus sweep\|luf\|curtain` `--cases N` `--jobs J`                                                                             |
 
 `porttest --fuzz` is not currently usable: it reports stage mismatches
 on generated decks where `fuzz` finds the finished listings identical,
@@ -1269,16 +1269,21 @@ the corpus never reached it. Each of those needs its own corpus.
 
 `--corpus` chooses:
 
-| corpus  | cases                                | fixes it reaches                 |
-| ------- | ------------------------------------ | -------------------------------- |
-| `sweep` | the 96 method-30 systems cases       | `pole_file`                      |
-| `luf`   | fuzz cases with the method set to 26 | `luf_scan_best`, `luf_pass_area` |
+| corpus    | cases                                                           | fixes it reaches                 |
+| --------- | --------------------------------------------------------------- | -------------------------------- |
+| `sweep`   | the 96 method-30 systems cases                                  | `pole_file`                      |
+| `luf`     | fuzz cases with the method set to 26                            | `luf_scan_best`, `luf_pass_area` |
+| `curtain` | the sweep paths with a `samples/sample.26` curtain at both ends | `curtain_elevation`              |
 
 Each corpus needs an oracle for its compatible half, or the movement it
 reports could be a port that drifted rather than a fix. The sweep has
 `portcheck`; the LUF corpus has `lufcheck`, which runs the same 48
 cases through the reference and compares every column of the method-26
-table. Run it after touching anything in `luffy_luf`.
+table — run it after touching anything in `luffy_luf`. The curtain
+corpus has `antcheck --only sample.26` for the gain table and the
+`a_curtain_at_both_ends_prints_the_reference_listing` integration test
+for a whole listing; the fuzz corpus does not cover it, because its
+antenna draws include IONCAP types 21, 24 and 27 but not 26.
 
 `correctcheck` also prints which cases moved, not only how many. A fix
 biting in a minority of cases needs a named case before anything can be

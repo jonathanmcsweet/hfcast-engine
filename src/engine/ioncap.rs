@@ -20,6 +20,7 @@
 )]
 
 use super::con::{PI, PIO2, R};
+use super::model::Model;
 
 /// "RA" for a vertical monopole at h/lambda = 0.2.
 const RINTW: R = 18.06;
@@ -199,10 +200,11 @@ pub fn iongain(
     p: &IoncapParams,
     delta: R,
     fmc: R,
+    model: Model,
 ) -> (R, R) {
-    let (mut rain, eff) = iongain2(state, kop, toaz, p, delta, fmc);
+    let (mut rain, eff) = iongain2(state, kop, toaz, p, delta, fmc, model);
     if kop == 3 || kop == 4 {
-        let (rain_90, _eff_90) = iongain2(state, kop, 0.0, p, 1.570_796, fmc);
+        let (rain_90, _eff_90) = iongain2(state, kop, 0.0, p, 1.570_796, fmc, model);
         let gmorph = delta.sin().powi(4);
         rain = rain_90 * gmorph + rain * (1.0 - gmorph);
     }
@@ -245,7 +247,15 @@ fn finish(kop: i32, mut rain: R, x: R, sok: R, eff8: R, from_385: bool) -> (R, R
 // The curtain branch stores SOK twice as the source does (labels 272
 // and just before 610); the first is a dead store kept for fidelity.
 #[allow(unused_assignments)]
-fn iongain2(state: &mut IoncapState, kop: i32, toaz: R, p: &IoncapParams, delta: R, fmc: R) -> (R, R) {
+fn iongain2(
+    state: &mut IoncapState,
+    kop: i32,
+    toaz: R,
+    p: &IoncapParams,
+    delta: R,
+    fmc: R,
+    model: Model,
+) -> (R, R) {
     let cot = |x: R| 1.0 / x.tan();
 
     let mut sok: R;
@@ -528,8 +538,17 @@ fn iongain2(state: &mut IoncapState, kop: i32, toaz: R, p: &IoncapParams, delta:
             // within a radian of vertical (above about 33 degrees)
             // takes the floor. And on that path SOK is still EX(1),
             // the elements per bay, so the answer is the floor plus
-            // that count. Both kept as written.
-            if (delta - PIO2).abs() > 1.0 {
+            // that count.
+            //
+            // The fix is the threshold alone. What it leaves behind is
+            // the guard against a division by zero at exactly vertical,
+            // which is what the decimal point was there for.
+            let near_vertical = if model.curtain_elevation_threshold() {
+                0.0001
+            } else {
+                1.0
+            };
+            if (delta - PIO2).abs() > near_vertical {
                 sok = 0.0;
                 let dy = if ex[1] <= 0.0 { ex[1].abs() } else { ex[1] / wave };
                 let dz = if ex[2] <= 0.0 { ex[2].abs() } else { ex[2] / wave };
@@ -699,7 +718,7 @@ mod tests {
     fn zero_elevation_is_the_floor() {
         let p = dipole_params();
         let mut st = IoncapState::default();
-        let (rain, _) = iongain(&mut st, 3, 0.0, &p, 0.0, 10.0);
+        let (rain, _) = iongain(&mut st, 3, 0.0, &p, 0.0, 10.0, Model::Compatible);
         assert_eq!(rain, FLOOR);
     }
 
@@ -707,7 +726,7 @@ mod tests {
     fn a_dipole_answers_a_finite_gain_above_the_horizon() {
         let p = dipole_params();
         let mut st = IoncapState::default();
-        let (rain, eff) = iongain(&mut st, 3, 0.0, &p, 30.0_f32.to_radians(), 10.0);
+        let (rain, eff) = iongain(&mut st, 3, 0.0, &p, 30.0_f32.to_radians(), 10.0, Model::Compatible);
         assert!(rain.is_finite());
         assert!((FLOOR..15.0).contains(&rain), "gain {rain}");
         assert_eq!(eff, 0.0);
@@ -718,16 +737,12 @@ mod tests {
         // The wrapper's whole purpose for types 3 and 4.
         let p = dipole_params();
         let mut st = IoncapState::default();
-        let (a, _) = iongain(&mut st, 3, 0.0, &p, 1.570_796, 10.0);
-        let (b, _) = iongain(&mut st, 3, 90.0, &p, 1.570_796, 10.0);
+        let (a, _) = iongain(&mut st, 3, 0.0, &p, 1.570_796, 10.0, Model::Compatible);
+        let (b, _) = iongain(&mut st, 3, 90.0, &p, 1.570_796, 10.0, Model::Compatible);
         assert!((a - b).abs() < 0.01, "{a} vs {b}");
     }
 
-    #[test]
-    fn the_curtain_floors_within_a_radian_of_vertical() {
-        // The integer-literal comparison in the source: elevations
-        // above about 33 degrees take the floor — plus EX(1), because
-        // SOK has not been reset on that path.
+    fn curtain_params() -> IoncapParams {
         let mut parm = [0.0 as R; 20];
         parm[2] = 15.0;
         parm[3] = 0.005;
@@ -738,13 +753,39 @@ mod tests {
         parm[9] = -0.5; // element spacing
         parm[10] = -0.5; // vertical spacing
         parm[11] = -0.25; // screen distance
-        let p = ioninit(6, &parm);
+        ioninit(6, &parm)
+    }
+
+    #[test]
+    fn the_curtain_floors_within_a_radian_of_vertical() {
+        // The integer-literal comparison in the source: elevations
+        // above about 33 degrees take the floor — plus EX(1), because
+        // SOK has not been reset on that path.
+        let p = curtain_params();
         let mut st = IoncapState::default();
-        let (low, _) = iongain(&mut st, 6, 0.0, &p, 20.0_f32.to_radians(), 10.0);
-        let (high, _) = iongain(&mut st, 6, 0.0, &p, 45.0_f32.to_radians(), 10.0);
+        let (low, _) = iongain(&mut st, 6, 0.0, &p, 20.0_f32.to_radians(), 10.0, Model::Compatible);
+        let (high, _) = iongain(&mut st, 6, 0.0, &p, 45.0_f32.to_radians(), 10.0, Model::Compatible);
         assert!(low > FLOOR, "20 degrees should compute: {low}");
         // Floor plus the four elements per bay that SOK still holds.
         assert_eq!(high, FLOOR + 4.0);
+    }
+
+    #[test]
+    fn the_corrected_curtain_computes_above_thirty_three_degrees() {
+        let p = curtain_params();
+        let mut st = IoncapState::default();
+        let (high, _) =
+            iongain(&mut st, 6, 0.0, &p, 45.0_f32.to_radians(), 10.0, Model::Corrected);
+        assert!(
+            high > FLOOR + 4.0,
+            "45 degrees should compute on the corrected tier: {high}"
+        );
+
+        // The decimal point the source lost was guarding a division by
+        // zero at exactly vertical, so that case still takes the floor
+        // on both tiers.
+        let (vertical, _) = iongain(&mut st, 6, 0.0, &p, PIO2, 10.0, Model::Corrected);
+        assert_eq!(vertical, FLOOR + 4.0);
     }
 
     #[test]
@@ -760,12 +801,12 @@ mod tests {
         let p = ioninit(2, &parm);
 
         let mut fresh = IoncapState::default();
-        let (at_zero_fresh, _) = iongain(&mut fresh, 2, 0.0, &p, 0.0, 10.0);
+        let (at_zero_fresh, _) = iongain(&mut fresh, 2, 0.0, &p, 0.0, 10.0, Model::Compatible);
 
         let mut warmed = IoncapState::default();
         // 5 m at 10 MHz is 0.1668 wavelengths: X ends below 0.35.
-        let _ = iongain(&mut warmed, 2, 0.0, &p, 30.0_f32.to_radians(), 10.0);
-        let (at_zero_warm, _) = iongain(&mut warmed, 2, 0.0, &p, 0.0, 10.0);
+        let _ = iongain(&mut warmed, 2, 0.0, &p, 30.0_f32.to_radians(), 10.0, Model::Compatible);
+        let (at_zero_warm, _) = iongain(&mut warmed, 2, 0.0, &p, 0.0, 10.0, Model::Compatible);
 
         assert_ne!(at_zero_fresh, at_zero_warm);
     }

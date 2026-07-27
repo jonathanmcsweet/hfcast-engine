@@ -26,7 +26,7 @@ Two measurements per fix:
 | `pole_file`         | yes         | 2.6% of cells, all 96 sweep cases | none measurable; kept on |
 | `luf_scan_best`     | yes         | 51% of LUFs, 41 of 48 method-26   | unmeasurable; kept on    |
 | `luf_pass_area`     | yes         | 13% of LUFs, 11 of 48 method-26   | unmeasurable; kept on    |
-| `curtain_elevation` | no          | —                                 | —                        |
+| `curtain_elevation` | yes         | 6.9% of cells, 56 of 96 curtain   | unmeasurable; kept on    |
 | `area_centre_nudge` | no          | —                                 | —                        |
 | `area_antenna_end`  | no          | —                                 | —                        |
 
@@ -190,31 +190,101 @@ that this is a reading of the program's intent, not a measurement:
 nothing here shows a corrected LUF is closer to the lowest usable
 frequency on a real path.
 
-## The other three fixes need their own corpora
+## `curtain_elevation` — the threshold that lost its decimal point
+
+**The defect.** The IONCAP curtain, antenna type 26, decides whether to
+compute its pattern by testing the elevation against the integer
+literal `0001` where `.0001` was meant. One radian, not a ten-thousandth
+of one. So every elevation within a radian of vertical — above about 33
+degrees — skips the calculation and takes the floor gain. And on that
+path `SOK` still holds `EX(1)`, the elements per bay, so what the
+antenna reports is the floor plus its element count rather than the
+floor.
+
+A curtain is a high-gain array aimed at a specific elevation, and 33
+degrees is well inside the range a short or medium path uses, so this
+is not a corner.
+
+**The fix** is the threshold alone, `.0001` for `0001`. What the
+comparison still does at that value is guard the division by zero at
+exactly vertical, which is what the decimal point was there for: at
+90 degrees both tiers take the floor.
+
+**The corpus.** The sweep paths with the tree's one type-26 file,
+`samples/sample.26`, at both ends. `correctcheck --corpus curtain` runs
+it. Two things underwrite its compatible half: `antcheck` compares the
+whole gain table for that file against the reference's own
+`gain01.dat`, 2766 cells at the 0.001 dB the file carries, and an
+integration test compares a whole curtain listing against the reference
+byte for byte. The second was added with this fix, because nothing
+covered it — the fuzz corpus draws IONCAP types 21, 24 and 27 but not
+26.
+
+**What moved.** 56 of 96 curtain cases; 33,553 of 486,144 printed
+cells, 6.9%, no structural change. An SNR by up to 85 dB, a transmit
+gain by up to 45.8 dB, a virtual height by 403 km, and 496 cells
+changing which mode dominates.
+
+| row    | cells moved | worst change |
+| ------ | ----------: | -----------: |
+| DBU    |        3149 |        64.00 |
+| RPWRG  |        3057 |        85.00 |
+| SNRxx  |        3057 |        85.00 |
+| LOSS   |        3019 |        85.00 |
+| S DBW  |        3019 |        85.00 |
+| SNR    |        3008 |        85.00 |
+| TGAIN  |        2491 |        45.80 |
+| RGAIN  |        2472 |        43.90 |
+| S PRB  |        1856 |         0.86 |
+| SIG UP |        1127 |        20.90 |
+| SNR UP |        1080 |        18.60 |
+| REL    |        1007 |         1.00 |
+| SIG LW |         961 |        19.50 |
+| V HITE |         931 |       403.00 |
+| DELAY  |         884 |         2.90 |
+| SNR LW |         876 |        16.50 |
+| TANGLE |         801 |        42.10 |
+| MODE   |         496 |            — |
+| MUFday |         187 |         0.92 |
+| MPROB  |          75 |         0.99 |
+
+The 40 cases that did not move are the long ones — the north-south,
+near-antipodal and South American paths, and most polar hours. A long
+path takes low takeoff angles, which never reach the threshold, so the
+defect never bites. Every short, medium and equatorial case moved.
+
+**Whether it helped: no measurement exists.** See the last section.
+
+**Decision: kept on.** A threshold of one radian on a quantity that
+runs from zero to π/2 cannot be what was meant, and the behaviour it
+causes is a high-gain array reporting less than an isotrope over the
+whole upper half of its pattern. Against that, note what is being
+assumed: that the intent was a small number and the decimal point was
+lost. Nothing in the source states the intended value.
+
+## The other two fixes need their own corpora
 
 Not yet implemented, and worth recording why the obvious measurement
-will not serve them. Each lives on a code path the sweep corpus cannot
-reach, because it is method 30, point-to-point, isotropic:
+will not serve them. `area_centre_nudge` and `area_antenna_end` are
+area-coverage only, and every corpus above is point-to-point, so
+`correctcheck` reports zero movement for both whether or not they are
+implemented — a measurement that proves nothing. They need an area
+grid corpus.
 
-- `curtain_elevation` is inside `ioncap.rs` at `KOP = 6`, reached only
-  by a curtain antenna. Every sweep case and every WSPR run uses
-  `default/isotrope`.
-- `area_centre_nudge` and `area_antenna_end` are area-coverage only.
-
-So `correctcheck --corpus sweep` reports zero movement for all three
-whether or not they are implemented, which is a measurement that proves
-nothing. Each needs a corpus that reaches its site: curtain antenna
-cases and area grids.
-
-## Why three of the fixes have no accuracy measurement
+## Why four of the fixes have no accuracy measurement
 
 The WSPR pipeline cannot score the LUF fixes, the curtain fix or the
 area fixes at all. It measures point-to-point systems predictions
 against beacon reports: what it holds is reception reports at fixed
 frequencies on real paths, so it can say whether a predicted SNR or
 reliability was right. It holds nothing about the lowest usable
-frequency, nothing about a curtain antenna's pattern, and nothing about
-a coverage area.
+frequency and nothing about a coverage area.
+
+The curtain fails for a second reason worth stating separately. The
+validation fits one signal-level offset per path, precisely because the
+antennas at both ends are unknown, so an antenna-pattern change is
+partly absorbed by that fit even where one exists. No WSPR station in
+the corpus is known to use a curtain in any case.
 
 The gap is in the ground truth, not in the harness, so it cannot be
 closed by running more of what already exists. For these fixes, "what

@@ -367,6 +367,7 @@ fn build_antennas(itshfbc: &Path, inp: &RunInputs) -> Result<AntennaSet, String>
                 beam_deg: card.beam_deg,
                 power_field: card.power_field,
                 azimuth_deg,
+                model: inp.model,
             })
             .map_err(|e| e.to_string())?;
             // Only a transmit card carries power; the receive card's
@@ -1650,6 +1651,7 @@ fn build_area_antennas(itshfbc: &Path, area: &AreaInputs, nf: usize) -> Result<A
             beam_deg: card.beam_deg,
             power_field: card.power_field,
             azimuth_deg,
+            model: area.model,
         };
         let kw = if iat == 1 { pwrkw } else { 0.0 };
         let installed = |table| Installation {

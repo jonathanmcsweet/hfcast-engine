@@ -464,6 +464,11 @@ pub struct AntennaSetup<'a> {
     pub power_field: R,
     /// Azimuth from this end to the other, from [`dazel0`].
     pub azimuth_deg: R,
+    /// Which behaviour the pattern is computed with. Only the IONCAP
+    /// curtain reads it, for the elevation threshold its source
+    /// mistyped; every other family computes the same table on both
+    /// tiers.
+    pub model: super::model::Model,
 }
 
 /// Fortran's `NINT`: round half away from zero.
@@ -854,8 +859,15 @@ pub fn point_to_point_table(s: &AntennaSetup) -> Result<GainTable, Unsupported> 
                     // ANTCALC's own degree-to-radian constant, shorter
                     // than the engine's D2R.
                     let delev = ielev as R * 0.017_453_29;
-                    let (rain, eff) =
-                        super::ioncap::iongain(&mut ion_state, indx, offazim, &ip, delev, freq);
+                    let (rain, eff) = super::ioncap::iongain(
+                        &mut ion_state,
+                        indx,
+                        offazim,
+                        &ip,
+                        delev,
+                        freq,
+                        s.model,
+                    );
                     table.gains[row][ielev] = rain;
                     table.eff[row] = eff;
                 }
@@ -1071,12 +1083,19 @@ pub fn area_table(s: &AntennaSetup, freq: R) -> Result<(GainTable, AreaGainTable
             let mut st = super::ioncap::IoncapState::default();
             // One call at six degrees before the loop, for the
             // efficiency. It also primes the model's saved state.
-            super::ioncap::iongain(&mut st, indx, 0.0, &ip, 6.0 * 0.017_453_3, freq);
+            super::ioncap::iongain(&mut st, indx, 0.0, &ip, 6.0 * 0.017_453_3, freq, s.model);
             for (iazim, row) in gains.iter_mut().enumerate() {
                 for (ielev, slot) in row.iter_mut().enumerate() {
                     let delev = ielev as R * 0.017_453_3;
-                    let (rain, e) =
-                        super::ioncap::iongain(&mut st, indx, iazim as R, &ip, delev, freq);
+                    let (rain, e) = super::ioncap::iongain(
+                        &mut st,
+                        indx,
+                        iazim as R,
+                        &ip,
+                        delev,
+                        freq,
+                        s.model,
+                    );
                     *slot = area_store(rain);
                     eff = e;
                 }
@@ -1471,6 +1490,7 @@ mod tests {
             beam_deg: 0.0,
             power_field: 0.1,
             azimuth_deg: 57.0,
+            model: crate::engine::model::Model::Compatible,
         })
         .expect("isotrope table");
         // Row 1 is outside the card's range and stays zero.
@@ -1494,6 +1514,7 @@ mod tests {
             beam_deg: 0.0,
             power_field: 6.0,
             azimuth_deg: 0.0,
+            model: crate::engine::model::Model::Compatible,
         })
         .expect("isotrope table");
         assert_eq!(table.gains[9][0], 6.0);
@@ -1515,6 +1536,7 @@ mod tests {
             beam_deg: 0.0,
             power_field: 0.0,
             azimuth_deg: 0.0,
+            model: crate::engine::model::Model::Compatible,
         })
         .expect("table");
         assert_eq!(table.gains[9][0], -20.0);
@@ -1537,6 +1559,7 @@ mod tests {
             beam_deg: 0.0,
             power_field: 0.1,
             azimuth_deg: 57.0,
+            model: crate::engine::model::Model::Compatible,
         })
         .expect_err("Harris cannot be computed");
         assert_eq!(err.jant, 90);
@@ -1603,6 +1626,7 @@ mod tests {
                 beam_deg: 0.0,
                 power_field: 0.1,
                 azimuth_deg: 57.0,
+                model: crate::engine::model::Model::Compatible,
             },
             11.85,
         )

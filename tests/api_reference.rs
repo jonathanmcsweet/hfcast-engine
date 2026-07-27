@@ -10,8 +10,8 @@
 //! binary and data tree, so `cargo test` stays runnable anywhere.
 
 use propcore::api::{
-    deck, listing, predict, EfVar, EsVar, FoF2Model, Heights, Ionosphere, Model, Recompute, Report,
-    Request, Site, Task,
+    deck, listing, predict, AntennaChoice, EfVar, EsVar, FoF2Model, Heights, Ionosphere, Model,
+    Recompute, Report, Request, Site, Task,
 };
 use propcore::runner::{itshfbc_dir, run_deck, variant_bin, IsolatedRoot};
 
@@ -234,6 +234,30 @@ fn compatible_matches_the_reference_and_corrected_does_not() {
         corrected, fortran,
         "Corrected should differ — the fixes are not reaching the engine"
     );
+}
+
+/// A curtain at both ends, against the reference.
+///
+/// This is the end-to-end oracle for the corpus behind
+/// `curtain_elevation`, which is the sweep paths with a `KOP = 6`
+/// curtain at both ends. Nothing else covers it: `antcheck` compares
+/// the gain table alone, and the fuzz corpus draws IONCAP types 21, 24
+/// and 27 but not 26. Without this, a curtain listing that had drifted
+/// would look like a fix doing something.
+#[test]
+fn a_curtain_at_both_ends_prints_the_reference_listing() {
+    let Some((bin, root)) = reference("api-curtain") else {
+        return;
+    };
+    let mut req = a_request();
+    let curtain = AntennaChoice::whole_band("samples/sample.26", 0.0);
+    req.tx_antennas = vec![curtain.clone()];
+    req.rx_antennas = vec![curtain];
+
+    let cards = deck(&req, Task::Systems).expect("deck");
+    let fortran = run_deck(&bin, root.path(), &cards).expect("reference run");
+    let ported = listing(root.path(), &req, Task::Systems).expect("ported run");
+    assert_eq!(ported, fortran, "curtain listing differs");
 }
 
 #[test]

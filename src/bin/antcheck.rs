@@ -22,6 +22,7 @@ use std::process::ExitCode;
 use propcore::engine::antenna::{
     dazel0, point_to_point_table, read_antenna, AntennaEnd, AntennaSetup, GainTable, ELEVS, FREQS,
 };
+use propcore::engine::model::Model;
 use propcore::runner::{itshfbc_dir, run_deck, variant_bin, IsolatedRoot};
 
 /// The circuit every probe deck uses. Only the azimuth from these two
@@ -247,6 +248,9 @@ fn check_one(reference: &Path, tree: &Path, name: &str) -> Outcome {
         beam_deg: 0.0,
         power_field: POWER_KW as f32,
         azimuth_deg: azimuth,
+        // The reference is the oracle here, so the only tier this
+        // harness can judge is the one that reproduces it.
+        model: Model::Compatible,
     }) {
         Ok(t) => t,
         Err(e) => {
