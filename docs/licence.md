@@ -33,20 +33,30 @@ redistributable, which is evidence but not a guarantee.
 
 ## The data files
 
-The engine reads three of the eleven directories in the `itshfbc`
-tree. The rest belong to the interactive front end.
+Measured by what the engine opens, not by directory. A prediction
+needs about 760 KB:
 
-| Directory                                 | Size   | Read by the engine                    |
-| ----------------------------------------- | ------ | ------------------------------------- |
-| `coeffs`                                  | 3.0 MB | yes — ionospheric maps                |
-| `antennas`                                | 1.2 MB | yes — 73 pattern definitions          |
-| `database`                                | 44 KB  | yes — `north_pole.txt`, `version.w32` |
-| `areadata`, `area_inv`, `run`             | 236 KB | area runs and scratch                 |
-| `geocity`, `geonatio`, `geostate`, `news` | 3.1 MB | no                                    |
+| File                                  | Count |   Size | Why                                |
+| ------------------------------------- | ----: | -----: | ---------------------------------- |
+| `coeffs/coeffNNw.bin`                 |    12 | 452 KB | the month's ionospheric maps       |
+| `coeffs/fof2CCIR.daw`, `fof2URSI.daw` |     2 | 185 KB | foF2 maps, one per `COEFFS` card   |
+| `antennas/default/`                   |    12 | 120 KB | the isotrope and the CCIR defaults |
+| `database/version.w32`                |     1 |   17 B | the listing header's version       |
+| `antennas/samples/`                   |    61 | 1.0 MB | only if a caller names one         |
 
-So a library needs about 4.2 MB of the 8.1 MB tree, and less if the
-ASCII coefficient sources are dropped in favour of the binary files
-the engine actually opens (`coeff01w.bin`, `fof2CCIR.daw`).
+What is **not** needed, which is most of the 8.1 MB source tree:
+
+- The 2.7 MB of `.asc` coefficient sources. `makeitshfbc` converts
+  them into the binary files at install time and the engine only ever
+  opens the binaries.
+- `coeffNN.bin` without the `w`. The port reads only the `w` variant,
+  as the reference does.
+- `database/north_pole.txt`. It is never read — the reference builds
+  its path without a separator, so the built-in pole always wins (see
+  the defects list). Only a user-supplied `run/north_pole.txt`
+  overrides it.
+- `geocity`, `geonatio`, `geostate`, `news` — 3.1 MB belonging to the
+  interactive front end.
 
 **The open question is the coefficients.** `coeff01.asc` to
 `coeff12.asc` and `fof2URSI.asc` are the CCIR and URSI ionospheric
@@ -57,9 +67,17 @@ several Python packages, and have for years — but wide redistribution
 is not the same as a cleared licence, and this is the one item that
 needs a decision rather than more research.
 
-Options if it cannot be settled: ship without the coefficient files
-and have the crate read a user-installed `itshfbc` tree, which is what
-it does today; or point at the ITU's own distribution.
+This is what couples the licence question to how the crate ships. The
+antenna files and `version.w32` are pure NTIA/ITS with no question
+over them, so they can be embedded whatever is decided. The
+coefficients are the 637 KB that the question is about.
+
+- If redistribution is accepted, embed all of it: about 760 KB, and
+  the crate works with no external tree.
+- If not, embed the antennas and the version file (120 KB) and have
+  the caller supply a coefficients directory. Still far less of an
+  imposition than today, where the caller must build the Fortran and
+  run `makeitshfbc` to get a tree at all.
 
 ## Attribution
 
