@@ -253,6 +253,7 @@ fn run_path(
 
     let case = DeckCase {
         id: format!("w{index}"),
+        rx_label: "sweep".to_string(),
         method: 30,
         ursi: false,
         fprob: None,

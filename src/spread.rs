@@ -106,6 +106,7 @@ pub fn gather(dir: &Path) -> Result<MonthSpread, String> {
     let outcomes = map_limit(&data.paths, CONCURRENCY, |path, index| {
         let case = DeckCase {
             id: format!("r{index}"),
+            rx_label: "sweep".to_string(),
             from_lat: path.tx_lat,
             from_lon: path.tx_lon,
             to_lat: path.rx_lat,

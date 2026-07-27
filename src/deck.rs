@@ -74,8 +74,13 @@ impl AntennaChoice {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DeckCase {
-    /// Short stable name, used for run filenames and in the report.
+    /// Short stable name, used for run filenames and in the report. It
+    /// is also the `LABEL` card's first twenty columns, which name the
+    /// transmitter in the listing header.
     pub id: String,
+    /// The `LABEL` card's second twenty columns, which name the
+    /// receiver. The harness cases all use `sweep`.
+    pub rx_label: String,
     pub from_lat: f64,
     pub from_lon: f64,
     pub to_lat: f64,
@@ -171,7 +176,7 @@ impl DeckCase {
     /// The `LABEL` card's forty characters, which the listing header
     /// prints as four ten-character fields.
     pub fn label(&self) -> String {
-        format!("{}{}", text(&self.id, 20), text("sweep", 20))
+        format!("{}{}", text(&self.id, 20), text(&self.rx_label, 20))
     }
 
     /// The `ANTENNA` cards this case writes, paired with the end each
@@ -366,6 +371,124 @@ fn override_cards(c: &DeckCase) -> Result<Vec<String>, DeckError> {
     Ok(cards)
 }
 
+/// One value as its card column carries it: formatted the way
+/// [`build_deck`] formats it, then read back.
+///
+/// Going through the formatter rather than arithmetic is what makes
+/// the result exactly what the column holds, whatever rounding rule
+/// the formatter applies.
+fn as_card(v: f64, decimals: usize) -> f64 {
+    format!("{v:.decimals$}").parse().unwrap_or(v)
+}
+
+/// A coordinate as its column carries it. The card writes the
+/// magnitude and puts the sign in a hemisphere letter, so the
+/// rounding applies to the magnitude.
+///
+/// A negative value that rounds to zero must come back as positive
+/// zero: the card prints it `0.00N`, which the reference reads as
+/// +0.0, and the sign of zero is observable through `atan2` — an
+/// equatorial path could otherwise print a bearing of -180 against
+/// the reference's 180.
+fn as_card_coord(v: f64) -> f64 {
+    let magnitude = as_card(v.abs(), 2);
+    if v >= 0.0 || magnitude == 0.0 {
+        magnitude
+    } else {
+        -magnitude
+    }
+}
+
+impl DeckCase {
+    /// The same case holding exactly what its cards would carry.
+    ///
+    /// A card column has a fixed number of decimals, so a deck cannot
+    /// express a finer value. Running the engine from the unrounded
+    /// case while echoing the rounded deck would print a listing whose
+    /// header and numbers disagree — the header shows `35.88 N` beside
+    /// a bearing computed from 35.8765. Passing a case through here
+    /// first makes the text and the computation one description.
+    ///
+    /// **Edit this with [`build_deck`].** Every field below mirrors
+    /// that function's format for the same field, and a field missed
+    /// here is a field where the two disagree again. What proves they
+    /// agree is `tests/api_reference.rs`, which runs the reference on
+    /// the written deck and compares the whole listing.
+    pub fn as_written(&self) -> DeckCase {
+        let antenna = |cards: &[AntennaChoice]| -> Vec<AntennaChoice> {
+            cards
+                .iter()
+                .map(|a| AntennaChoice {
+                    file: a.file.clone(),
+                    design_freq: as_card(a.design_freq, 3),
+                    beam_deg: as_card(a.beam_deg, 1),
+                    min_freq: a.min_freq,
+                    max_freq: a.max_freq,
+                    last_field: a.last_field.map(|v| as_card(v, 4)),
+                })
+                .collect()
+        };
+        DeckCase {
+            id: self.id.clone(),
+            rx_label: self.rx_label.clone(),
+            from_lat: as_card_coord(self.from_lat),
+            from_lon: as_card_coord(self.from_lon),
+            to_lat: as_card_coord(self.to_lat),
+            to_lon: as_card_coord(self.to_lon),
+            method: self.method,
+            ursi: self.ursi,
+            month: self.month,
+            year: self.year,
+            // The card carries a whole number and a trailing point.
+            ssn: self.ssn.round(),
+            // Power reaches the deck as kilowatts in four decimals, so
+            // the grid is a tenth of a watt.
+            watts: as_card(self.watts / 1000.0, 4) * 1000.0,
+            required_snr_db: as_card(self.required_snr_db, 1),
+            // Written as the value then a point, so a fractional noise
+            // figure would overflow the five-column field rather than
+            // round. Whole numbers are the only values the card takes.
+            noise_dbw: self.noise_dbw.round(),
+            freqs_mhz: self.freqs_mhz.iter().map(|f| as_card(*f, 2)).collect(),
+            tx_antennas: antenna(&self.tx_antennas),
+            rx_antennas: antenna(&self.rx_antennas),
+            sporadic_e: self.sporadic_e,
+            fprob: self.fprob.map(|p| p.map(|v| as_card(v, 2))),
+            botlines: self.botlines.clone(),
+            toplines: self.toplines.clone(),
+            krun: self.krun,
+            efvar: self
+                .efvar
+                .iter()
+                .map(|e| EfVar {
+                    area: e.area,
+                    fi: e.fi.map(|v| as_card(v, 2)),
+                    yi: e.yi.map(|v| as_card(v, 1)),
+                    hi: e.hi.map(|v| as_card(v, 1)),
+                })
+                .collect(),
+            esvar: self
+                .esvar
+                .iter()
+                .map(|e| EsVar {
+                    area: e.area,
+                    fs: e.fs.map(|v| as_card(v, 2)),
+                    hs: as_card(e.hs, 1),
+                })
+                .collect(),
+            edp: self.edp.as_ref().map(|e| Edp {
+                area: e.area,
+                htr: e.htr.map(|v| as_card(v, 1)),
+                fnsq: e.fnsq.map(|v| as_card(v, 1)),
+            }),
+            extra_cards: self.extra_cards.clone(),
+            comment: self.comment.clone(),
+            integrate: self.integrate,
+            outgraph: self.outgraph.clone(),
+        }
+    }
+}
+
 pub fn build_deck(c: &DeckCase) -> Result<String, DeckError> {
     if c.freqs_mhz.len() > FREQ_SLOTS {
         return Err(DeckError::TooManyFrequencies(c.freqs_mhz.len()));
@@ -497,6 +620,7 @@ mod tests {
     fn a_case() -> DeckCase {
         DeckCase {
             id: "med-eu".to_string(),
+            rx_label: "sweep".to_string(),
             method: 30,
             ursi: false,
             fprob: None,
@@ -525,6 +649,19 @@ mod tests {
             esvar: Vec::new(),
             edp: None,
         }
+    }
+
+    #[test]
+    fn a_coordinate_rounding_to_zero_comes_back_as_positive_zero() {
+        let mut c = a_case();
+        c.from_lat = -0.004;
+        c.from_lon = -0.0049;
+        let w = c.as_written();
+        // The card prints `0.00N`, which the reference reads as +0.0;
+        // -0.0 here would let the port and the reference disagree
+        // about `atan2` at the sign of zero.
+        assert!(w.from_lat == 0.0 && w.from_lat.is_sign_positive());
+        assert!(w.from_lon == 0.0 && w.from_lon.is_sign_positive());
     }
 
     fn line_starting(deck: &str, prefix: &str) -> String {

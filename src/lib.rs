@@ -7,6 +7,9 @@
 //!
 //! The pieces:
 //!
+//! - [`api`] is the public face of the ported engine: structured
+//!   requests in, structured reports or a reference-identical listing
+//!   out. Library callers start here.
 //! - [`deck`] writes VOACAP's fixed-width input deck.
 //! - [`listing`] reads every numeric field back out of a method 30 listing.
 //! - [`sweep`] enumerates input cases covering the model's regimes.
@@ -21,6 +24,7 @@
 //! All of it survives the port: the same parser and comparator that measure
 //! compiler-to-compiler spread today will measure Rust-to-Fortran spread later.
 
+pub mod api;
 pub mod compare;
 pub mod deck;
 pub mod engine;

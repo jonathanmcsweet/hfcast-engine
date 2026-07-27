@@ -306,6 +306,7 @@ mod tests {
     fn a_case() -> DeckCase {
         DeckCase {
             id: "med-eu".into(),
+            rx_label: "sweep".into(),
             method: 30,
             ursi: false,
             fprob: None,

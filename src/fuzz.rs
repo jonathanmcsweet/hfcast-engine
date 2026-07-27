@@ -161,6 +161,7 @@ pub fn fuzz_case(index: u64) -> DeckCase {
     let ionosphere = pick_ionosphere(&mut rng);
     DeckCase {
         id: format!("fz{index:06}"),
+        rx_label: "sweep".to_string(),
         method: 30,
         ursi: false,
         fprob: None,

@@ -72,14 +72,29 @@ count: `--jobs 3` to the harnesses, `JOBS=4` to the build scripts. Three
 concurrent harness jobs is the measured comfortable figure; each one runs
 a Fortran binary and copies a tree.
 
-The other limit is file descriptors: 4096 per process, and a harness run
-holds them while it builds private trees. `fuzz --cases 200 --jobs 4`
-exhausted them, and the failure does not look like a resource problem —
-the report says the harness could not run 145 of the cases and ends with
-"the port and the reference disagree", while the shell itself starts
-failing to load shared libraries. Keep to `--jobs 2` above about a
-hundred cases, and read a mass failure with no printed difference as
-this rather than as a regression.
+The other limit is file descriptors: 4096 per process, soft and hard,
+so it cannot be raised. A harness run holds them while it builds
+private trees. `fuzz --cases 200 --jobs 4` exhausted them, and the
+failure does not look like a resource problem — the report says the
+harness could not run 145 of the cases and ends with "the port and the
+reference disagree", while the shell itself starts failing to load
+shared libraries. Keep to `--jobs 2` above about a hundred cases, and
+read a mass failure with no printed difference as this rather than as
+a regression.
+
+The same limit stops `cargo test` from linking at all, with pages of
+`rust-lld: error: cannot open ...rcgu.o: Too many open files`. The dev
+profile splits the crate into 256 codegen units and the linker opens
+every one at once. Build with one unit instead:
+
+```
+CARGO_PROFILE_DEV_CODEGEN_UNITS=1 CARGO_PROFILE_TEST_CODEGEN_UNITS=1 \
+  ~/.cargo/bin/cargo test --jobs 2
+```
+
+Compilation is slower and linking succeeds. This is worth reaching for
+straight away: the failure is intermittent, so retrying looks like it
+is working and then fails again minutes later.
 
 A foreground `sleep` is blocked. Wait on a condition instead.
 
@@ -1058,3 +1073,51 @@ is read at 25 different bearings. Six of those cases go dark the moment
 the two bearings are swapped, and the isotrope, inverted-cone and
 multi-frequency cases do not, which is what says each case reaches the
 branch it is meant to.
+
+## The public API (`propcore::api`)
+
+The port's own interface, for callers who are not writing card decks.
+`predict` returns data, `listing` returns the reference's text, `deck`
+returns the cards a request resolves to. Both entry points go through
+one `Request` to `DeckCase` conversion, so the data and the text
+cannot describe two different runs.
+
+`Task` separates what a run computes from what it prints. The card
+number conflates the two — `JTRUN` and `JTOUT` are two tables indexed
+by the same number — so a caller who wants MUFs has to know that 7 is
+the method that computes them from the profile and 3 the one that uses
+the nomogram. Seven tasks name the distinct products. The other card
+methods are reachable as before, through `deck::DeckCase` and
+`engine::output::render`; the API is a face on the engine, not a fence
+around it.
+
+### Inputs are put on the card grid first
+
+A card column carries a fixed number of decimals, and the listing
+prints its header from those columns, so no listing can show a finer
+value than a card can carry. Running the engine on a caller's
+unrounded value while echoing a rounded deck prints a listing that
+contradicts itself — with a transmitter at 35.8765 N the header says
+`35.88 N` and the bearing beside it, 254.90, is the bearing from
+35.8765; the reference given that same deck prints 254.91. Twenty-five
+lines differed on the first request tried.
+
+So `DeckCase::as_written` puts every field on the grid its own column
+holds, and the API applies it before anything runs. That is what makes
+"byte-identical to the reference" true of every request instead of
+only of card-expressible ones. The grid is 0.01 degree of latitude and
+longitude, 0.01 MHz, 0.1 W, 0.1 dB of required SNR, 1 dB of noise, 1
+sunspot, and 0.01 MHz / 0.1 km on the layer override cards — every
+step far below what the model resolves.
+
+`as_written` mirrors `build_deck`'s format for each field and has to
+be edited with it. What proves the two agree is
+`tests/api_reference.rs`: a request finer than every column, run
+through the reference and compared as text. Removing the rounding from
+any one field makes it fail, which was checked field by field rather
+than assumed.
+
+One card field takes no fraction at all: man-made noise is written as
+the value followed by a point, so 145.42 would produce `145.42.` and
+overflow the five-column field rather than round. `as_written` rounds
+it to a whole number, which is the only thing the card can say.

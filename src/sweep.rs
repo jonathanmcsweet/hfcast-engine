@@ -126,6 +126,7 @@ pub fn sweep_cases() -> Vec<DeckCase> {
             for &ssn in SUNSPOTS {
                 cases.push(DeckCase {
                     id: format!("{}-m{month:02}-s{ssn:.0}", p.id),
+                    rx_label: "sweep".to_string(),
                     from_lat: p.from_lat,
                     from_lon: p.from_lon,
                     to_lat: p.to_lat,
