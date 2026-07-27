@@ -24,7 +24,7 @@
 //! per case, zero-initialised like a static Fortran COMMON, carried
 //! across the hour loop.
 
-use super::con::{D2R, DCL, PIO2, R2D, RZ, VOFL, R};
+use super::con::{D2R, DCL, PIO2, R, R2D, RZ, VOFL};
 use super::ionogram::{Ionogram, ANG};
 use super::ionosphere::{EsParams, LayerParams};
 use super::magnetic::MagneticVars;
@@ -69,11 +69,7 @@ pub struct Geog {
 impl Geog {
     /// Fills the slots from the per-point stage outputs (before any
     /// `SETLNG` replication).
-    pub fn from_points(
-        layers: &[LayerParams],
-        mags: &[MagneticVars],
-        grounds: &[(R, R)],
-    ) -> Self {
+    pub fn from_points(layers: &[LayerParams], mags: &[MagneticVars], grounds: &[(R, R)]) -> Self {
         let mut g = Geog::default();
         for (k, ((lp, mag), gr)) in layers.iter().zip(mags).zip(grounds).enumerate() {
             g.gyz[k] = mag.gyz;
@@ -408,6 +404,11 @@ pub struct ModeLoopState {
     pub d10r: R,
     pub d50r: R,
     pub d90r: R,
+    /// `/DON/` `D10S`/`D50S`/`D90S`: the service-probability deciles of
+    /// the best mode, which only method 25's table prints.
+    pub d10s: R,
+    pub d50s: R,
+    pub d90s: R,
 }
 
 impl Default for ModeLoopState {
@@ -424,6 +425,9 @@ impl Default for ModeLoopState {
             d10r: 0.0,
             d50r: 0.0,
             d90r: 0.0,
+            d10s: 0.0,
+            d50s: 0.0,
+            d90s: 0.0,
         }
     }
 }
@@ -808,7 +812,8 @@ pub fn findf(
                     Fill::Interp => {
                         let h = ih as usize - 1;
                         let slopd = (area.ifob[ia as usize - 1][h + 1]
-                            - area.ifob[ia as usize - 1][h]) as R;
+                            - area.ifob[ia as usize - 1][h])
+                            as R;
                         let slopd = slopd.max(1.0);
                         let slope = (jfhz - area.ifob[ia as usize - 1][h]) as R / slopd;
                         rfx.htflx[i] = ion.htrue[h] + slope * (ion.htrue[h + 1] - ion.htrue[h]);
@@ -1083,7 +1088,8 @@ fn regmod(
             let xv = (modes.fvmod[im] / ctx.state.fi[k][0]).max(ctx.sig.xve);
             let adx = ctx.sig.afe + ctx.sig.bfe * xv.ln();
             let secp = 1.0 / (del + psi).sin();
-            zon.adv[im] = secp * modes.afmod[im]
+            zon.adv[im] = secp
+                * modes.afmod[im]
                 * ((modes.fvmod[im] + ctx.geog.gyz[l - 1]).powf(1.98) + xnsq)
                 / (bc + xnsq)
                 + adx;
@@ -1097,7 +1103,8 @@ fn regmod(
             let secp = 1.0 / (1.0 - sinp * sinp).sqrt();
             zon.abps[im] = secp * ac / (bc + xnsq);
             let secp = 1.0 / (del + psi).sin();
-            zon.adv[im] = secp * modes.afmod[im]
+            zon.adv[im] = secp
+                * modes.afmod[im]
                 * ((modes.fvmod[im] + ctx.geog.gyz[l - 1]).powf(1.98) + xnsq)
                 / (bc + xnsq);
             zon.obf[im] = 0.0;
@@ -1180,8 +1187,7 @@ fn regmod(
         zon.tllow[im] = (ctx.sig.dsl + hops * (obfl - zon.obf[im]) + hop * (xlsl - xls)).min(25.0);
         zon.tlhgh[im] = (ctx.sig.dsu + hops * (zon.obf[im] - obfu) + hop * (xls - xlsu)).min(25.0);
         zon.tloss[im] = xtlos;
-        zon.fldst[im] =
-            107.2 + ctx.ants.pwrdb(freq) + 20.0 * freq.log10() - xtlos - zon.rgain[im];
+        zon.fldst[im] = 107.2 + ctx.ants.pwrdb(freq) + 20.0 * freq.log10() - xtlos - zon.rgain[im];
         zon.sigpow[im] = ctx.ants.pwrdb(freq) - xtlos;
         zon.sn[im] = zon.sigpow[im] - noise.rcnse - zon.eff[im];
         zon.b[im] = modes.delmod[im];
@@ -1199,7 +1205,11 @@ fn regmod(
 /// distributions for higher hop counts, calls `REGMOD`, and restores.
 // The source's dead stores (INM after the last read, the counted but
 // unread zero-distance slot) are kept.
-#[allow(clippy::too_many_arguments, unused_assignments, clippy::needless_range_loop)]
+#[allow(
+    clippy::too_many_arguments,
+    unused_assignments,
+    clippy::needless_range_loop
+)]
 fn inmuf(
     zon: &mut Zon,
     modes: &mut HopModes,
@@ -1365,13 +1375,13 @@ fn inmuf(
                 if slope > 0.01 {
                     let slp = (fv - area.ion.fvert[ihx - 1]) / slope;
                     modes.delmod[slot] = 90.0;
-                    modes.hpmod[slot] =
-                        area.ion.hprim[ihx - 1] + (area.ion.hprim[ihx] - area.ion.hprim[ihx - 1]) * slp;
-                    modes.htmod[slot] =
-                        area.ion.htrue[ihx - 1] + (area.ion.htrue[ihx] - area.ion.htrue[ihx - 1]) * slp;
+                    modes.hpmod[slot] = area.ion.hprim[ihx - 1]
+                        + (area.ion.hprim[ihx] - area.ion.hprim[ihx - 1]) * slp;
+                    modes.htmod[slot] = area.ion.htrue[ihx - 1]
+                        + (area.ion.htrue[ihx] - area.ion.htrue[ihx - 1]) * slp;
                     modes.fvmod[slot] = fv;
-                    modes.afmod[slot] =
-                        area.ion.afac[ihx - 1] + (area.ion.afac[ihx] - area.ion.afac[ihx - 1]) * slp;
+                    modes.afmod[slot] = area.ion.afac[ihx - 1]
+                        + (area.ion.afac[ihx] - area.ion.afac[ihx - 1]) * slp;
                 }
                 filled = true;
             }
@@ -1415,14 +1425,7 @@ fn inmuf(
 
 /// Port of `ESMOD`: up to two sporadic-E hops into `/ZON/` slots 4-5.
 /// `fsdead` is the low-frequency cutoff from the controlling area.
-fn esmod(
-    zon: &mut Zon,
-    ctx: &PassCtx,
-    muf: &MufHour,
-    noise: &NoiseResult,
-    freq: R,
-    fsdead: R,
-) {
+fn esmod(zon: &mut Zon, ctx: &PassCtx, muf: &MufHour, noise: &NoiseResult, freq: R, fsdead: R) {
     // The weakest Es area governs: all modes are at least this good.
     let mut k = 0usize;
     for is in 0..ctx.state.km {
@@ -1778,8 +1781,7 @@ fn relbil(
 }
 
 /// Port of `SERPRB`: the service probability per mode, keeping the
-/// maximum. (`D10S`/`D50S`/`D90S` feed only the method-25 output and
-/// are not kept.)
+/// maximum. `D10S`/`D50S`/`D90S` feed only method 25's table.
 fn serprb(
     lp: &mut ModeLoopState,
     ifx: usize,
@@ -1827,6 +1829,15 @@ fn serprb(
         }
     }
     lp.son[ifx].sprob = lp.all.spro[imax];
+    // `D90S` is a copy of `D10S`, not the upper decile the comment above
+    // the calculation claims. A frequency with no modes at all reads
+    // slot 1 of two arrays the Fortran leaves uninitialised; the port
+    // reads its own zeros instead, which only method 25's table would
+    // show, and only for an hour whose output `OUTALL` cannot print at
+    // all (see [`crate::engine::tables::outall`]).
+    lp.d10s = d10sa[imax];
+    lp.d50s = d50sa[imax];
+    lp.d90s = lp.d10s;
 }
 
 /// Port of `MPATH` (2009 revision): the reliability of the next most
@@ -1948,11 +1959,10 @@ fn settxr(lp: &mut ModeLoopState, ctx: &PassCtx, muf: &MufHour, freq: R, itxrcp:
                 let adx = ctx.sig.afe + ctx.sig.bfe * xv.ln();
                 let sinp = RZ * cdel / (RZ + rfx.hpflx[ia]);
                 let secp = 1.0 / (1.0 - sinp * sinp).sqrt();
-                rfx.advx[ia] = secp
-                    * rfx.afflx[ia]
-                    * ((rfx.fvflx[ia] + ctx.geog.gyz[k]).powf(1.98) + xnsq)
-                    / (bc + xnsq)
-                    + adx;
+                rfx.advx[ia] =
+                    secp * rfx.afflx[ia] * ((rfx.fvflx[ia] + ctx.geog.gyz[k]).powf(1.98) + xnsq)
+                        / (bc + xnsq)
+                        + adx;
                 rfx.aofx[ia] = 0.0;
             } else {
                 // F layer mode.
@@ -1962,10 +1972,9 @@ fn settxr(lp: &mut ModeLoopState, ctx: &PassCtx, muf: &MufHour, freq: R, itxrcp:
                 rfx.andvx[ia] = secp * ac / (bc + xnsq);
                 let sinp = RZ * cdel / (RZ + rfx.hpflx[ia]);
                 let secp = 1.0 / (1.0 - sinp * sinp).sqrt();
-                rfx.advx[ia] = secp
-                    * rfx.afflx[ia]
-                    * ((rfx.fvflx[ia] + ctx.geog.gyz[k]).powf(1.98) + xnsq)
-                    / (bc + xnsq);
+                rfx.advx[ia] =
+                    secp * rfx.afflx[ia] * ((rfx.fvflx[ia] + ctx.geog.gyz[k]).powf(1.98) + xnsq)
+                        / (bc + xnsq);
                 rfx.aofx[ia] = 0.0;
                 if ctx.fs[k][1] > 0.0 {
                     // Es obscuration; note no 3 MHz cap on FSDEAD here.
@@ -1994,7 +2003,13 @@ fn settxr(lp: &mut ModeLoopState, ctx: &PassCtx, muf: &MufHour, freq: R, itxrcp:
             let cphet = (1.0 - sphet * sphet).max(0.00000001).sqrt();
             // The source overrides the row's mode with MODMUF here.
             let is = muf.modmuf as usize;
-            let pros = prbmuf(muf, freq, muf.layers[is - 1].ymuf, muf.layers[is - 1].ymuf, is);
+            let pros = prbmuf(
+                muf,
+                freq,
+                muf.layers[is - 1].ymuf,
+                muf.layers[is - 1].ymuf,
+                is,
+            );
             let xls = -10.0 * pros.log10() / cphet;
             rfx.andvx[ia] += xls;
             all.prob[jj] = pros;
@@ -2304,8 +2319,7 @@ fn lngpat(
     lp.all.abps[0] = abps1;
     lp.all.obf[0] = obf1;
     lp.all.sigpow[0] = ctx.ants.pwrdb(freq) - tlosl;
-    lp.all.fldst[0] =
-        107.2 + ctx.ants.pwrdb(freq) + 20.0 * freq.log10() - tlosl - lp.all.rgain[0];
+    lp.all.fldst[0] = 107.2 + ctx.ants.pwrdb(freq) + 20.0 * freq.log10() - tlosl - lp.all.rgain[0];
     lp.all.sn[0] = lp.all.sigpow[0] - noise.rcnse - lp.all.eff[0];
     // Decile adjustments per mode type, averaged when the two ends
     // reflect from different layers.
@@ -2385,13 +2399,7 @@ fn rfx_snapshot(rfx: &Reflectrix, k: usize, khz: i32) -> RfxSnapshot {
             .collect(),
         dskpkm: rfx.dskpkm,
         dmaxkm: rfx.dmaxkm,
-        skip: (n > 0).then_some([
-            rfx.delskp,
-            rfx.hpskp,
-            rfx.htskp,
-            rfx.fvskp,
-            rfx.iskp as R,
-        ]),
+        skip: (n > 0).then_some([rfx.delskp, rfx.hpskp, rfx.htskp, rfx.fvskp, rfx.iskp as R]),
         delpen: rfx.delpen,
     }
 }
@@ -2402,6 +2410,41 @@ pub struct LosSnapshot {
     pub ltxrgm: [i32; 2],
     /// Per end: (area, 45 rows of andvx, advx, aofx, grlosx, tgainx).
     pub ends: [(usize, Vec<[R; 5]>); 2],
+}
+
+/// What `OUTALL` prints for one frequency: the mode arrays as the
+/// frequency loop left them, the summary slot, and the noise and signal
+/// distributions repeated under the table.
+///
+/// It is a snapshot rather than a set of references because the arrays
+/// it names are COMMON blocks the next frequency overwrites, and
+/// `OUTALL` prints inside the loop.
+#[derive(Debug, Clone)]
+pub struct AllModesOut {
+    pub freq: R,
+    pub all: AllModes,
+    pub son: Son,
+    /// `/ANOIS/` at this frequency.
+    pub rcnse: R,
+    pub du: R,
+    pub dl: R,
+    pub sigm: R,
+    pub sygu: R,
+    pub sygl: R,
+    /// `/SIGD/` and `/TON/`, which do not vary over the frequencies.
+    pub dsl: R,
+    pub asm: R,
+    pub dsu: R,
+    pub sls: R,
+    pub ads: R,
+    pub sus: R,
+    /// `/DON/`: the reliability and service-probability deciles.
+    pub d90r: R,
+    pub d50r: R,
+    pub d10r: R,
+    pub d90s: R,
+    pub d50s: R,
+    pub d10s: R,
 }
 
 /// The intermediates of one frequency slot, for trace comparison.
@@ -2418,6 +2461,9 @@ pub struct FreqDebug {
     /// `NREL` after `relbil` (stale from the previous frequency when
     /// no modes existed).
     pub nrel: usize,
+    /// What `OUTALL` would print here. Card method 25 is the only one
+    /// that prints it, but it costs a clone the loop already makes.
+    pub outall: Option<AllModesOut>,
 }
 
 fn nint_khz(freq: R) -> i32 {
@@ -2472,6 +2518,7 @@ pub fn luffy_freq_loop(
             los: None,
             son: Son::default(),
             nrel: 0,
+            outall: None,
         };
         if !ctx.long {
             let jm = ctx.jmode;
@@ -2592,6 +2639,29 @@ pub fn luffy_freq_loop(
         }
         dbg.son = lp.son[ifx];
         dbg.nrel = lp.all.nrel;
+        dbg.outall = Some(AllModesOut {
+            freq,
+            all: lp.all.clone(),
+            son: lp.son[ifx],
+            rcnse: noise.rcnse,
+            du: noise.du,
+            dl: noise.dl,
+            sigm: noise.sigm,
+            sygu: noise.sygu,
+            sygl: noise.sygl,
+            dsl: ctx.sig.dsl,
+            asm: ctx.sig.asm,
+            dsu: ctx.sig.dsu,
+            sls: ctx.sig.sls,
+            ads: ctx.sig.ads,
+            sus: ctx.sig.sus,
+            d90r: lp.d90r,
+            d50r: lp.d50r,
+            d10r: lp.d10r,
+            d90s: lp.d90s,
+            d50s: lp.d50s,
+            d10s: lp.d10s,
+        });
         // The MSPEC = 121 save block.
         saves.son[ifx][idx] = lp.son[ifx];
         saves.ytgain[ifx][idx] = lp.all.tgain[0];
@@ -2607,7 +2677,6 @@ pub fn luffy_freq_loop(
     }
     out
 }
-
 
 /// `FRQCOM`: the 2-40 MHz frequency complement the LUF search sweeps.
 ///

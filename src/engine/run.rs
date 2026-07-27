@@ -15,22 +15,20 @@ use std::path::Path;
 
 use crate::deck::DeckCase;
 
-use super::area::{pwrcut, xlimit6, Grid, Projection};
-use super::coefficients::{redmap, CoefficientSet, FoF2Model};
-use super::con::{MagneticPole, D2R, R, R2D};
-use super::geometry::{path_geometry, PathGeometry};
-use super::ionogram::{alosfv, fobby, genion, sang, selmod};
-use super::ionosphere::{
-    alatd, cofion, esind, geotim, ground_constants, layer_parameters, virtim,
-};
 use super::antenna::{
     area_table, dazel0, point_to_point_table, read_antenna, AntennaEnd, AntennaSet, AntennaSetup,
     Installation,
 };
+use super::area::{pwrcut, xlimit6, Grid, Projection};
+use super::coefficients::{redmap, CoefficientSet, FoF2Model};
+use super::con::{MagneticPole, D2R, R, R2D, RZ};
+use super::geometry::{path_geometry, PathGeometry};
+use super::ionogram::{alosfv, fobby, genion, sang, selmod, Ionogram};
+use super::ionosphere::{alatd, cofion, esind, geotim, ground_constants, layer_parameters, virtim};
 use super::magnetic::{magvar, MagneticVars};
 use super::modes::{
     es_slots, luffy_freq_loop, luffy_luf, luffy_smooth, outbod_sentinels, setlng, setluf,
-    DeckParams, Geog, HourSaves, ModeLoopState, PassCtx, Son,
+    AllModesOut, DeckParams, Geog, HourSaves, ModeLoopState, PassCtx, Son,
 };
 use super::muf::{curmuf, ionset, lecden, nommuf, IonoState};
 use super::noise::{anois1, genois};
@@ -208,6 +206,7 @@ fn build_antennas(itshfbc: &Path, inp: &RunInputs) -> Result<AntennaSet, String>
                 table,
                 power_kw: kw,
                 file: card.file.clone(),
+                design_freq: card.design_freq,
             });
         }
     }
@@ -253,6 +252,13 @@ pub struct ParRow {
     pub zmax: R,
     /// Geomagnetic latitude, degrees.
     pub magl: R,
+    /// The E semithickness and height and the sporadic-E height at
+    /// control point 1, which the table's own heading prints once per
+    /// page. They belong to point 1 whatever point the row is for, and
+    /// to the hour the page broke on.
+    pub ye: R,
+    pub he: R,
+    pub hs: R,
 }
 
 /// Runs the ionospheric parameters alone for all 24 hours: `ITRUN = 1`,
@@ -280,9 +286,7 @@ pub fn run_par(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<ParRow>, String> {
     for jt in 1..=24i32 {
         let gmt = jt as R;
         let ab = virtim(&cof, &set.ikim, gmt);
-        let params = layer_parameters(
-            &set, &ab, &geo.points, &mags, inp.month, inp.ssn, gmt, &psc,
-        );
+        let params = layer_parameters(&set, &ab, &geo.points, &mags, inp.month, inp.ssn, gmt, &psc);
         let es = esind(&set, &ab, &geo.points, &mags, &psc);
         let geog = Geog::from_points(&params, &mags, &grounds);
         for (k, p) in params.iter().enumerate() {
@@ -308,14 +312,132 @@ pub fn run_par(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<ParRow>, String> {
                 zen: p.zenang,
                 zmax: p.zenmax,
                 magl: geo.points[k].gmlat * R2D,
+                ye: params[0].yi[0],
+                he: params[0].hi[0],
+                hs: es[0].hs,
             });
         }
     }
     Ok(out)
 }
 
-/// One hour of a MUF-only run (`ITRUN` 3 and 4, card methods 3 to 11):
-/// what `CURMUF` leaves for `OUTMUF` and `OUTLAY` to print.
+/// The MUF arrays of a systems run, in the shape `OUTMUF` and `OUTGPH`
+/// read them. Only an `OUTGRAPH` card asks a systems run for them, and
+/// it prints from the same `/MUFS/` slots the hour loop filled.
+pub fn muf_view(hours: &[HourPrediction]) -> Vec<MufHourOut> {
+    hours
+        .iter()
+        .map(|h| MufHourOut {
+            gmt: h.gmt,
+            lmt: h.lmt,
+            fot: h.fot,
+            hpf: h.hpf,
+            esmuf: h.esmuf,
+            allmuf: h.allmuf,
+            angmuf: h.angmuf,
+            xluf: h.xluf,
+            layers: [super::muf::LayerMuf::default(); 4],
+        })
+        .collect()
+}
+
+/// One control point's ionogram for one hour, as `IONPLT` prints it.
+#[derive(Debug, Clone, Copy)]
+pub struct IonPlot {
+    pub gmt: R,
+    /// `CLCK`, the point's local mean time.
+    pub lmt: R,
+    /// Geographic latitude and longitude of the point, degrees.
+    pub lat: R,
+    pub lon: R,
+    /// The two path distances the heading prints, km. They are read
+    /// from different slots than the point's own: `RD(2K-1)` and, below
+    /// three sample areas, `RD(KFX)`.
+    pub rdx: R,
+    pub rdy: R,
+    /// E, F1 and F2 critical frequencies, semithicknesses and heights,
+    /// as `IONSET` left them.
+    pub fi: [R; 3],
+    pub yi: [R; 3],
+    pub hi: [R; 3],
+    /// Sporadic E: lower decile, median, upper decile, and the height.
+    pub fs: [R; 3],
+    pub hs: R,
+    /// `FSECV` after `LECDEN`, which chooses the F1 description in the
+    /// heading.
+    pub fsecv: R,
+    pub ion: Ionogram,
+}
+
+/// Runs the ionograms for all 24 hours: `ITRUN = 2`, card method 2.
+/// Returns the sample areas of each hour, in the order `OUTION` walks
+/// them.
+///
+/// The chain is `LECDEN` then `GENION` per area, the same one `LUFFY`
+/// runs, but over `1..KFX` rather than the one controlling area, and
+/// with no MUF calculation before it — so the layer parameters are as
+/// `IONSET` left them and the sporadic-E deciles are untouched by
+/// `CURMUF`.
+pub fn run_ion(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<Vec<IonPlot>>, String> {
+    let pole = MagneticPole::for_tree(itshfbc);
+    let geo = path_geometry(
+        inp.from_lat_deg as R,
+        inp.from_lon_deg as R,
+        inp.to_lat_deg as R,
+        inp.to_lon_deg as R,
+        false,
+        pole,
+    );
+    let mags: Vec<_> = geo.points.iter().map(|p| magvar(p.lat, p.lon)).collect();
+    let set: CoefficientSet =
+        redmap(itshfbc, inp.fof2, inp.month, inp.ssn).map_err(|e| e.to_string())?;
+    let cof = cofion(&set);
+    let _ = alatd(&geo.points);
+    let psc = inp.psc;
+
+    let mut fsecv_carry = [0.0 as R; 3];
+    let mut out = Vec::with_capacity(24);
+    for jt in 1..=24i32 {
+        let gmt = jt as R;
+        let ab = virtim(&cof, &set.ikim, gmt);
+        let params = layer_parameters(&set, &ab, &geo.points, &mags, inp.month, inp.ssn, gmt, &psc);
+        let es = esind(&set, &ab, &geo.points, &mags, &psc);
+        let mut state = IonoState::from_layers(&params);
+        state.fsecv = fsecv_carry;
+        ionset(&mut state);
+        let (fs, hs) = es_slots(&es);
+        let mut hour = Vec::with_capacity(state.kfx);
+        for k in 0..state.kfx {
+            lecden(&mut state, k);
+            let ion = genion(&state, k);
+            // `IDX` and `IDY`, one-based in the source.
+            let idx = 2 * (k + 1) - 1;
+            let idy = if state.kfx < 3 { state.kfx } else { k + 2 };
+            hour.push(IonPlot {
+                gmt,
+                lmt: params[k].clck,
+                lat: geo.points[k].lat * R2D,
+                lon: geo.points[k].lon * R2D,
+                rdx: geo.points[idx - 1].rd * RZ,
+                rdy: geo.points[idy - 1].rd * RZ,
+                fi: state.fi[k],
+                yi: state.yi[k],
+                hi: state.hi[k],
+                fs: fs[k],
+                hs: hs[k],
+                fsecv: state.fsecv[k],
+                ion,
+            });
+        }
+        out.push(hour);
+        fsecv_carry = state.fsecv;
+    }
+    Ok(out)
+}
+
+/// One hour of a MUF-only or LUF-only run (`ITRUN` 3, 4 and 8, card
+/// methods 3 to 11 and 26 to 29): what `NOMMUF`, `CURMUF` and `LUFFY`
+/// leave in `/MUFS/` for `OUTMUF`, `OUTLAY` and the graphs to print.
 #[derive(Debug, Clone)]
 pub struct MufHourOut {
     pub gmt: R,
@@ -324,6 +446,14 @@ pub struct MufHourOut {
     pub hpf: R,
     pub esmuf: R,
     pub allmuf: R,
+    /// Takeoff angle at the circuit MUF, which method 10's graph plots.
+    /// `SETOUT` clears it to -1 and `NOMMUF` never writes it, so the
+    /// nomogram methods leave it at -1 and the graph reads that as no
+    /// value.
+    pub angmuf: R,
+    /// The LUF, which only `ITRUN = 8` computes. -1 otherwise, for the
+    /// same reason.
+    pub xluf: R,
     /// E, F1, F2 and Es. `OUTLAY` prints slots 1 and 2 on its first
     /// line and 3 and 4 on its second, under headings that name the
     /// F1 and F2 layers the other way round.
@@ -360,9 +490,7 @@ pub fn run_muf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<MufHourOut>, Strin
     for jt in 1..=24i32 {
         let gmt = jt as R;
         let ab = virtim(&cof, &set.ikim, gmt);
-        let params = layer_parameters(
-            &set, &ab, &geo.points, &mags, inp.month, inp.ssn, gmt, &psc,
-        );
+        let params = layer_parameters(&set, &ab, &geo.points, &mags, inp.month, inp.ssn, gmt, &psc);
         let es = esind(&set, &ab, &geo.points, &mags, &psc);
         let mut state = IonoState::from_layers(&params);
         state.fsecv = fsecv_carry;
@@ -375,15 +503,7 @@ pub fn run_muf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<MufHourOut>, Strin
             for (k, p) in params.iter().enumerate() {
                 f2m3[k] = p.f2m3;
             }
-            nommuf(
-                &state.fi,
-                &f2m3,
-                &fs,
-                &hs,
-                state.km,
-                geo.gcd,
-                geo.gcd_km,
-            )
+            nommuf(&state.fi, &f2m3, &fs, &hs, state.km, geo.gcd, geo.gcd_km)
         } else {
             curmuf(
                 &mut state,
@@ -405,6 +525,14 @@ pub fn run_muf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<MufHourOut>, Strin
             hpf: hour.hpf,
             esmuf: hour.esmuf,
             allmuf: hour.allmuf,
+            // `NOMMUF` writes no takeoff angle, so the nomogram methods
+            // keep the -1 `SETOUT` cleared the array to.
+            angmuf: if (3..=6).contains(&inp.method) {
+                -1.0
+            } else {
+                hour.angmuf
+            },
+            xluf: -1.0,
             layers: hour.layers,
         });
         fsecv_carry = state.fsecv;
@@ -412,25 +540,12 @@ pub fn run_muf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<MufHourOut>, Strin
     Ok(out)
 }
 
-/// One hour of a LUF run (`ITRUN = 8`, card methods 26-29): the MUF
-/// block plus the LUF the search found. A negative LUF means no
-/// frequency met the required reliability, and its magnitude is the
-/// most reliable frequency of the sweep.
-#[derive(Debug, Clone, Copy)]
-pub struct LufHour {
-    pub gmt: R,
-    pub lmt: R,
-    pub fot: R,
-    pub hpf: R,
-    pub esmuf: R,
-    pub allmuf: R,
-    pub xluf: R,
-}
-
 /// Runs the LUF computation for all 24 hours: `LUFFY` with `IPFG` 300
 /// below 10000 km and 400 beyond, sweeping the frequency complement
-/// for the lowest frequency meeting the required reliability.
-pub fn run_luf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<LufHour>, String> {
+/// for the lowest frequency meeting the required reliability. A negative
+/// LUF means no frequency met the required reliability, and its
+/// magnitude is the most reliable frequency of the sweep.
+pub fn run_luf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<MufHourOut>, String> {
     let pole = MagneticPole::for_tree(itshfbc);
     let geo = path_geometry(
         inp.from_lat_deg as R,
@@ -472,16 +587,7 @@ pub fn run_luf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<LufHour>, String> 
     for jt in 1..=24i32 {
         let gmt = jt as R;
         let ab = virtim(&cof, &set.ikim, gmt);
-        let params = layer_parameters(
-            &set,
-            &ab,
-            &geo.points,
-            &mags,
-            inp.month,
-            inp.ssn,
-            gmt,
-            &psc,
-        );
+        let params = layer_parameters(&set, &ab, &geo.points, &mags, inp.month, inp.ssn, gmt, &psc);
         let es = esind(&set, &ab, &geo.points, &mags, &psc);
         let mut state = IonoState::from_layers(&params);
         state.fsecv = fsecv_carry;
@@ -500,7 +606,13 @@ pub fn run_luf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<LufHour>, String> 
             inp.ssn,
         );
         let times = geotim(jt, 1, from_lon_rad, to_lon_rad);
-        let an = anois1(&set, times.gmtr, to_lat_rad, to_lon_rad, inp.to_lon_deg as R);
+        let an = anois1(
+            &set,
+            times.gmtr,
+            to_lat_rad,
+            to_lon_rad,
+            inp.to_lon_deg as R,
+        );
         let fof2_end = state.fi[state.kfx - 1][2];
         let noise_for = |f: R| {
             let reff = ants.gain(2, 0.0, f).1;
@@ -561,14 +673,16 @@ pub fn run_luf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<LufHour>, String> 
             long,
         };
         let (xluf, _frea) = luffy_luf(&mut lp, &ctx, &mut hour, &noise_for, deck.lufp);
-        out.push(LufHour {
+        out.push(MufHourOut {
             gmt,
             lmt: times.lmt_tx,
             fot: hour.fot,
             hpf: hour.hpf,
             esmuf: hour.esmuf,
             allmuf: hour.allmuf,
+            angmuf: hour.angmuf,
             xluf,
+            layers: hour.layers,
         });
         fsecv_carry = state.fsecv;
     }
@@ -581,9 +695,15 @@ pub fn run_luf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<LufHour>, String> 
 pub struct HourPrediction {
     /// UT hour 1-24.
     pub gmt: R,
+    /// Local mean time at the transmitter, which the tables print
+    /// beside the hour.
+    pub lmt: R,
     pub allmuf: R,
     pub fot: R,
     pub hpf: R,
+    /// The sporadic-E MUF, which only an `OUTGRAPH` request prints from
+    /// a systems run.
+    pub esmuf: R,
     pub angmuf: R,
     pub xluf: R,
     pub frel: [R; 12],
@@ -591,6 +711,13 @@ pub struct HourPrediction {
     /// The `JLONG` flag after the hour: the listing's MODE row uses the
     /// long-path format when the last pass was the long model.
     pub long_model: bool,
+    /// Card method 25 only: the ionospheric parameter rows `OUTALL`
+    /// prints before the hour's first frequency, and the all-modes
+    /// record of every frequency slot. Empty for every other method,
+    /// which is what keeps an area run from carrying them per grid
+    /// point.
+    pub par: Vec<ParRow>,
+    pub allmodes: Vec<Option<AllModesOut>>,
 }
 
 /// Everything one hour of the prediction reads that the hour loop does
@@ -626,6 +753,13 @@ struct HourSetup<'a> {
     /// `.GE.`, so a path of exactly 10000 km takes the short model in an
     /// area run and the long one point to point.
     area: bool,
+    /// Whether this method's output goes through `OUTBOD`, which is the
+    /// only routine that applies the high-MUF sentinels. `OUTTAB`,
+    /// `OUTALL` and the area driver print the same hour without them, so
+    /// their runs differ from a systems method's from the second hour on:
+    /// the sentinels are what the next hour's stale reads would have
+    /// seen.
+    outbod: bool,
 }
 
 /// Builds the per-path half of a run: geometry, magnetic field, ground
@@ -691,6 +825,7 @@ fn hour_setup<'a>(
         noise_dbw: inp.noise_dbw,
         method: inp.method,
         area: false,
+        outbod: super::output::itout(inp.method) == 7,
     })
 }
 
@@ -713,6 +848,32 @@ pub struct PathReport {
     pub antennas: Vec<AntennaLine>,
 }
 
+impl PathReport {
+    fn from_setup(s: &HourSetup) -> Self {
+        Self {
+            rlatd: s.geo.rlatd,
+            btrd: s.geo.btr_deg(),
+            brtd: s.geo.brt_deg(),
+            gcd_km: s.geo.gcd_km,
+            antennas: AntennaLine::from_set(&s.ants),
+        }
+    }
+}
+
+/// What the header says about the path, without running a prediction.
+///
+/// The methods that print no systems table still print the header, and a
+/// `TOPLINES` card can ask any of them for the antenna lines, so the
+/// description is built the same way for every method: `DECRED` reads the
+/// `ANTENNA` cards and `GEOM` works out the bearings whatever the method
+/// then does.
+pub fn path_report(itshfbc: &Path, inp: &RunInputs) -> Result<PathReport, String> {
+    let set: CoefficientSet =
+        redmap(itshfbc, inp.fof2, inp.month, inp.ssn).map_err(|e| e.to_string())?;
+    let s = hour_setup(itshfbc, inp, &set, None)?;
+    Ok(PathReport::from_setup(&s))
+}
+
 /// A whole run: the hours and what the header needs.
 #[derive(Debug, Clone)]
 pub struct Prediction {
@@ -726,13 +887,7 @@ pub fn run_listing(itshfbc: &Path, inp: &RunInputs) -> Result<Prediction, String
     let set: CoefficientSet =
         redmap(itshfbc, inp.fof2, inp.month, inp.ssn).map_err(|e| e.to_string())?;
     let s = hour_setup(itshfbc, inp, &set, None)?;
-    let path = PathReport {
-        rlatd: s.geo.rlatd,
-        btrd: s.geo.btr_deg(),
-        brtd: s.geo.brt_deg(),
-        gcd_km: s.geo.gcd_km,
-        antennas: AntennaLine::from_set(&s.ants),
-    };
+    let path = PathReport::from_setup(&s);
     let mut lp = ModeLoopState::default();
     let mut fsecv_carry = [0.0 as R; 3];
     let mut hours = Vec::with_capacity(24);
@@ -779,16 +934,7 @@ fn hour_body(
     {
         let gmt = jt as R;
         let ab = virtim(&s.cof, &set.ikim, gmt);
-        let params = layer_parameters(
-            set,
-            &ab,
-            &geo.points,
-            &s.mags,
-            s.month,
-            s.ssn,
-            gmt,
-            &psc,
-        );
+        let params = layer_parameters(set, &ab, &geo.points, &s.mags, s.month, s.ssn, gmt, &psc);
         let es = esind(set, &ab, &geo.points, &s.mags, &psc);
         let mut state = IonoState::from_layers(&params);
         state.fsecv = *fsecv_carry;
@@ -888,6 +1034,7 @@ fn hour_body(
         let mut frel = s.base_frel;
         frel[11] = hour.allmuf;
         let mut sd_last: Option<SignalDistribution> = None;
+        let mut freqs: Vec<Option<super::modes::FreqDebug>> = Vec::new();
         for plan in &plans {
             for &k in &plan.areas {
                 lecden(&mut state, k);
@@ -926,7 +1073,7 @@ fn hour_body(
                 nang: s.nang,
                 long: plan.long,
             };
-            luffy_freq_loop(lp, &ctx, &mut hour_m, &noise_for, &frel, &mut saves);
+            freqs = luffy_freq_loop(lp, &ctx, &mut hour_m, &noise_for, &frel, &mut saves);
         }
         if plans.len() == 2 {
             let sd = sd_last.as_ref().expect("two passes ran");
@@ -950,14 +1097,33 @@ fn hour_body(
             luffy_smooth(lp, &ctx, &noise_for, &frel, &saves);
         }
         let last_long = plans.last().map(|p| p.long).unwrap_or(false);
+        // Card method 25 prints `OUTPAR` from inside the frequency loop,
+        // so its rows carry the layer parameters as `IONSET` reordered
+        // them and as `CURMUF` left the sporadic-E lower decile — not
+        // the untouched values card method 1 prints.
+        let (par, allmodes) = if s.method == 25 {
+            (
+                par_rows(s, &params, &state, &fs, &hs, &geog, gmt),
+                freqs
+                    .into_iter()
+                    .map(|d| d.and_then(|d| d.outall))
+                    .collect(),
+            )
+        } else {
+            (Vec::new(), Vec::new())
+        };
         let xluf = setluf(&lp.son, &frel, deck.lufp);
-        outbod_sentinels(&mut lp.son, hour.allmuf);
+        if s.outbod {
+            outbod_sentinels(&mut lp.son, hour.allmuf);
+        }
         *fsecv_carry = state.fsecv;
         HourPrediction {
             gmt,
+            lmt: times.lmt_tx,
             allmuf: hour.allmuf,
             fot: hour.fot,
             hpf: hour.hpf,
+            esmuf: hour.esmuf,
             angmuf: hour.angmuf,
             xluf,
             frel,
@@ -966,8 +1132,53 @@ fn hour_body(
             // hop count and layer for the short model, and the two end
             // layers for the long one.
             long_model: last_long,
+            par,
+            allmodes,
         }
     }
+}
+
+/// `OUTPAR`'s rows for one hour, read from the state the mode loop
+/// works on rather than from the untouched layer parameters.
+fn par_rows(
+    s: &HourSetup,
+    params: &[super::ionosphere::LayerParams],
+    state: &IonoState,
+    fs: &[[R; 3]; 5],
+    hs: &[R; 5],
+    geog: &Geog,
+    gmt: R,
+) -> Vec<ParRow> {
+    params
+        .iter()
+        .enumerate()
+        .map(|(k, p)| ParRow {
+            lat: s.geo.points[k].lat * R2D,
+            lon: s.geo.points[k].lon * R2D,
+            lmt: p.clck,
+            gmt,
+            fe: state.fi[k][0],
+            f1: state.fi[k][1],
+            y1: state.yi[k][1],
+            h1: state.hi[k][1],
+            fh2: geog.gyz[k] / 2.0,
+            f2z: state.fi[k][2],
+            y2: state.yi[k][2],
+            h2: state.hi[k][2],
+            es: fs[k][0],
+            med: fs[k][1],
+            esu: fs[k][2],
+            m3000: p.f2m3,
+            hpf2: p.hpf2,
+            rat: p.rat,
+            zen: p.zenang,
+            zmax: p.zenmax,
+            magl: s.geo.points[k].gmlat * R2D,
+            ye: state.yi[0][0],
+            he: state.hi[0][0],
+            hs: hs[0],
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------
@@ -1097,7 +1308,12 @@ fn f6(v: R, decimals: usize) -> String {
 pub fn run_area(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<AreaPoint>, String> {
     let set: CoefficientSet =
         redmap(itshfbc, area.fof2, area.month, area.ssn).map_err(|e| e.to_string())?;
-    let nf = area.freqs_mhz.iter().take_while(|f| **f != 0.0).count().max(1);
+    let nf = area
+        .freqs_mhz
+        .iter()
+        .take_while(|f| **f != 0.0)
+        .count()
+        .max(1);
     let ants = build_area_antennas(itshfbc, area, nf)?;
     let mut lp = ModeLoopState::default();
     let mut fsecv = [0.0 as R; 3];
@@ -1142,6 +1358,9 @@ pub fn run_area(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<AreaPoint>, Str
             // point-to-point driver uses `.GE.`. It matters only at
             // exactly 10000 km, but it is a real difference.
             s.area = true;
+            // `HFAREA` prints through `OUTAREA` and never calls
+            // `OUTBOD`, so an area run never writes the sentinels.
+            s.outbod = false;
             // `GEOM` runs per grid point, and an area antenna is cut
             // along the bearings it leaves behind.
             s.ants.btrd = s.geo.btr * R2D;
@@ -1175,11 +1394,7 @@ pub fn run_area(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<AreaPoint>, Str
 /// tests for area coverage — cut along one bearing for the whole grid:
 /// the deck `AREAMAP` writes names the plot centre as the receiver, so
 /// that is the bearing, whatever the grid point.
-fn build_area_antennas(
-    itshfbc: &Path,
-    area: &AreaInputs,
-    nf: usize,
-) -> Result<AntennaSet, String> {
+fn build_area_antennas(itshfbc: &Path, area: &AreaInputs, nf: usize) -> Result<AntennaSet, String> {
     let pwrkw = area.watts / 1000.0;
     let tx_iso = AntennaCardSpec::isotrope(pwrkw);
     let rx_iso = AntennaCardSpec::isotrope(0.0);
@@ -1225,6 +1440,7 @@ fn build_area_antennas(
             table,
             power_kw: kw,
             file: card.file.clone(),
+            design_freq: card.design_freq,
         };
         if nf > 1 {
             let table = point_to_point_table(&setup).map_err(|e| e.to_string())?;
@@ -1279,7 +1495,11 @@ fn area_point(
         }
     }
     // `ANGLER` falls back to the transmit angle when it is not positive.
-    let angr = if s0.angler <= 0.0 { s0.angle } else { s0.angler };
+    let angr = if s0.angler <= 0.0 {
+        s0.angle
+    } else {
+        s0.angler
+    };
     if nf > 1 {
         // With more than one frequency `OUTAREA` prints seven columns
         // instead of twenty-four: the MUF and the six values that are
@@ -1377,7 +1597,7 @@ fn i5(v: R) -> String {
 
 /// The two-character `LAYTYP` label for a layer index (0 keeps the
 /// program-start NUL bytes, 6 is `OUTBOD`'s "NA" sentinel).
-fn laytyp(layer: i32) -> &'static str {
+pub(crate) fn laytyp(layer: i32) -> &'static str {
     match layer {
         1 => " E",
         2 => "F1",
@@ -1419,7 +1639,11 @@ pub fn body_lines(method: u32, botlines: Option<&[u32]>) -> Vec<usize> {
     // lines then print in the order the card lists them rather than in
     // numeric order, because `OUTBOD` walks the card for this path.
     if let Some(card) = botlines {
-        return card.iter().filter(|l| **l > 0).map(|l| *l as usize).collect();
+        return card
+            .iter()
+            .filter(|l| **l > 0)
+            .map(|l| *l as usize)
+            .collect();
     }
     let method = if method == 30 { 20 } else { method };
     let mut bot = Vec::new();
@@ -1548,11 +1772,7 @@ pub fn hour_block(h: &HourPrediction, lines: &[usize]) -> (String, bool) {
             } else {
                 slots.iter().map(|&i| mode_field(&h.son[i])).collect()
             };
-            let muf_field = if numeric {
-                field(muf)
-            } else {
-                mode_field(muf)
-            };
+            let muf_field = if numeric { field(muf) } else { mode_field(muf) };
             out.push_str(&row(label, muf_field, fields, jfreq));
             out.push('\n');
             // The long model prints a second angle line straight after
@@ -1560,8 +1780,7 @@ pub fn hour_block(h: &HourPrediction, lines: &[usize]) -> (String, bool) {
             // count it, so a long-path page runs one line over the
             // limit for every hour on it.
             if line == 2 && h.long_model {
-                let fields: Vec<String> =
-                    slots.iter().map(|&i| f5_1(h.son[i].angler)).collect();
+                let fields: Vec<String> = slots.iter().map(|&i| f5_1(h.son[i].angler)).collect();
                 out.push_str(&row("RANGLE", f5_1(muf.angler), fields, jfreq));
                 out.push('\n');
             }
@@ -1610,14 +1829,18 @@ mod tests {
         son[0].reliab = 0.87;
         let h = HourPrediction {
             gmt: 1.0,
+            lmt: 2.0,
             allmuf: 12.3,
             fot: 10.0,
             hpf: 14.0,
+            esmuf: 3.0,
             angmuf: 5.0,
             xluf: 7.0,
             frel: [7.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 12.3],
             son,
             long_model: false,
+            par: Vec::new(),
+            allmodes: Vec::new(),
         };
         let text = listing_text(&[h], &body_lines(30, None));
         let parsed = crate::listing::parse_listing(&text);

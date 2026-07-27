@@ -147,6 +147,7 @@ pub fn sweep_cases() -> Vec<DeckCase> {
                     // The validated server configuration runs with the
                     // sporadic-E layer on, so the tolerance must cover the
                     // code paths that setting exercises.
+                    outgraph: None,
                     sporadic_e: true,
                 });
             }

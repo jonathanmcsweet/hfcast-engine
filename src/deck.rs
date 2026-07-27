@@ -120,6 +120,11 @@ pub struct DeckCase {
     /// A `TOPLINES` card: which of the header's lines print. Like
     /// `BOTLINES` it overrides the method's own selection.
     pub toplines: Option<Vec<u32>>,
+    /// An `OUTGRAPH` card: up to twelve further card methods whose MUF
+    /// table or diurnal graph is printed after the run's own output. A
+    /// negative number sends that method's pages to a second output
+    /// unit, which the driver never opens.
+    pub outgraph: Option<Vec<i32>>,
 }
 
 impl DeckCase {
@@ -247,6 +252,18 @@ fn line_card(name: &str, lines: Option<&[u32]>) -> Result<String, DeckError> {
     Ok(card)
 }
 
+/// The `OUTGRAPH` card: twelve `I5` fields of card method numbers.
+fn outgraph_card(methods: Option<&[i32]>) -> Result<String, DeckError> {
+    let Some(methods) = methods else {
+        return Ok(String::new());
+    };
+    let mut card = String::from("OUTGRAPH  ");
+    for m in methods.iter().take(12) {
+        card.push_str(&field(&m.to_string(), 5)?);
+    }
+    Ok(card)
+}
+
 pub fn build_deck(c: &DeckCase) -> Result<String, DeckError> {
     if c.freqs_mhz.len() > FREQ_SLOTS {
         return Err(DeckError::TooManyFrequencies(c.freqs_mhz.len()));
@@ -343,9 +360,14 @@ pub fn build_deck(c: &DeckCase) -> Result<String, DeckError> {
         // The TOPLINES and BOTLINES cards each take fourteen I5 fields;
         // the unused ones stay blank, which reads as zero and selects no
         // line.
+        outgraph_card(c.outgraph.as_deref())?,
         line_card("TOPLINES", c.toplines.as_deref())?,
         line_card("BOTLINES", c.botlines.as_deref())?,
-        format!("METHOD    {}{}", field(&c.method.to_string(), 5)?, field("0", 5)?),
+        format!(
+            "METHOD    {}{}",
+            field(&c.method.to_string(), 5)?,
+            field("0", 5)?
+        ),
         "EXECUTE".to_string(),
         "QUIT".to_string(),
     ]);
@@ -382,6 +404,7 @@ mod tests {
             tx_antennas: Vec::new(),
             rx_antennas: Vec::new(),
             sporadic_e: false,
+            outgraph: None,
         }
     }
 
@@ -459,7 +482,10 @@ mod tests {
         ];
         c.rx_antennas = vec![AntennaChoice::whole_band("samples/sample.48", 0.0)];
         let deck = build_deck(&c).expect("deck");
-        let cards: Vec<&str> = deck.lines().filter(|l| l.starts_with("ANTENNA   ")).collect();
+        let cards: Vec<&str> = deck
+            .lines()
+            .filter(|l| l.starts_with("ANTENNA   "))
+            .collect();
         assert_eq!(cards.len(), 3);
         assert_eq!(
             cards[0],

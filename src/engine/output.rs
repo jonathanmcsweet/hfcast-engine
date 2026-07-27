@@ -40,15 +40,14 @@ pub const MODEL: &str = "  VOACAP";
 /// missing, and so does this.
 pub fn read_version(itshfbc: &Path) -> Result<String, String> {
     let path = itshfbc.join("database").join("version.w32");
-    let text = std::fs::read_to_string(&path)
-        .map_err(|e| format!("{}: {e}", path.display()))?;
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
     let line = text.lines().next().unwrap_or("");
     let rest: String = line.chars().skip(8).collect();
     Ok(text_field(&rest, 8))
 }
 
 /// A `CHARACTER*n` field: truncated to `width`, blank-padded to it.
-fn text_field(s: &str, width: usize) -> String {
+pub(crate) fn text_field(s: &str, width: usize) -> String {
     let mut out: String = s.chars().take(width).collect();
     while out.chars().count() < width {
         out.push(' ');
@@ -60,8 +59,16 @@ fn text_field(s: &str, width: usize) -> String {
 ///
 /// `F4.0` prints `117.` — Fortran always writes the decimal point, where
 /// Rust's `{:.0}` leaves it off.
-fn f(v: R, width: usize, decimals: usize) -> String {
-    let digits = format!("{:.decimals$}", f64::from(v));
+///
+/// The reference is built with gfortran's `-fno-sign-zero`, so a negative
+/// value that rounds to zero at this many decimals loses its sign: -0.03
+/// under `F6.1` prints `   0.0`, not `  -0.0`. Rust keeps the sign, so
+/// strip it here.
+pub(crate) fn f(v: R, width: usize, decimals: usize) -> String {
+    let mut digits = format!("{:.decimals$}", f64::from(v));
+    if !digits.contains(|c: char| ('1'..='9').contains(&c)) {
+        digits = digits.trim_start_matches('-').to_string();
+    }
     let point = if decimals == 0 { "." } else { "" };
     let s = format!("{:>width$}", format!("{digits}{point}"));
     if s.len() > width {
@@ -72,7 +79,7 @@ fn f(v: R, width: usize, decimals: usize) -> String {
 }
 
 /// Fortran `Iw`.
-fn i(v: i64, width: usize) -> String {
+pub(crate) fn i(v: i64, width: usize) -> String {
     let s = format!("{v:>width$}");
     if s.len() > width {
         "*".repeat(width)
@@ -106,8 +113,8 @@ fn ntop(method: u32) -> i32 {
     // The order matters: the `ITRUN` tests come first in `SETOUT`, so a
     // MUF-only method never reaches the per-method values below.
     match rewritten(method) {
-        3..=11 => 3,          // ITRUN 3 and 4
-        26..=29 => 6,         // ITRUN 8
+        3..=11 => 3,  // ITRUN 3 and 4
+        26..=29 => 6, // ITRUN 8
         16 | 17 => 7,
         18 => 6,
         19 => 3,
@@ -157,7 +164,11 @@ pub fn nbod(method: u32, card: Option<&[u32]>) -> i32 {
         // numbers up to 25 — eleven more than `OUTBOD2` has labels for.
         // `OUTBOD` recounts as it prints and has no upper bound at all,
         // so from the second hour on the charge can be larger than this.
-        return card.iter().take(14).filter(|l| **l > 0 && **l <= 25).count() as i32;
+        return card
+            .iter()
+            .take(14)
+            .filter(|l| **l > 0 && **l <= 25)
+            .count() as i32;
     }
     match rewritten(method) {
         16 => 13,
@@ -180,7 +191,8 @@ fn rewritten(method: u32) -> u32 {
     }
 }
 
-/// One `ANTENNA` card as the header describes it.
+/// One `ANTENNA` card as the listing describes it: the fields `OUTTOP`
+/// prints on its header line, plus the pattern `OUTANT` prints in full.
 #[derive(Debug, Clone)]
 pub struct AntennaLine {
     /// 1 transmit, 2 receive.
@@ -190,14 +202,24 @@ pub struct AntennaLine {
     pub xfqe: R,
     /// `ANTMODEL`'s ten-character model label.
     pub anttype: String,
+    /// The definition file's own description line.
+    pub description: String,
     /// The card's antenna file field.
     pub file: String,
+    /// The card's design-frequency field.
+    pub design_freq: R,
     /// The card's main beam bearing and the azimuth it ends up cut
     /// along, both as the gain file's `f7.2` left them.
     pub beam_main: R,
     pub offazim: R,
+    /// Ground conductivity and dielectric constant, from the gain file.
+    pub cond: R,
+    pub diel: R,
     /// Power in kilowatts, printed on a transmit card only.
     pub pwrkw: R,
+    /// `array(30,91)` and `aeff(30)`: the pattern itself.
+    pub gains: Vec<[R; 91]>,
+    pub eff: [R; 30],
 }
 
 impl AntennaLine {
@@ -210,10 +232,16 @@ impl AntennaLine {
                 xfqs: a.xfqs,
                 xfqe: a.xfqe,
                 anttype: a.table.anttype.clone(),
+                description: a.table.description.clone(),
                 file: a.file.clone(),
+                design_freq: a.design_freq,
                 beam_main: a.table.beam_main,
                 offazim: a.table.offazim,
+                cond: a.table.cond,
+                diel: a.table.diel,
                 pwrkw: a.pwrkw,
+                gains: a.table.gains.clone(),
+                eff: a.table.eff,
             })
             .collect()
     }
@@ -351,14 +379,14 @@ pub fn end_of_run(version: &str) -> String {
 /// `first_hour` carries `JTX = 1`: the tilde before `METHOD` marks a
 /// header printed while the run was still on its first hour, so only the
 /// first page of a 24-hour run has it.
-fn header_block(h: &Header, page: usize, first_hour: bool) -> (String, i32) {
+fn header_block(h: &Header, page: usize, first_hour: bool, method: u32) -> (String, i32) {
     let mut out = String::new();
     // The page banner. The record opens with a literal form feed.
     out.push_str(&format!(
         "\u{c}     {} Coefficients        {}METHOD{} {} L {}  PAGE{}\n\n",
         text_field(&h.coeff, 4),
         if first_hour { '~' } else { ' ' },
-        i(h.method as i64, 3),
+        i(method as i64, 3),
         text_field(&h.model, 8),
         text_field(&h.version, 8),
         i(page as i64, 4)
@@ -450,8 +478,58 @@ fn header_block(h: &Header, page: usize, first_hour: bool) -> (String, i32) {
     (out, knt)
 }
 
+/// The page state the output routines share through `/OUTPRT/`:
+/// `LPAGES`, the page number `OUTTOP` stamps, and `LINES`, the count each
+/// routine charges its own output against.
+///
+/// `SETOUT` leaves `LINES` at the page limit, so whichever routine runs
+/// first breaks a page before printing anything.
+pub struct Pager<'a> {
+    pub header: &'a Header,
+    pub page: usize,
+    pub lines: i32,
+    pub linmax: i32,
+    /// `METHOD`: the deck's method, except while an `OUTGRAPH` request
+    /// is printing — the driver reassigns the global before it calls
+    /// `OUTMUF` or `OUTGPH`. `OUTTOP` prints it, but a card method 30
+    /// deck carries `MSPEC = 121` and `OUTTOP` prints a literal 30 for
+    /// that, so an `OUTGRAPH` request there never shows in the header.
+    pub method: u32,
+}
+
+impl<'a> Pager<'a> {
+    pub fn new(header: &'a Header, linmax: i32) -> Self {
+        Self {
+            header,
+            page: 0,
+            lines: linmax,
+            linmax,
+            method: header.method,
+        }
+    }
+
+    /// `CALL OUTTOP`: the header block, and the `LINES = LINTOP(15) + KNT`
+    /// it leaves behind.
+    ///
+    /// `first_hour` is `JTX == 1`. `JTX` is the hour index, so a routine
+    /// called after the hour loop — `OUTMUF` and `OUTGPH` — always sees
+    /// the last hour's index and never gets the tilde, unless the run
+    /// asked for a single hour.
+    pub fn outtop(&mut self, first_hour: bool) -> String {
+        self.page += 1;
+        let meth = if self.header.method == 30 {
+            30
+        } else {
+            self.method
+        };
+        let (block, knt) = header_block(self.header, self.page, first_hour, meth);
+        self.lines = self.header.top.count + knt;
+        block
+    }
+}
+
 /// Fortran `NINT`.
-fn nint(v: R) -> i32 {
+pub(crate) fn nint(v: R) -> i32 {
     if v >= 0.0 {
         (f64::from(v) + 0.5).floor() as i32
     } else {
@@ -476,27 +554,38 @@ pub fn listing(
 ) -> String {
     let mut out = preamble(&h.version);
     out.push_str(&echo_deck(deck));
-
     // `SETOUT` leaves the line count at the page limit, so the first
     // hour always breaks a page.
-    let mut used = linmax;
+    let mut pager = Pager::new(h, linmax);
+    out.push_str(&body(&mut pager, hours, lines, nbod_card, botlines));
+    out.push_str(&end_of_run(&h.version));
+    out
+}
+
+/// `OUTLIN` and `OUTBOD`: the systems methods' body, with the page breaks
+/// `OUTLIN` decides.
+pub fn body(
+    pager: &mut Pager,
+    hours: &[HourPrediction],
+    lines: &[usize],
+    nbod_card: i32,
+    botlines: bool,
+) -> String {
+    let mut out = String::new();
+    let linmax = pager.linmax;
     let mut linadd = nbod_card;
-    let mut page = 0;
     for (index, hour) in hours.iter().enumerate() {
-        if linadd + used >= linmax {
-            page += 1;
-            let (block, knt) = header_block(h, page, index == 0);
-            out.push_str(&block);
+        if linadd + pager.lines >= linmax {
             // `OUTTOP` charges the page its own line count plus the
             // antenna lines, which is fewer lines than it printed.
-            used = h.top.count + knt;
+            out.push_str(&pager.outtop(index == 0));
         }
         let (block, printed) = super::run::hour_block(hour, lines);
         out.push_str(&block);
         if !printed {
             // An hour with no mode in any slot prints its frequency line
             // and nothing else, and is charged three lines.
-            used += 3;
+            pager.lines += 3;
             continue;
         }
         // A `BOTLINES` card makes `OUTBOD` recount as it prints, so from
@@ -505,10 +594,212 @@ pub fn listing(
         if botlines {
             linadd = lines.len() as i32;
         }
-        used += linadd + 2;
+        pager.lines += linadd + 2;
     }
-    out.push_str(&end_of_run(&h.version));
     out
+}
+
+/// `JTOUT`: which output routine a card method prints through.
+///
+/// `DECRED` rewrites card method 30 to 20 before it reads the table, so
+/// slot 30's value of 11 is never used and method 30 prints through
+/// `OUTLIN` like method 20.
+pub fn itout(method: u32) -> u32 {
+    match rewritten(method) {
+        1 => 1,
+        2 => 2,
+        3 => 3,
+        4..=6 => 4,
+        7 => 10,
+        8..=11 => 4,
+        12 => 5,
+        13..=15 => 6,
+        16..=23 => 7,
+        24 => 8,
+        25 => 9,
+        26 => 3,
+        27..=29 => 4,
+        _ => 0,
+    }
+}
+
+/// `JTRUN`: which computation a card method runs.
+///
+/// Slot 30 reads 8, but `DECRED` rewrites card method 30 to 20 first, so
+/// the value that applies is slot 20's 7.
+pub fn itrun(method: u32) -> u32 {
+    match rewritten(method) {
+        1 => 1,
+        2 => 2,
+        3..=6 => 3,
+        7..=11 => 4,
+        12 => 5,
+        13..=15 => 6,
+        16..=25 => 7,
+        26..=30 => 8,
+        _ => 0,
+    }
+}
+
+/// The `OUTGRAPH` card: up to twelve further methods' MUF tables or
+/// diurnal graphs, printed from the arrays the run has already filled.
+///
+/// The driver ignores the card unless the run computed MUFs or LUFs, and
+/// then ignores every requested method whose own output is not a MUF
+/// table or a diurnal graph. A request for the LUF table or a LUF graph
+/// is ignored as well unless the run itself computed a LUF.
+///
+/// `SETOUT` does not run again, so a requested method prints the
+/// original method's header lines under its own method number, and the
+/// values are whatever the original method left in the arrays — a
+/// nomogram run asked for method 10's graph plots the takeoff angle
+/// `NOMMUF` never wrote.
+///
+/// A negative request writes to a second output unit that the driver
+/// never opens, so those pages land in a stray `fort.16` rather than in
+/// the listing. They still advance the page number, which is why the
+/// port counts them without printing them.
+fn outgraph(pager: &mut Pager, case: &DeckCase, hours: &[super::run::MufHourOut]) -> String {
+    let mut out = String::new();
+    let Some(requested) = case.outgraph.as_deref() else {
+        return out;
+    };
+    let from = itrun(case.method);
+    if from <= 2 || (5..=6).contains(&from) || from > 8 {
+        return out;
+    }
+    for &want in requested.iter().take(12) {
+        if want == case.method as i32 || want == 0 {
+            continue;
+        }
+        let elsewhere = want < 0;
+        let method = want.unsigned_abs();
+        if method >= 30 {
+            continue;
+        }
+        let (to_out, to_run) = (itout(method), itrun(method));
+        // A LUF table or graph needs a run that computed one.
+        if to_run == 8 && from != 7 && from != 8 {
+            continue;
+        }
+        pager.method = method;
+        let text = match to_out {
+            3 => super::tables::outmuf(pager, hours, method),
+            4 => super::graphs::outgph(pager, hours, method),
+            _ => continue,
+        };
+        if !elsewhere {
+            out.push_str(&text);
+        }
+    }
+    pager.method = case.method;
+    out
+}
+
+/// The whole printed output of one run, the way `HFMUFS` dispatches it.
+///
+/// `LISTIN` writes the preamble and echoes the deck, the routine `JTOUT`
+/// names for the method writes the body, and `HFMUFS` writes the last
+/// line. Methods that print through a routine still being ported return
+/// the preamble and the last line, which is what the reference would
+/// print if its own routine printed nothing.
+pub fn render(itshfbc: &Path, case: &DeckCase, deck: &str) -> Result<String, String> {
+    use super::run::{
+        muf_view, path_report, run_listing, run_luf, run_muf, run_par, MufHourOut, RunInputs,
+    };
+    use super::tables::{outall, outlay, outmuf, outpar, outtab};
+
+    let version = read_version(itshfbc)?;
+    let inp = RunInputs::from(case);
+    let mut out = preamble(&version);
+    out.push_str(&echo_deck(deck));
+
+    let path = path_report(itshfbc, &inp)?;
+    let header = Header::for_case(case, &path, &version);
+    let mut pager = Pager::new(&header, crate::deck::LINES_PER_PAGE);
+
+    // What an `OUTGRAPH` card would print from, filled by whichever
+    // branch computed MUFs or LUFs.
+    let mut graphs: Vec<MufHourOut> = Vec::new();
+    match itout(case.method) {
+        1 => {
+            let rows = run_par(itshfbc, &inp)?;
+            // The rows come back hour by hour, so the count of control
+            // points is the number of rows per hour.
+            let points = rows.len() / 24;
+            out.push_str(&outpar(&mut pager, &rows, points));
+        }
+        3 => {
+            let hours = if case.method == 26 {
+                run_luf(itshfbc, &inp)?
+            } else {
+                run_muf(itshfbc, &inp)?
+            };
+            out.push_str(&outmuf(&mut pager, &hours, case.method));
+            graphs = hours;
+        }
+        4 => {
+            let hours = if (27..=29).contains(&case.method) {
+                run_luf(itshfbc, &inp)?
+            } else {
+                run_muf(itshfbc, &inp)?
+            };
+            out.push_str(&super::graphs::outgph(&mut pager, &hours, case.method));
+            graphs = hours;
+        }
+        10 => {
+            let hours = run_muf(itshfbc, &inp)?;
+            out.push_str(&outlay(&mut pager, &hours));
+            graphs = hours;
+        }
+        7 => {
+            let prediction = run_listing(itshfbc, &inp)?;
+            let rows = super::run::body_lines(case.method, case.botlines.as_deref());
+            out.push_str(&body(
+                &mut pager,
+                &prediction.hours,
+                &rows,
+                nbod(case.method, case.botlines.as_deref()),
+                case.botlines.is_some(),
+            ));
+            graphs = muf_view(&prediction.hours);
+        }
+        8 => {
+            let prediction = run_listing(itshfbc, &inp)?;
+            let freqs: Vec<R> = inp.freqs_mhz.clone();
+            out.push_str(&outtab(&mut pager, &prediction.hours, &freqs));
+            graphs = muf_view(&prediction.hours);
+        }
+        2 => {
+            let hours = super::run::run_ion(itshfbc, &inp)?;
+            out.push_str(&super::graphs::oution(&mut pager, &hours));
+        }
+        9 => {
+            let prediction = run_listing(itshfbc, &inp)?;
+            out.push_str(&outall(&mut pager, &prediction.hours)?);
+            graphs = muf_view(&prediction.hours);
+        }
+        // `ITRUN = 6`, card methods 13 to 15: the driver prints the
+        // antenna patterns and reads the next card, before `SETOUT` has
+        // run, so no header block and no page arithmetic apply.
+        6 => {
+            let mut page = 0usize;
+            out.push_str(&super::graphs::outant(
+                &mut page,
+                &path.antennas,
+                case.method,
+                &version,
+            ));
+        }
+        // `ITRUN = 5`, card method 12: the driver leaves the hour loop
+        // after the first hour and no output option matches, so the run
+        // prints its preamble and nothing else.
+        5 => {}
+        _ => {}
+    }
+    out.push_str(&outgraph(&mut pager, case, &graphs));
+    out.push_str(&end_of_run(&version));
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -558,6 +849,9 @@ mod tests {
 
     #[test]
     fn the_echoed_deck_drops_trailing_blanks() {
-        assert_eq!(echo_deck("LABEL     a    \nQUIT\n"), " LABEL     a\n QUIT\n");
+        assert_eq!(
+            echo_deck("LABEL     a    \nQUIT\n"),
+            " LABEL     a\n QUIT\n"
+        );
     }
 }

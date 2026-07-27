@@ -154,6 +154,7 @@ fn gather(dir: &Path, cache_dir: &Path) -> Result<(String, Vec<Sample>, Vec<f64>
             freqs_mhz: vec![path.freq_mhz],
             tx_antennas: Vec::new(),
             rx_antennas: Vec::new(),
+            outgraph: None,
             sporadic_e: true,
         };
         let climatology = run_snr(&bin, &case, &format!("iv-{index}-c"), None)?;

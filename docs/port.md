@@ -96,6 +96,11 @@ Then, from `propcore/`, with `cargo` as above:
 | `mufcheck`  | methods 1, 3 and 7 tables                             | `--method 1\|3\|7` `--cases N` `--from N` `--jobs J`                                                                                           |
 | `areacheck` | area coverage rows and antennas against the grid file | `--jobs J`                                                                                                                                     |
 
+`porttest --fuzz` is not currently usable: it reports stage mismatches
+on generated decks where `fuzz` finds the finished listings identical,
+so the fault is in how the harness pairs its dumps, not in the engine.
+`porttest` over the 96 sweep cases is clean and is the mode to trust.
+
 `fuzz`'s `--method`, `--coeffs`, `--fprob`, `--botlines` and
 `--toplines` are applied
 after a case is generated, so the corpus is the same set of paths with
@@ -119,25 +124,26 @@ geometry trace only matches this way.
 
 ## Stage status
 
-| stage                                 | Fortran                                                           | Rust                   | verified against trace                   |
-| ------------------------------------- | ----------------------------------------------------------------- | ---------------------- | ---------------------------------------- |
-| constants, magnetic pole              | `blkdat`, `set_magnetic_pole`                                     | `engine::con`          | via geometry                             |
-| path geometry, control points         | `geom.for`                                                        | `engine::geometry`     | worst 3e-4 km / 1.3e-5 deg over 96 cases |
-| magnetic field at control points      | `magvar.for`, `magfin.for`                                        | `engine::magnetic`     | worst 5e-8 over 408 control points       |
-| coefficient loading                   | `redmap.for`                                                      | `engine::coefficients` | 819k elements, worst at print precision  |
-| map evaluation, layer parameters      | `geotim`, `virtim`, `versy`, `noisy`, `ef1var`, `timvar`, `f2var` | `engine::ionosphere`   | 733k AB values, 9.8k point-hours         |
-| sporadic E parameters                 | `esind`                                                           | `engine::ionosphere`   | 9.8k point-hours                         |
-| sporadic E losses                     | `esreg`, `esmod`                                                  | `engine::modes`        | with the mode loop below                 |
-| MUF                                   | `ionset`, `lecden`, `gethp`, `f2dis`, `curmuf`                    | `engine::muf`          | 2.3k hours, 20 fields + profiles         |
-| ionogram, reflectrix, deviative loss  | `sang`, `selmod`, `genion`, `fobby`, `alosfv`                     | `engine::ionogram`     | 4.6k area calls incl. exact reflectrix   |
-| signal distribution, absorption       | `syssy`, `xlin`, `prbmuf`, `sigdis`                               | `engine::sigdis`       | 3.2k calls, 20 fields                    |
-| noise                                 | `anois1`, `genfam`, `genois`                                      | `engine::noise`        | 70k calls, 13 fields                     |
-| ground constants, path latitude       | `geom.for` land-mass lookup                                       | `engine::ionosphere`   | identical sea/land at every point        |
-| mode loop (raysets, losses, Es modes) | `penang`, `findf`, `fdist`, `inmuf`, `regmod`, `esmod`, `esreg`   | `engine::modes`        | 46k reflectrix, 49k hop, 32k mode dumps  |
-| long-path model                       | `gmloss`, `settxr`, `seltxr`, `lngpat` and helpers                | `engine::modes`        | 14.4k two-end loss tables, exact rows    |
-| reliability, per-frequency outputs    | `relbil`, `serprb`, `mpath`, `setlng`, the smoothing blend        | `engine::modes`        | 31.7k slots + 8.6k smoothed, 24 fields   |
-| output fields, whole engine           | `setluf`, `outbod` listing body, `hfmufs` hour loop               | `engine::run`          | listing bit-identical over 96 cases      |
-| listing text: banner, header, paging  | `listin`, `outtop`, `setout`, `outlin` page breaks                | `engine::output`       | whole file identical over 600 cases      |
+| stage                                 | Fortran                                                                                                   | Rust                               | verified against trace                            |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------- |
+| constants, magnetic pole              | `blkdat`, `set_magnetic_pole`                                                                             | `engine::con`                      | via geometry                                      |
+| path geometry, control points         | `geom.for`                                                                                                | `engine::geometry`                 | worst 3e-4 km / 1.3e-5 deg over 96 cases          |
+| magnetic field at control points      | `magvar.for`, `magfin.for`                                                                                | `engine::magnetic`                 | worst 5e-8 over 408 control points                |
+| coefficient loading                   | `redmap.for`                                                                                              | `engine::coefficients`             | 819k elements, worst at print precision           |
+| map evaluation, layer parameters      | `geotim`, `virtim`, `versy`, `noisy`, `ef1var`, `timvar`, `f2var`                                         | `engine::ionosphere`               | 733k AB values, 9.8k point-hours                  |
+| sporadic E parameters                 | `esind`                                                                                                   | `engine::ionosphere`               | 9.8k point-hours                                  |
+| sporadic E losses                     | `esreg`, `esmod`                                                                                          | `engine::modes`                    | with the mode loop below                          |
+| MUF                                   | `ionset`, `lecden`, `gethp`, `f2dis`, `curmuf`                                                            | `engine::muf`                      | 2.3k hours, 20 fields + profiles                  |
+| ionogram, reflectrix, deviative loss  | `sang`, `selmod`, `genion`, `fobby`, `alosfv`                                                             | `engine::ionogram`                 | 4.6k area calls incl. exact reflectrix            |
+| signal distribution, absorption       | `syssy`, `xlin`, `prbmuf`, `sigdis`                                                                       | `engine::sigdis`                   | 3.2k calls, 20 fields                             |
+| noise                                 | `anois1`, `genfam`, `genois`                                                                              | `engine::noise`                    | 70k calls, 13 fields                              |
+| ground constants, path latitude       | `geom.for` land-mass lookup                                                                               | `engine::ionosphere`               | identical sea/land at every point                 |
+| mode loop (raysets, losses, Es modes) | `penang`, `findf`, `fdist`, `inmuf`, `regmod`, `esmod`, `esreg`                                           | `engine::modes`                    | 46k reflectrix, 49k hop, 32k mode dumps           |
+| long-path model                       | `gmloss`, `settxr`, `seltxr`, `lngpat` and helpers                                                        | `engine::modes`                    | 14.4k two-end loss tables, exact rows             |
+| reliability, per-frequency outputs    | `relbil`, `serprb`, `mpath`, `setlng`, the smoothing blend                                                | `engine::modes`                    | 31.7k slots + 8.6k smoothed, 24 fields            |
+| output fields, whole engine           | `setluf`, `outbod` listing body, `hfmufs` hour loop                                                       | `engine::run`                      | listing bit-identical over 96 cases               |
+| listing text: banner, header, paging  | `listin`, `outtop`, `setout`, `outlin` page breaks                                                        | `engine::output`                   | whole file identical over 600 cases               |
+| every card method's output routine    | `outpar`, `oution`/`ionplt`, `outmuf`, `outlay`, `outgph`/`gphbod`, `outant`, `outtab`/`tabbod`, `outall` | `engine::tables`, `engine::graphs` | whole file identical, methods 1-30, 40 cases each |
 
 Working order is data flow, top to bottom. Each stage lands with its trace
 instrumentation, its `porttest` comparison, and unit tests.
@@ -561,7 +567,31 @@ field prints without a minus: a latitude of -1.6e-10 in an `F10.4` field
 is `0.0000`, not `-0.0000`. The listing comparisons could never catch
 this, because they parse the numbers back and `-0.0` equals `0.0`; it
 surfaced the first time an output was compared as text. `run::f_fixed`
-applies it.
+applies it, and so does `output::f` — the listing needed it too, but
+only card methods 13 and 15 exposed it, because `OUTANT` is the one
+routine that prints a whole antenna pattern and so prints thousands of
+gains, some of which round to zero from below.
+
+**`to_degrees()` is not `R2D`.** Rust's conversion factor is
+`180.0f32 / PI`, which is one `f32` step from the `57.295779513` that
+`blkdat.for` puts in `/CON/`. One step is enough to move an
+interpolated antenna gain across a rounding boundary, so every
+conversion in the engine goes through `con::R2D` and `con::D2R`.
+
+**A gain table cell can land on the `f7.3` half-thousandth.** The
+reference writes its computed pattern to `run/gainNN.dat` with `F7.3`
+and reads it back, so a pattern value differing from the port's in its
+last `f32` bit becomes a whole 0.001 difference in the table when the
+two straddle a half-thousandth. `GAIN` then carries that into the
+interpolated gain, and card method 25 is the only output that prints a
+gain to two decimals, so it is the only place it can show. One cell in
+40 generated cases does: card method 25, case 39, 27.93 MHz at 15 UT,
+`R. GAIN` -12.32 against -12.33, from `samples/sample.43`'s 28 MHz /
+9 degree cell reading -11.801 in the reference's file against the
+port's -11.8015003. Every IEEE-conformant build of the reference agrees
+with itself here, so this is the port's own last bit, not build noise.
+It is inside the tolerance envelope and is the only cell in any method
+that is not byte-identical.
 
 **State survives between hours and between calls.** `/SON/`, `/REFLX/`,
 `/ZON/`, `/allMODE/` and `/MODES/` persist across hours and are read
@@ -569,6 +599,69 @@ stale. `FSECV` carries from each hour into the next, which is why an area
 run's single hour is not the same computation as that hour inside a
 24-hour run. Some antenna locals survive between calls on gfortran's
 stack without being in a `SAVE` statement.
+
+## Every card method's own output routine
+
+`HFMUFS` dispatches on `JTOUT(METHOD)`, and `engine::output::render`
+mirrors that table. What each routine writes, and where it lives:
+
+| `ITOUT` | card methods     | routine           | module           |
+| ------: | ---------------- | ----------------- | ---------------- |
+|       1 | 1                | `OUTPAR`          | `engine::tables` |
+|       2 | 2                | `OUTION`/`IONPLT` | `engine::graphs` |
+|       3 | 3, 26            | `OUTMUF`          | `engine::tables` |
+|       4 | 4-6, 8-11, 27-29 | `OUTGPH`/`GPHBOD` | `engine::graphs` |
+|       5 | 12               | nothing           | —                |
+|       6 | 13-15            | `OUTANT`          | `engine::graphs` |
+|       7 | 16-23, 30        | `OUTLIN`/`OUTBOD` | `engine::output` |
+|       8 | 24               | `OUTTAB`/`TABBOD` | `engine::tables` |
+|       9 | 25               | `OUTALL`          | `engine::tables` |
+|      10 | 7                | `OUTLAY`          | `engine::tables` |
+
+Slot 11 of `JTOUT` (card method 30) is dead: `DECRED` rewrites method 30
+to `METHOD = 20, MSPEC = 121` before the table is read.
+
+Three of these do not fit the pattern the others follow.
+
+- Card method 12 computes a MUF and then leaves the hour loop with no
+  output option matching, so the run prints its preamble, the echoed
+  deck and the end-of-run line and nothing else.
+- Card methods 13 to 15 print through `OUTANT` _before_ `SETOUT` runs,
+  so they get no header block and no page arithmetic — each antenna
+  card's pattern starts its own page with a form feed and a banner of
+  its own.
+- Card method 25 prints from inside `LUFFY`'s frequency loop, which is
+  why its header carries the tilde on every hour rather than only the
+  first, and why a deck whose first frequency slot is empty never gets
+  the ionospheric parameter table: `OUTALL` calls `OUTPAR` when its
+  argument is 1, and the loop skips an empty slot before reaching the
+  call.
+
+`OUTALL` has one input it cannot print. Its formats are built at run
+time with the mode count as a repeat count, and a repeat count of zero
+is not a legal Fortran format, so a frequency with no modes at all stops
+the reference with a runtime error part way through the file. The port
+refuses the same run rather than invent an output for it.
+
+## The OUTGRAPH card
+
+`OUTGRAPH` names up to twelve further card methods whose MUF table or
+diurnal graph is printed after the run's own output, from the arrays the
+run already filled. `HFMUFS` ignores the card unless the run computed
+MUFs or LUFs (`ITRUN` 3, 4, 7 or 8), ignores a request whose own output
+is not `ITOUT` 3 or 4, and ignores a LUF table or LUF graph unless the
+run itself computed a LUF.
+
+`SETOUT` does not run again, so a requested method prints the original
+method's header lines under its own method number — except on a card
+method 30 deck, where `OUTTOP` prints a literal 30 because `MSPEC` is
+121. The values are whatever the original method left in the arrays: a
+nomogram run asked for method 10's graph plots the takeoff angle
+`NOMMUF` never wrote, which is the -1 `SETOUT` cleared the array to.
+
+A negative request writes to a second output unit the driver never
+opens, so those pages land in a stray `fort.16`. They still advance the
+page number, which is why the port counts them without printing them.
 
 ## The COEFFS and FPROB cards
 

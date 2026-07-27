@@ -31,7 +31,7 @@
 use std::fs;
 use std::path::Path;
 
-use super::con::R;
+use super::con::{R, R2D};
 
 /// Frequencies in a table: 1 to 30 MHz, one row each.
 pub const FREQS: usize = 30;
@@ -54,7 +54,11 @@ pub struct Unsupported {
 
 impl std::fmt::Display for Unsupported {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "antenna type {} ({}) is not ported", self.jant, self.family)
+        write!(
+            f,
+            "antenna type {} ({}) is not ported",
+            self.jant, self.family
+        )
     }
 }
 
@@ -151,6 +155,10 @@ pub struct GainTable {
     /// the only thing the header says about which antenna a card names
     /// beyond the file's own name.
     pub anttype: String,
+    /// The rest of that line, which `ANTCALC` writes as the definition
+    /// file's own description and `DECRED` reads back as `antname`.
+    /// Only the antenna-pattern methods print it.
+    pub description: String,
     /// The second header line of `gainNN.dat`: first and last frequency,
     /// the main beam bearing, the off-azimuth, then `parm(4)` and
     /// `parm(3)` — conductivity and dielectric constant.
@@ -168,6 +176,7 @@ impl Default for GainTable {
             gains: vec![[0.0; ELEVS]; FREQS],
             eff: [0.0; FREQS],
             anttype: String::new(),
+            description: String::new(),
             fs: 0.0,
             fe: 0.0,
             beam_main: 0.0,
@@ -177,7 +186,6 @@ impl Default for GainTable {
         }
     }
 }
-
 
 /// An area-coverage gain table: `/Careaant/`'s `iarray360`.
 ///
@@ -223,6 +231,10 @@ pub struct InstalledAntenna {
     /// `antfile`: the card's antenna file field, which the header prints
     /// as it stands.
     pub file: String,
+    /// `designfreq`: the card's own field, which only the
+    /// antenna-pattern methods print. The gain file does not carry it,
+    /// so it comes from the card either way.
+    pub design_freq: R,
 }
 
 /// One computed card, ready for [`AntennaSet::install`].
@@ -242,6 +254,8 @@ pub struct Installation {
     pub power_kw: R,
     /// The card's antenna file field.
     pub file: String,
+    /// The card's design-frequency field.
+    pub design_freq: R,
 }
 
 /// The installed antennas of one run: what `/cantenna/` holds while
@@ -304,6 +318,7 @@ impl AntennaSet {
             mut table,
             power_kw,
             file,
+            design_freq,
         } = ins;
         for row in table.gains.iter_mut() {
             for slot in row.iter_mut() {
@@ -322,6 +337,7 @@ impl AntennaSet {
             pwrdba: pwrdba_of(iat, power_kw),
             pwrkw: pwrkw_of(iat, power_kw),
             file,
+            design_freq,
         });
     }
 
@@ -342,6 +358,7 @@ impl AntennaSet {
             table,
             power_kw,
             file,
+            design_freq,
         } = ins;
         self.ants.push(InstalledAntenna {
             iat,
@@ -352,6 +369,7 @@ impl AntennaSet {
             pwrdba: pwrdba_of(iat, power_kw),
             pwrkw: pwrkw_of(iat, power_kw),
             file,
+            design_freq,
         });
         Ok(())
     }
@@ -362,6 +380,7 @@ impl AntennaSet {
         let mut set = Self::default();
         let table = GainTable {
             anttype: antmodel(0, 0.0),
+            description: "ISOTROPE".to_string(),
             fs: 2.0,
             fe: 30.0,
             ..Default::default()
@@ -373,6 +392,7 @@ impl AntennaSet {
             table,
             power_kw,
             file: crate::deck::ANTENNA_FILE.to_string(),
+            design_freq: 0.0,
         };
         set.install(card(1, watts / 1000.0, table.clone()));
         set.install(card(2, 0.0, table));
@@ -706,6 +726,7 @@ pub fn point_to_point_table(s: &AntennaSetup) -> Result<GainTable, Unsupported> 
 
     let mut table = GainTable {
         anttype: antmodel(jant, design_freq),
+        description: s.file.description.clone(),
         fs: s.min_freq as R,
         fe: s.max_freq as R,
         // Both bearings go through the gain file's `f7.2`, so the header
@@ -960,6 +981,7 @@ pub fn area_table(s: &AntennaSetup, freq: R) -> Result<(GainTable, AreaGainTable
     // area branch.
     let header = GainTable {
         anttype: antmodel(jant, design_freq),
+        description: s.file.description.clone(),
         fs: s.min_freq as R,
         fe: s.max_freq as R,
         beam_main: through_f7_2(s.beam_deg),
@@ -1036,9 +1058,8 @@ pub fn area_table(s: &AntennaSetup, freq: R) -> Result<(GainTable, AreaGainTable
             eff = eff1 + (eff2 - eff1) * fract;
             let mut column = [0i16; ELEVS];
             for (ielev, slot) in column.iter_mut().enumerate() {
-                *slot = area_store(
-                    parm[0] + gains1[ielev] + (gains2[ielev] - gains1[ielev]) * fract,
-                );
+                *slot =
+                    area_store(parm[0] + gains1[ielev] + (gains2[ielev] - gains1[ielev]) * fract);
             }
             // Azimuth-independent: the reference computes this same
             // column at all 360 bearings.
@@ -1122,7 +1143,10 @@ pub fn area_gain_lookup(table: &AreaGainTable, ofaz_deg: R, delta_rad: R) -> (R,
         ip1 = 1;
     }
     let xazim = ofaz - (i - 1) as R;
-    let deltd = delta_rad.to_degrees();
+    // `GAIN` converts with `/CON/`'s own `R2D`, which is one `f32` step
+    // from Rust's `to_degrees()` factor. The step is enough to flip the
+    // last printed digit of a gain that lands on a rounding boundary.
+    let deltd = delta_rad * R2D;
     let j = ((deltd + 1.0) as i32).clamp(1, ELEVS as i32);
     let jp1 = (j + 1).min(ELEVS as i32);
     let xdelta = deltd - (j - 1) as R;
@@ -1292,7 +1316,10 @@ pub fn gain_lookup(table: &GainTable, fmc: R, delta_rad: R) -> (R, R) {
     let i = (fmc as i32).clamp(1, FREQS as i32);
     let ip1 = (i + 1).min(FREQS as i32);
     let xfmc = fmc - (fmc as i32) as R;
-    let deltd = delta_rad.to_degrees();
+    // `GAIN` converts with `/CON/`'s own `R2D`, which is one `f32` step
+    // from Rust's `to_degrees()` factor. The step is enough to flip the
+    // last printed digit of a gain that lands on a rounding boundary.
+    let deltd = delta_rad * R2D;
     let j = ((deltd + 1.0) as i32).clamp(1, ELEVS as i32);
     let jp1 = (j + 1).min(ELEVS as i32);
     let xdelta = deltd - (j - 1) as R;

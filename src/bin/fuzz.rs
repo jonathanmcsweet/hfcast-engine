@@ -19,9 +19,8 @@
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::process::ExitCode;
 
-use propcore::deck::{build_deck, DeckCase, LINES_PER_PAGE};
-use propcore::engine::output::{listing, nbod, read_version, Header};
-use propcore::engine::run::{body_lines, run_listing, RunInputs};
+use propcore::deck::{build_deck, DeckCase};
+use propcore::engine::output::render;
 use propcore::fuzz::{band_for, fuzz_cases};
 use propcore::listing::{parse_listing, ParsedListing};
 use propcore::runner::{map_limit, run_deck, variant_bin, IsolatedRoot};
@@ -129,7 +128,9 @@ fn main() -> ExitCode {
     let method = number("--method", 30) as u32;
     // `--coeffs URSI88` asks the same question of the other foF2 map
     // set; the default is the CCIR set the corpus was built on.
-    let ursi = flag("--coeffs").map(|v| v.starts_with("URSI")).unwrap_or(false);
+    let ursi = flag("--coeffs")
+        .map(|v| v.starts_with("URSI"))
+        .unwrap_or(false);
     // `--fprob a,b,c,d` sets the whole card, for the critical-frequency
     // multipliers the sporadic-E switch cannot express.
     let fprob: Option<[f64; 4]> = flag("--fprob").and_then(|v| {
@@ -138,13 +139,11 @@ fn main() -> ExitCode {
     });
     // `--botlines a,b,c` writes a BOTLINES card, which selects the
     // body lines and their order for any method.
-    let botlines: Option<Vec<u32>> = flag("--botlines").map(|v| {
-        v.split(',').filter_map(|t| t.trim().parse().ok()).collect()
-    });
+    let botlines: Option<Vec<u32>> =
+        flag("--botlines").map(|v| v.split(',').filter_map(|t| t.trim().parse().ok()).collect());
     // `--toplines a,b,c` does the same for the header's lines.
-    let toplines: Option<Vec<u32>> = flag("--toplines").map(|v| {
-        v.split(',').filter_map(|t| t.trim().parse().ok()).collect()
-    });
+    let toplines: Option<Vec<u32>> =
+        flag("--toplines").map(|v| v.split(',').filter_map(|t| t.trim().parse().ok()).collect());
     for case in cases.iter_mut() {
         case.method = method;
         case.ursi = ursi;
@@ -198,9 +197,7 @@ fn main() -> ExitCode {
     println!("| identical | {matched} |");
     println!("| both engines refused | {both_refused} |");
     println!("| differing | {} |", failures.len());
-    println!(
-        "\n{lines} printed lines compared, holding {cells} cells and {modes} mode labels.\n"
-    );
+    println!("\n{lines} printed lines compared, holding {cells} cells and {modes} mode labels.\n");
 
     if failures.is_empty() {
         println!("Verdict: the same listing text on every case the reference answered.");
@@ -393,11 +390,10 @@ fn check_case(reference: &std::path::Path, case: &DeckCase) -> Outcome {
     };
 
     let fortran = run_deck(reference, root.path(), &deck);
-    let inputs = RunInputs::from(case);
     // The port panics where the engine stops, so a panic is caught and
     // compared against the Fortran's refusal rather than ending the run.
-    let ported = match catch_unwind(AssertUnwindSafe(|| run_listing(root.path(), &inputs))) {
-        Ok(Ok(prediction)) => Ok(prediction),
+    let ported = match catch_unwind(AssertUnwindSafe(|| render(root.path(), case, &deck))) {
+        Ok(Ok(text)) => Ok(text),
         Ok(Err(e)) => Err(e),
         Err(payload) => Err(panic_message(payload)),
     };
@@ -415,22 +411,7 @@ fn check_case(reference: &std::path::Path, case: &DeckCase) -> Outcome {
             which: "port",
             why: pe,
         },
-        (Ok(text), Ok(prediction)) => {
-            let version = match read_version(root.path()) {
-                Ok(v) => v,
-                Err(e) => return Outcome::Broken(format!("version file: {e}")),
-            };
-            let rows = body_lines(case.method, case.botlines.as_deref());
-            let header = Header::for_case(case, &prediction.path, &version);
-            let ours = listing(
-                &deck,
-                &header,
-                &prediction.hours,
-                &rows,
-                nbod(case.method, case.botlines.as_deref()),
-                LINES_PER_PAGE,
-                case.botlines.is_some(),
-            );
+        (Ok(text), Ok(ours)) => {
             let lines = line_diffs(&text, &ours);
             let a = parse_listing(&text);
             let b = parse_listing(&ours);

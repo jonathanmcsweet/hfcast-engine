@@ -105,8 +105,7 @@ fn destination(lat: f64, lon: f64, bearing_deg: f64, distance_km: f64) -> (f64, 
     let lon1 = lon.to_radians();
     let th = bearing_deg.to_radians();
     let lat2 = (lat1.sin() * d.cos() + lat1.cos() * d.sin() * th.cos()).asin();
-    let lon2 = lon1
-        + (th.sin() * d.sin() * lat1.cos()).atan2(d.cos() - lat1.sin() * lat2.sin());
+    let lon2 = lon1 + (th.sin() * d.sin() * lat1.cos()).atan2(d.cos() - lat1.sin() * lat2.sin());
     (lat2.to_degrees(), normalize_lon(lon2.to_degrees()))
 }
 
@@ -122,7 +121,11 @@ pub fn band_for(index: u64) -> (f64, f64, &'static str) {
 /// exactly the deck that failed.
 pub fn fuzz_case(index: u64) -> DeckCase {
     // Offset the seed so case 0 is not the generator's degenerate state.
-    let mut rng = Rng::new(index.wrapping_mul(0x2545_F491_4F6C_DD1D).wrapping_add(0x1234_5678));
+    let mut rng = Rng::new(
+        index
+            .wrapping_mul(0x2545_F491_4F6C_DD1D)
+            .wrapping_add(0x1234_5678),
+    );
     let (near, far, _) = band_for(index);
 
     // Endpoints: a random start, then a bearing and a distance from the
@@ -177,10 +180,31 @@ pub fn fuzz_case(index: u64) -> DeckCase {
         required_snr_db: rng.int(0, 90) as f64,
         noise_dbw: rng.int(100, 170) as f64,
         sporadic_e: rng.chance(0.5),
+        outgraph: pick_outgraph(&mut rng),
         tx_antennas: pick_antennas(&mut rng, 1),
         rx_antennas: pick_antennas(&mut rng, 2),
         freqs_mhz,
     }
+}
+
+/// A quarter of the cases carry an `OUTGRAPH` card, drawn from the
+/// whole card-method range plus the values the driver has to reject:
+/// zero, a negative number, and a number past the table.
+fn pick_outgraph(rng: &mut Rng) -> Option<Vec<i32>> {
+    if !rng.chance(0.25) {
+        return None;
+    }
+    let count = rng.int(1, 12) as usize;
+    Some(
+        (0..count)
+            .map(|_| match rng.int(0, 9) {
+                0 => 0,
+                1 => -(rng.int(1, 29) as i32),
+                2 => rng.int(30, 40) as i32,
+                _ => rng.int(1, 29) as i32,
+            })
+            .collect(),
+    )
 }
 
 /// Antennas a case can draw, spanning every computable family: the
@@ -297,7 +321,11 @@ mod tests {
         for case in fuzz_cases(0, 400) {
             assert!(!case.freqs_mhz.is_empty());
             assert!(case.freqs_mhz.len() <= FREQ_SLOTS);
-            assert!(case.freqs_mhz.windows(2).all(|w| w[0] <= w[1]), "{:?}", case.freqs_mhz);
+            assert!(
+                case.freqs_mhz.windows(2).all(|w| w[0] <= w[1]),
+                "{:?}",
+                case.freqs_mhz
+            );
             assert!(case.freqs_mhz.iter().all(|f| *f >= 1.6 && *f <= 30.0));
         }
     }
@@ -321,10 +349,9 @@ mod tests {
             let (near, far, name) = band_for(index);
             let (lat1, lon1) = (c.from_lat.to_radians(), c.from_lon.to_radians());
             let (lat2, lon2) = (c.to_lat.to_radians(), c.to_lon.to_radians());
-            let central = (lat1.sin() * lat2.sin()
-                + lat1.cos() * lat2.cos() * (lon2 - lon1).cos())
-            .clamp(-1.0, 1.0)
-            .acos();
+            let central = (lat1.sin() * lat2.sin() + lat1.cos() * lat2.cos() * (lon2 - lon1).cos())
+                .clamp(-1.0, 1.0)
+                .acos();
             let km = central * EARTH_RADIUS_KM;
             // Rounding the endpoints to the card's two decimals moves
             // them by up to about a kilometre.

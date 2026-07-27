@@ -1,2 +1,7 @@
 # Fetched WSPR aggregates and generated per-path detail
 data/
+
+# A run with a negative OUTGRAPH method writes to a Fortran unit the
+# driver never opens, so the reference leaves this behind next to
+# whichever directory the harness ran from.
+fort.16
