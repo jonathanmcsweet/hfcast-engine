@@ -120,6 +120,22 @@ pub struct DeckCase {
     /// A `TOPLINES` card: which of the header's lines print. Like
     /// `BOTLINES` it overrides the method's own selection.
     pub toplines: Option<Vec<u32>>,
+    /// The `EXECUTE` card's `KRUN` field, which says how much of the
+    /// per-hour ionosphere the driver recomputes: 0 all of it, 1 all
+    /// but sporadic E, 2 only the map evaluation and sporadic E, 3 or
+    /// more none of it. Anything above zero is what lets an `EFVAR` or
+    /// `ESVAR` card's values stand.
+    pub krun: i32,
+    /// `EFVAR` cards: per control point, the E, F1 and F2 critical
+    /// frequency, semithickness and height of maximum.
+    pub efvar: Vec<EfVar>,
+    /// `ESVAR` cards: per control point, the sporadic-E lower decile,
+    /// median and upper decile, and the height of reflection.
+    pub esvar: Vec<EsVar>,
+    /// An `EDP` card and the electron density profile that follows it:
+    /// 50 true heights then 50 plasma frequencies squared. `LECDEN`
+    /// then leaves the profile alone.
+    pub edp: Option<Edp>,
     /// Cards written verbatim before the `METHOD` card. This is how the
     /// deck carries a card that reaches no computation — `FREEFORM` and
     /// `ANTOUT` both set a variable nothing reads — so that a run with
@@ -281,6 +297,75 @@ fn outgraph_card(methods: Option<&[i32]>) -> Result<String, DeckError> {
     Ok(card)
 }
 
+/// One `EFVAR` card.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EfVar {
+    /// Control point, 1 to 5.
+    pub area: usize,
+    /// Critical frequency, semithickness and height per layer.
+    pub fi: [f64; 3],
+    pub yi: [f64; 3],
+    pub hi: [f64; 3],
+}
+
+/// One `ESVAR` card.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EsVar {
+    pub area: usize,
+    pub fs: [f64; 3],
+    pub hs: f64,
+}
+
+/// An `EDP` card with its profile.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Edp {
+    /// The card's sample area field. Outside 1 to 3 the driver reads it
+    /// as 1.
+    pub area: i32,
+    pub htr: [f64; 50],
+    pub fnsq: [f64; 50],
+}
+
+/// The `EFVAR`, `ESVAR` and `EDP` cards of a case, in that order.
+fn override_cards(c: &DeckCase) -> Result<Vec<String>, DeckError> {
+    let mut cards = Vec::new();
+    for e in &c.efvar {
+        let mut card = format!("EFVAR     {}", field(&e.area.to_string(), 5)?);
+        for layer in 0..3 {
+            card.push_str(&field(&format!("{:.2}", e.fi[layer]), 5)?);
+            card.push_str(&field(&format!("{:.1}", e.yi[layer]), 5)?);
+            card.push_str(&field(&format!("{:.1}", e.hi[layer]), 5)?);
+        }
+        cards.push(card);
+    }
+    for e in &c.esvar {
+        let mut card = format!("ESVAR     {}", field(&e.area.to_string(), 5)?);
+        for v in e.fs {
+            card.push_str(&field(&format!("{v:.2}"), 5)?);
+        }
+        card.push_str(&field(&format!("{:.1}", e.hs), 5)?);
+        cards.push(card);
+    }
+    if let Some(edp) = &c.edp {
+        cards.push(format!("EDP       {}", field(&edp.area.to_string(), 5)?));
+        // Two profiles of 50 values, each written 16 to a record. The
+        // card's format is `F5.2`, but a height needs more than five
+        // characters at two decimals, and an explicit decimal point
+        // overrides the implied one on input, so one decimal is what
+        // fits.
+        for values in [&edp.htr, &edp.fnsq] {
+            for chunk in values.chunks(16) {
+                let mut record = String::new();
+                for v in chunk {
+                    record.push_str(&field(&format!("{v:.1}"), 5)?);
+                }
+                cards.push(record);
+            }
+        }
+    }
+    Ok(cards)
+}
+
 pub fn build_deck(c: &DeckCase) -> Result<String, DeckError> {
     if c.freqs_mhz.len() > FREQ_SLOTS {
         return Err(DeckError::TooManyFrequencies(c.freqs_mhz.len()));
@@ -377,6 +462,7 @@ pub fn build_deck(c: &DeckCase) -> Result<String, DeckError> {
         // The TOPLINES and BOTLINES cards each take fourteen I5 fields;
         // the unused ones stay blank, which reads as zero and selects no
         // line.
+        override_cards(c)?.join("\n"),
         c.extra_cards.join("\n"),
         match &c.comment {
             Some(text) => format!("COMMENT   {text}"),
@@ -394,7 +480,7 @@ pub fn build_deck(c: &DeckCase) -> Result<String, DeckError> {
             field(&c.method.to_string(), 5)?,
             field("0", 5)?
         ),
-        "EXECUTE".to_string(),
+        format!("EXECUTE   {}", field(&c.krun.to_string(), 5)?),
         "QUIT".to_string(),
     ]);
     let lines: Vec<String> = lines.into_iter().filter(|l| !l.is_empty()).collect();
@@ -434,6 +520,10 @@ mod tests {
             integrate: None,
             comment: None,
             extra_cards: Vec::new(),
+            krun: 0,
+            efvar: Vec::new(),
+            esvar: Vec::new(),
+            edp: None,
         }
     }
 

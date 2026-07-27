@@ -115,6 +115,11 @@ pub struct IonoState {
     /// `OFF` form: `DECRED` assigns 1 before it tests for `OFF` and
     /// never restores the program-start value.
     pub iedp: i32,
+    /// `IELECT`: an `EDP` card supplied the electron density profile, so
+    /// `LECDEN` leaves `HTR` and `FNSQ` alone. The source tests all
+    /// three slots of the flag rather than the one for the area it was
+    /// asked about, so one card suppresses the profile for every area.
+    pub ielect: bool,
 }
 
 impl IonoState {
@@ -130,6 +135,7 @@ impl IonoState {
             fnsq: [0.0; 50],
             fsecv: [0.0; 3],
             iedp: -1,
+            ielect: false,
         };
         for (k, p) in params.iter().enumerate() {
             state.fi[k] = p.fi;
@@ -202,6 +208,9 @@ pub fn ionset(s: &mut IonoState) {
 /// slot `k` (0-based) into `htr`/`fnsq`, reshaping the slot's F1 layer
 /// where the source does.
 pub fn lecden(s: &mut IonoState, k: usize) {
+    if s.ielect {
+        return;
+    }
     let xlow: R = 0.8516;
     let hz = s.hi[k][0] - s.yi[k][0];
     let xup = 0.98 * s.fi[k][0] / s.fi[k][2];

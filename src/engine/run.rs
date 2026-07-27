@@ -24,7 +24,10 @@ use super::coefficients::{redmap, CoefficientSet, FoF2Model};
 use super::con::{MagneticPole, D2R, R, R2D, RZ};
 use super::geometry::{path_geometry, PathGeometry};
 use super::ionogram::{alosfv, fobby, genion, sang, selmod, Ionogram};
-use super::ionosphere::{alatd, cofion, esind, geotim, ground_constants, layer_parameters, virtim};
+use super::ionosphere::{
+    alatd, cofion, esind, geotim, geotim_clck, ground_constants, layer_parameters, virtim,
+    EsParams, LayerParams,
+};
 use super::magnetic::{magvar, MagneticVars};
 use super::modes::{
     es_slots, luffy_freq_loop, luffy_luf, luffy_smooth, outbod_sentinels, setlng, setluf,
@@ -102,6 +105,16 @@ pub struct RunInputs {
     pub psc: [R; 4],
     /// `IEDP`, from the `INTEGRATE` card. -1 without one.
     pub iedp: i32,
+    /// `KRUN`, from the `EXECUTE` card: how much of the ionosphere each
+    /// hour recomputes.
+    pub krun: i32,
+    /// `EFVAR` cards: `(point, fi, yi, hi)`, one-based point.
+    pub efvar: Vec<LayerOverride>,
+    /// `ESVAR` cards: `(point, fs, hs)`, one-based point.
+    pub esvar: Vec<(usize, [R; 3], R)>,
+    /// An `EDP` card's profile: 50 true heights and 50 plasma
+    /// frequencies squared, which `LECDEN` then leaves alone.
+    pub edp: Option<([R; 50], [R; 50])>,
 }
 
 /// Asks the engine the same question the deck card asks.
@@ -135,7 +148,154 @@ impl From<&DeckCase> for RunInputs {
             },
             psc: c.fprob().map(|v| v as R),
             iedp: c.integrate.unwrap_or(-1),
+            krun: c.krun,
+            efvar: c
+                .efvar
+                .iter()
+                .map(|e| {
+                    (
+                        e.area,
+                        e.fi.map(|v| v as R),
+                        e.yi.map(|v| v as R),
+                        e.hi.map(|v| v as R),
+                    )
+                })
+                .collect(),
+            esvar: c
+                .esvar
+                .iter()
+                .map(|e| (e.area, e.fs.map(|v| v as R), e.hs as R))
+                .collect(),
+            edp: c
+                .edp
+                .as_ref()
+                .map(|e| (e.htr.map(|v| v as R), e.fnsq.map(|v| v as R))),
         }
+    }
+}
+
+/// One `EFVAR` card as the engine takes it: the control point, then the
+/// critical frequency, semithickness and height of each layer.
+pub type LayerOverride = (usize, [R; 3], [R; 3], [R; 3]);
+
+/// The ionosphere the hour loop keeps in COMMON.
+///
+/// `VIRTIM` reduces the maps to `AB`, `TIMVAR` and `F2VAR` turn that
+/// into the layer parameters, and `ESIND` into the sporadic-E ones. The
+/// `EXECUTE` card's `KRUN` field decides which of the three each hour
+/// runs; whatever it skips keeps the previous hour's values, or the
+/// `blkdat` presets that an `EFVAR` or `ESVAR` card may have replaced.
+struct IonoCarry {
+    ab: [R; 318],
+    params: Vec<LayerParams>,
+    /// `/ES/` `FS(3,5)` and `HS(5)`. Five slots whatever the path's
+    /// control point count, because `SETLNG` fills the ones above it.
+    es: [EsParams; 5],
+}
+
+impl IonoCarry {
+    fn new(inp: &RunInputs, points: usize) -> Self {
+        let mut params = LayerParams::preset(points);
+        for (point, fi, yi, hi) in &inp.efvar {
+            let Some(p) = params.get_mut(point.wrapping_sub(1)) else {
+                continue;
+            };
+            p.fi = *fi;
+            p.yi = *yi;
+            p.hi = *hi;
+            // The card sets these two as well, from the height it gave.
+            p.f2m3 = 1490.0 / (hi[2] + 176.0);
+            p.hpf2 = hi[2];
+        }
+        let mut es = [EsParams {
+            fs: [0.0; 3],
+            hs: 0.0,
+        }; 5];
+        for (point, fs, hs) in &inp.esvar {
+            let Some(e) = es.get_mut(point.wrapping_sub(1)) else {
+                continue;
+            };
+            e.fs = *fs;
+            e.hs = *hs;
+        }
+        IonoCarry {
+            ab: [0.0; 318],
+            params,
+            es,
+        }
+    }
+
+    /// One hour's recomputation, in the driver's order.
+    #[allow(clippy::too_many_arguments)]
+    fn hour(
+        &mut self,
+        set: &CoefficientSet,
+        cof: &[R],
+        points: &[crate::engine::geometry::ControlPoint],
+        mags: &[MagneticVars],
+        month: u32,
+        ssn: R,
+        psc: &[R; 4],
+        krun: i32,
+        gmt: R,
+    ) {
+        // `GEOTIM` always runs, and writes every point's local mean
+        // time by its own arithmetic. `TIMVAR` writes it again from a
+        // different expression, so this value only survives a run that
+        // skips `TIMVAR`.
+        for (p, pt) in self.params.iter_mut().zip(points) {
+            p.clck = geotim_clck(gmt, pt.lon);
+        }
+        if krun <= 2 {
+            self.ab = virtim(cof, &set.ikim, gmt);
+        }
+        if krun <= 1 {
+            self.params = layer_parameters(set, &self.ab, points, mags, month, ssn, gmt, psc);
+        }
+        if krun == 0 || krun == 2 {
+            // `ESIND` writes the control points it has and leaves the
+            // slots above them alone.
+            for (slot, e) in esind(set, &self.ab, points, mags, psc)
+                .into_iter()
+                .enumerate()
+            {
+                self.es[slot] = e;
+            }
+        }
+    }
+
+    /// What the hour left in the arrays.
+    ///
+    /// `IONSET` reorders `FI`, `YI` and `HI` in place, `SETLNG`
+    /// replicates them and the sporadic-E slots, and `CURMUF` rewrites
+    /// one sporadic-E lower decile. All of that is COMMON, so it stands
+    /// into the next hour — and on a run whose `KRUN` field skips
+    /// `TIMVAR` and `F2VAR`, nothing ever puts it back. `IONSET` then
+    /// reorders values it has already reordered, which is why such a
+    /// run's ionosphere drifts from hour to hour with no map behind it.
+    fn write_back(&mut self, state: &IonoState, fs: &[[R; 3]; 5], hs: &[R; 5]) {
+        for (k, p) in self.params.iter_mut().enumerate() {
+            p.fi = state.fi[k];
+            p.yi = state.yi[k];
+            p.hi = state.hi[k];
+        }
+        for (slot, e) in self.es.iter_mut().enumerate() {
+            e.fs = fs[slot];
+            e.hs = hs[slot];
+        }
+    }
+
+    /// The `/RON/` state one hour starts from, with the `EDP` card's
+    /// profile in place if the deck gave one.
+    fn state(&self, iedp: i32, edp: Option<&([R; 50], [R; 50])>) -> IonoState {
+        let mut state = IonoState::from_layers(&self.params);
+        state.iedp = iedp;
+        if let Some((htr, fnsq)) = edp {
+            state.htr = *htr;
+            state.fnsq = *fnsq;
+            state.ielect = true;
+        }
+        state
     }
 }
 
@@ -285,13 +445,15 @@ pub fn run_par(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<ParRow>, String> {
     let _ = alatd(&geo.points);
     let psc = inp.psc;
 
+    let mut iono = IonoCarry::new(inp, geo.points.len());
     let mut out = Vec::with_capacity(24 * geo.points.len());
     for jt in 1..=24i32 {
         let gmt = jt as R;
-        let ab = virtim(&cof, &set.ikim, gmt);
-        let params = layer_parameters(&set, &ab, &geo.points, &mags, inp.month, inp.ssn, gmt, &psc);
-        let es = esind(&set, &ab, &geo.points, &mags, &psc);
-        let geog = Geog::from_points(&params, &mags, &grounds);
+        iono.hour(
+            &set, &cof, &geo.points, &mags, inp.month, inp.ssn, &psc, inp.krun, gmt,
+        );
+        let (params, es) = (&iono.params, &iono.es);
+        let geog = Geog::from_points(params, &mags, &grounds);
         for (k, p) in params.iter().enumerate() {
             out.push(ParRow {
                 lat: geo.points[k].lat * R2D,
@@ -402,16 +564,17 @@ pub fn run_ion(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<Vec<IonPlot>>, Str
 
     let mut fsecv_carry = [0.0 as R; 3];
     let mut out = Vec::with_capacity(24);
+    let mut iono = IonoCarry::new(inp, geo.points.len());
     for jt in 1..=24i32 {
         let gmt = jt as R;
-        let ab = virtim(&cof, &set.ikim, gmt);
-        let params = layer_parameters(&set, &ab, &geo.points, &mags, inp.month, inp.ssn, gmt, &psc);
-        let es = esind(&set, &ab, &geo.points, &mags, &psc);
-        let mut state = IonoState::from_layers(&params);
-        state.iedp = inp.iedp;
+        iono.hour(
+            &set, &cof, &geo.points, &mags, inp.month, inp.ssn, &psc, inp.krun, gmt,
+        );
+        let params = &iono.params;
+        let mut state = iono.state(inp.iedp, inp.edp.as_ref());
         state.fsecv = fsecv_carry;
         ionset(&mut state);
-        let (fs, hs) = es_slots(&es);
+        let (fs, hs) = es_slots(&iono.es);
         let mut hour = Vec::with_capacity(state.kfx);
         for k in 0..state.kfx {
             lecden(&mut state, k);
@@ -437,6 +600,7 @@ pub fn run_ion(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<Vec<IonPlot>>, Str
             });
         }
         out.push(hour);
+        iono.write_back(&state, &fs, &hs);
         fsecv_carry = state.fsecv;
     }
     Ok(out)
@@ -494,16 +658,17 @@ pub fn run_muf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<MufHourOut>, Strin
 
     let mut fsecv_carry = [0.0 as R; 3];
     let mut out = Vec::with_capacity(24);
+    let mut iono = IonoCarry::new(inp, geo.points.len());
     for jt in 1..=24i32 {
         let gmt = jt as R;
-        let ab = virtim(&cof, &set.ikim, gmt);
-        let params = layer_parameters(&set, &ab, &geo.points, &mags, inp.month, inp.ssn, gmt, &psc);
-        let es = esind(&set, &ab, &geo.points, &mags, &psc);
-        let mut state = IonoState::from_layers(&params);
-        state.iedp = inp.iedp;
+        iono.hour(
+            &set, &cof, &geo.points, &mags, inp.month, inp.ssn, &psc, inp.krun, gmt,
+        );
+        let params = &iono.params;
+        let mut state = iono.state(inp.iedp, inp.edp.as_ref());
         state.fsecv = fsecv_carry;
         ionset(&mut state);
-        let mut es_state = es.clone();
+        let mut es_state = iono.es;
         let clcks: Vec<R> = params.iter().map(|p| p.clck).collect();
         let hour = if (3..=6).contains(&inp.method) {
             let (fs, hs) = es_slots(&es_state);
@@ -543,6 +708,8 @@ pub fn run_muf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<MufHourOut>, Strin
             xluf: -1.0,
             layers: hour.layers,
         });
+        let (fs, hs) = es_slots(&es_state);
+        iono.write_back(&state, &fs, &hs);
         fsecv_carry = state.fsecv;
     }
     Ok(out)
@@ -592,16 +759,17 @@ pub fn run_luf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<MufHourOut>, Strin
     let mut lp = ModeLoopState::default();
     let mut fsecv_carry = [0.0 as R; 3];
     let mut out = Vec::with_capacity(24);
+    let mut iono = IonoCarry::new(inp, geo.points.len());
     for jt in 1..=24i32 {
         let gmt = jt as R;
-        let ab = virtim(&cof, &set.ikim, gmt);
-        let params = layer_parameters(&set, &ab, &geo.points, &mags, inp.month, inp.ssn, gmt, &psc);
-        let es = esind(&set, &ab, &geo.points, &mags, &psc);
-        let mut state = IonoState::from_layers(&params);
-        state.iedp = inp.iedp;
+        iono.hour(
+            &set, &cof, &geo.points, &mags, inp.month, inp.ssn, &psc, inp.krun, gmt,
+        );
+        let params = &iono.params;
+        let mut state = iono.state(inp.iedp, inp.edp.as_ref());
         state.fsecv = fsecv_carry;
         ionset(&mut state);
-        let mut es_state = es.clone();
+        let mut es_state = iono.es;
         let clcks: Vec<R> = params.iter().map(|p| p.clck).collect();
         let mut hour = curmuf(
             &mut state,
@@ -646,7 +814,7 @@ pub fn run_luf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<MufHourOut>, Strin
             (vec![first], first)
         };
         let (mut fs, mut hs) = es_slots(&es_state);
-        let mut geog = Geog::from_points(&params, &mags, &grounds);
+        let mut geog = Geog::from_points(params, &mags, &grounds);
         for &k in &areas {
             lecden(&mut state, k);
             let mut ion = genion(&state, k);
@@ -693,6 +861,7 @@ pub fn run_luf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<MufHourOut>, Strin
             xluf,
             layers: hour.layers,
         });
+        iono.write_back(&state, &fs, &hs);
         fsecv_carry = state.fsecv;
     }
     Ok(out)
@@ -759,6 +928,10 @@ struct HourSetup<'a> {
     method: u32,
     /// `IEDP` from the `INTEGRATE` card.
     iedp: i32,
+    /// `KRUN` from the `EXECUTE` card.
+    krun: i32,
+    /// The `EDP` card's profile.
+    edp: Option<([R; 50], [R; 50])>,
     /// Whether the area driver's own comparison applies: `HFAREA` tests
     /// the path length against `GCDLNG` with `.GT.` where `HFMUFS` uses
     /// `.GE.`, so a path of exactly 10000 km takes the short model in an
@@ -836,6 +1009,8 @@ fn hour_setup<'a>(
         noise_dbw: inp.noise_dbw,
         method: inp.method,
         iedp: inp.iedp,
+        krun: inp.krun,
+        edp: inp.edp,
         area: false,
         outbod: super::output::itout(inp.method) == 7,
     })
@@ -902,9 +1077,10 @@ pub fn run_listing(itshfbc: &Path, inp: &RunInputs) -> Result<Prediction, String
     let path = PathReport::from_setup(&s);
     let mut lp = ModeLoopState::default();
     let mut fsecv_carry = [0.0 as R; 3];
+    let mut iono = IonoCarry::new(inp, s.geo.points.len());
     let mut hours = Vec::with_capacity(24);
     for jt in 1..=24i32 {
-        hours.push(hour_body(&s, jt, &mut lp, &mut fsecv_carry));
+        hours.push(hour_body(&s, jt, &mut lp, &mut fsecv_carry, &mut iono));
     }
     Ok(Prediction { hours, path })
 }
@@ -927,7 +1103,8 @@ pub fn run_hour(itshfbc: &Path, inp: &RunInputs, jt: i32) -> Result<HourPredicti
     let s = hour_setup(itshfbc, inp, &set, None)?;
     let mut lp = ModeLoopState::default();
     let mut fsecv = [0.0 as R; 3];
-    Ok(hour_body(&s, jt, &mut lp, &mut fsecv))
+    let mut iono = IonoCarry::new(inp, s.geo.points.len());
+    Ok(hour_body(&s, jt, &mut lp, &mut fsecv, &mut iono))
 }
 
 /// One hour of `HFMUFS`: the MUF, the LUFFY passes with the smoothing
@@ -941,18 +1118,19 @@ fn hour_body(
     jt: i32,
     lp: &mut ModeLoopState,
     fsecv_carry: &mut [R; 3],
+    iono: &mut IonoCarry,
 ) -> HourPrediction {
     let (set, geo, ants, deck, psc) = (s.set, &s.geo, &s.ants, s.deck, s.psc);
     {
         let gmt = jt as R;
-        let ab = virtim(&s.cof, &set.ikim, gmt);
-        let params = layer_parameters(set, &ab, &geo.points, &s.mags, s.month, s.ssn, gmt, &psc);
-        let es = esind(set, &ab, &geo.points, &s.mags, &psc);
-        let mut state = IonoState::from_layers(&params);
-        state.iedp = s.iedp;
+        iono.hour(
+            set, &s.cof, &geo.points, &s.mags, s.month, s.ssn, &psc, s.krun, gmt,
+        );
+        let params = &iono.params;
+        let mut state = iono.state(s.iedp, s.edp.as_ref());
         state.fsecv = *fsecv_carry;
         ionset(&mut state);
-        let mut es_state = es.clone();
+        let mut es_state = iono.es;
         let clcks: Vec<R> = params.iter().map(|p| p.clck).collect();
         let hour = curmuf(
             &mut state,
@@ -1041,7 +1219,7 @@ fn hour_body(
             }]
         };
         let (mut fs, mut hs) = es_slots(&es_state);
-        let mut geog = Geog::from_points(&params, &s.mags, &s.grounds);
+        let mut geog = Geog::from_points(params, &s.mags, &s.grounds);
         let mut hour_m = hour.clone();
         let mut saves = HourSaves::default();
         let mut frel = s.base_frel;
@@ -1116,7 +1294,7 @@ fn hour_body(
         // the untouched values card method 1 prints.
         let (par, allmodes) = if s.method == 25 {
             (
-                par_rows(s, &params, &state, &fs, &hs, &geog, gmt),
+                par_rows(s, params, &state, &fs, &hs, &geog, gmt),
                 freqs
                     .into_iter()
                     .map(|d| d.and_then(|d| d.outall))
@@ -1129,6 +1307,7 @@ fn hour_body(
         if s.outbod {
             outbod_sentinels(&mut lp.son, hour.allmuf);
         }
+        iono.write_back(&state, &fs, &hs);
         *fsecv_carry = state.fsecv;
         HourPrediction {
             gmt,
@@ -1365,8 +1544,12 @@ pub fn run_area(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<AreaPoint>, Str
                 method: area.method,
                 fof2: area.fof2,
                 psc: area.psc,
-                // The area driver reads no `INTEGRATE` card.
+                // The area driver reads none of these cards.
                 iedp: -1,
+                krun: 0,
+                efvar: Vec::new(),
+                esvar: Vec::new(),
+                edp: None,
             };
             let mut s = hour_setup(itshfbc, &inp, &set, Some(ants.clone()))?;
             // `HFAREA` compares against `GCDLNG` with `.GT.` where the
@@ -1393,7 +1576,8 @@ pub fn run_area(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<AreaPoint>, Str
                     first.table.beam_main = ztaz;
                 }
             }
-            let h = hour_body(&s, area.hour, &mut lp, &mut fsecv);
+            let mut iono = IonoCarry::new(&inp, s.geo.points.len());
+            let h = hour_body(&s, area.hour, &mut lp, &mut fsecv, &mut iono);
             out.push(area_point(&area.grid, ix, iy, glat, glon, &h, nf));
         }
     }

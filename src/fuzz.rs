@@ -14,7 +14,7 @@
 //! whether the port matches it, and mixing the two would make failures
 //! hard to read.
 
-use crate::deck::{AntennaChoice, DeckCase, FREQ_SLOTS};
+use crate::deck::{AntennaChoice, DeckCase, Edp, EfVar, EsVar, FREQ_SLOTS};
 
 /// Mean Earth radius, used only to place the second endpoint.
 ///
@@ -158,6 +158,7 @@ pub fn fuzz_case(index: u64) -> DeckCase {
     }
     freqs_mhz.sort_by(|a, b| a.partial_cmp(b).expect("generated frequencies are finite"));
 
+    let ionosphere = pick_ionosphere(&mut rng);
     DeckCase {
         id: format!("fz{index:06}"),
         method: 30,
@@ -184,10 +185,96 @@ pub fn fuzz_case(index: u64) -> DeckCase {
         integrate: pick_integrate(&mut rng),
         comment: pick_comment(&mut rng),
         extra_cards: pick_extra_cards(&mut rng),
+        krun: ionosphere.0,
+        efvar: ionosphere.1,
+        esvar: ionosphere.2,
+        edp: pick_edp(&mut rng),
         tx_antennas: pick_antennas(&mut rng, 1),
         rx_antennas: pick_antennas(&mut rng, 2),
         freqs_mhz,
     }
+}
+
+/// The `EXECUTE` card's `KRUN` field with the `EFVAR` and `ESVAR` cards
+/// that make it meaningful, drawn together because `KRUN` on its own
+/// leaves the `blkdat` presets standing and those describe no
+/// ionosphere at all.
+///
+/// Every control point gets a card whatever the path's own count, which
+/// is what the reference stores.
+fn pick_ionosphere(rng: &mut Rng) -> (i32, Vec<EfVar>, Vec<EsVar>) {
+    // The cards carry two decimals for a frequency and one for a
+    // height, so the case has to hold what the card can say.
+    let f2 = |v: f64| (v * 100.0).round() / 100.0;
+    let f1 = |v: f64| (v * 10.0).round() / 10.0;
+    if !rng.chance(0.12) {
+        return (0, Vec::new(), Vec::new());
+    }
+    let krun = rng.int(1, 3) as i32;
+    let efvar = (1..=5)
+        .map(|area| {
+            // An F1 layer within 0.2 MHz of the E layer is removed by
+            // IONSET, so draw one that is either clearly there or gone.
+            let fe = rng.range(0.5, 4.0);
+            let f1v = if rng.chance(0.3) {
+                0.0
+            } else {
+                rng.range(fe + 1.0, fe + 3.0)
+            };
+            let f2v = rng.range(f1v.max(fe) + 1.5, f1v.max(fe) + 10.0);
+            EfVar {
+                area,
+                fi: [f2(fe), f2(f1v), f2(f2v)],
+                yi: [
+                    f1(rng.range(15.0, 25.0)),
+                    f1(rng.range(20.0, 60.0)),
+                    f1(rng.range(60.0, 120.0)),
+                ],
+                hi: [
+                    f1(rng.range(100.0, 120.0)),
+                    f1(rng.range(180.0, 250.0)),
+                    f1(rng.range(250.0, 400.0)),
+                ],
+            }
+        })
+        .collect();
+    let esvar = (1..=5)
+        .map(|area| {
+            let low = rng.range(0.5, 3.0);
+            let med = low + rng.range(0.5, 3.0);
+            EsVar {
+                area,
+                fs: [f2(low), f2(med), f2(med + rng.range(0.5, 6.0))],
+                hs: f1(rng.range(100.0, 120.0)),
+            }
+        })
+        .collect();
+    (krun, efvar, esvar)
+}
+
+/// An `EDP` card and its profile: 50 rising true heights and the plasma
+/// frequency squared at each. With one, `LECDEN` leaves the profile
+/// alone for every sample area.
+fn pick_edp(rng: &mut Rng) -> Option<Edp> {
+    if !rng.chance(0.06) {
+        return None;
+    }
+    let mut htr = [0.0f64; 50];
+    let mut fnsq = [0.0f64; 50];
+    let round = |v: f64| (v * 10.0).round() / 10.0;
+    let mut h = rng.range(65.0, 75.0);
+    let mut f = 0.0;
+    for i in 0..50 {
+        htr[i] = round(h);
+        fnsq[i] = round(f);
+        h += rng.range(4.0, 14.0);
+        f += rng.range(0.1, 4.0);
+    }
+    Some(Edp {
+        area: rng.int(1, 3) as i32,
+        htr,
+        fnsq,
+    })
 }
 
 /// Cards that reach no computation, drawn so a run carrying one can be

@@ -128,6 +128,10 @@ pub fn gather(dir: &Path) -> Result<MonthSpread, String> {
             integrate: None,
             comment: None,
             extra_cards: Vec::new(),
+            krun: 0,
+            efvar: Vec::new(),
+            esvar: Vec::new(),
+            edp: None,
             sporadic_e: SPORADIC_E,
         };
         let deck = build_deck(&case).map_err(|e| e.to_string())?;

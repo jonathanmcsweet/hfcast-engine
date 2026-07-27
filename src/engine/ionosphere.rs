@@ -116,6 +116,16 @@ pub struct HourTimes {
     pub gmtr: R,
 }
 
+/// `GEOTIM`'s per-point local mean time.
+///
+/// `TIMVAR` writes `CLCK` again from its own arithmetic, so this value
+/// only survives on a run whose `KRUN` field skips `TIMVAR`.
+pub fn geotim_clck(gmt: R, lon_rad: R) -> R {
+    let mut ckc = gmt;
+    cngtim(&mut ckc, lon_rad * R2D, 1);
+    ckc
+}
+
 /// Port of `GEOTIM` (without the per-point `CLCK`, which `TIMVAR`
 /// overwrites): converts the TIME-card hour `jt` to UT and local times.
 /// `itim < 0` means the card gave local time at the transmitter.
@@ -505,6 +515,56 @@ pub struct EsParams {
     pub fs: [R; 3],
     /// Height of reflection, km.
     pub hs: R,
+}
+
+impl LayerParams {
+    /// The values `blkdat.for` leaves in `/RON/`, which are what a run
+    /// whose `KRUN` field skips `TIMVAR` and `F2VAR` starts from.
+    ///
+    /// The `DATA` statement reads as though the arrays were `(5,3)` —
+    /// 110 km for every point's E layer, nothing for F1, 300 km for F2
+    /// — but they are declared `(3,5)`, so the values land in the wrong
+    /// slots. The comment above them calls this an "effective
+    /// elimination of layers"; what it actually gives is an ionosphere
+    /// with an E layer at three of five points and an F2 layer at none.
+    pub fn preset(points: usize) -> Vec<Self> {
+        // Column-major `FI(3,5)`: linear element n holds layer n mod 3
+        // of point n / 3.
+        let mut fi = [0.0 as R; 15];
+        let mut yi = [0.0 as R; 15];
+        let mut hi = [0.0 as R; 15];
+        for (n, slot) in fi.iter_mut().enumerate() {
+            *slot = if n >= 10 { 0.2 } else { 0.0 };
+        }
+        for (n, slot) in yi.iter_mut().enumerate() {
+            *slot = match n {
+                0..=4 => 20.0,
+                5..=9 => 0.0,
+                _ => 100.0,
+            };
+        }
+        for (n, slot) in hi.iter_mut().enumerate() {
+            *slot = match n {
+                0..=4 => 110.0,
+                5..=9 => 0.0,
+                _ => 300.0,
+            };
+        }
+        (0..points)
+            .map(|k| LayerParams {
+                fi: [fi[3 * k], fi[3 * k + 1], fi[3 * k + 2]],
+                yi: [yi[3 * k], yi[3 * k + 1], yi[3 * k + 2]],
+                hi: [hi[3 * k], hi[3 * k + 1], hi[3 * k + 2]],
+                f2m3: 0.0,
+                hpf2: 0.0,
+                rat: 0.0,
+                abiy: 0.0,
+                clck: 0.0,
+                zenang: 0.0,
+                zenmax: 0.0,
+            })
+            .collect()
+    }
 }
 
 /// Port of `ESIND`: evaluates the three sporadic-E maps at every control

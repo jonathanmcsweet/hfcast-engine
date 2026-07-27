@@ -151,6 +151,10 @@ pub fn sweep_cases() -> Vec<DeckCase> {
             integrate: None,
             comment: None,
             extra_cards: Vec::new(),
+            krun: 0,
+            efvar: Vec::new(),
+            esvar: Vec::new(),
+            edp: None,
                     sporadic_e: true,
                 });
             }

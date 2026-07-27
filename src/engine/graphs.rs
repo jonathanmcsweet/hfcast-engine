@@ -449,7 +449,14 @@ fn ionplt(p: &IonPlot) -> String {
                     continue;
                 }
                 for slot in isb..=isx {
-                    ix[slot as usize - 1] = *mark;
+                    // A negative lower decile puts the segment's first
+                    // column at or below zero, and the source writes
+                    // there — outside its own array, into whatever
+                    // local sits before it. Nothing of that reaches the
+                    // plot, so the port drops those columns.
+                    if slot >= 1 {
+                        ix[slot as usize - 1] = *mark;
+                    }
                 }
             }
         } else {

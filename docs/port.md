@@ -72,6 +72,15 @@ count: `--jobs 3` to the harnesses, `JOBS=4` to the build scripts. Three
 concurrent harness jobs is the measured comfortable figure; each one runs
 a Fortran binary and copies a tree.
 
+The other limit is file descriptors: 4096 per process, and a harness run
+holds them while it builds private trees. `fuzz --cases 200 --jobs 4`
+exhausted them, and the failure does not look like a resource problem —
+the report says the harness could not run 145 of the cases and ends with
+"the port and the reference disagree", while the shell itself starts
+failing to load shared libraries. Keep to `--jobs 2` above about a
+hundred cases, and read a mass failure with no printed difference as
+this rather than as a regression.
+
 A foreground `sleep` is blocked. Wait on a condition instead.
 
 ## The harnesses
@@ -694,6 +703,54 @@ At zero or above, three places change.
 
 `IONPLT` also prints `MODEL SEG` instead of `GAUSSIAN` in its heading
 when the point has no F1 layer and `IEDP` is not negative.
+
+## KRUN and the EFVAR, ESVAR and EDP cards
+
+The `EXECUTE` card's fifth-to-tenth column carries `KRUN`, which says
+how much of the ionosphere each hour recomputes:
+
+| `KRUN` | `VIRTIM` | `TIMVAR`, `F2VAR` | `ESIND` |
+| -----: | -------- | ----------------- | ------- |
+|      0 | yes      | yes               | yes     |
+|      1 | yes      | yes               | no      |
+|      2 | yes      | no                | yes     |
+|     3+ | no       | no                | no      |
+
+`GEOTIM` runs every hour whatever the field says. It writes each
+control point's local mean time, and `TIMVAR` writes it again from a
+different expression, so a run that skips `TIMVAR` prints `GEOTIM`'s
+value rather than `TIMVAR`'s.
+
+`EFVAR` and `ESVAR` put the layer and sporadic-E parameters straight
+into the arrays, which is only useful with a `KRUN` above zero, because
+otherwise the first hour overwrites them. What they do not replace
+starts at `blkdat`'s presets, and those are written as though `FI`,
+`YI` and `HI` were `(5,3)` rather than `(3,5)` — 110 km for every
+point's E layer, nothing for F1, 300 km for F2 is the intent, and the
+values land in the wrong slots. The comment above them calls it an
+"effective elimination of layers".
+
+The port has to model the arrays as state that survives the hour,
+because the routines that read them also write them: `IONSET` reorders
+`FI`, `YI` and `HI` in place, `SETLNG` replicates them into the slots
+above the control point count, and `CURMUF` rewrites one sporadic-E
+lower decile. With `TIMVAR` and `F2VAR` running, each hour overwrites
+all of that before it is read again and none of it shows. With them
+skipped, nothing puts the arrays back, so `IONSET` reorders values it
+has already reordered and the ionosphere drifts from hour to hour with
+no map behind it. The port reproduces the drift; `IonoCarry` is where
+the arrays live.
+
+`EDP` supplies the electron density profile directly. `LECDEN` then
+returns without building one — and it tests all three slots of the
+`IELECT` flag rather than the one for the area it was asked about, so a
+single card suppresses the profile for every area.
+
+One `IONPLT` detail belongs here: a sporadic-E lower decile below about
+-0.15 MHz puts the first column of its segment at or below zero, and
+the source writes there, outside its own `IX` array. Nothing of that
+reaches the plot, so the port drops those columns rather than write out
+of bounds.
 
 ## Cards that reach no computation
 
