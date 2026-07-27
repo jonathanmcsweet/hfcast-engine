@@ -25,6 +25,7 @@ use super::ionosphere::{
 };
 use super::antenna::{
     area_table, dazel0, point_to_point_table, read_antenna, AntennaEnd, AntennaSet, AntennaSetup,
+    Installation,
 };
 use super::magnetic::{magvar, MagneticVars};
 use super::modes::{
@@ -33,6 +34,7 @@ use super::modes::{
 };
 use super::muf::{curmuf, ionset, lecden, nommuf, IonoState};
 use super::noise::{anois1, genois};
+use super::output::AntennaLine;
 use super::sigdis::{sigdis, SignalDistribution};
 
 /// One `ANTENNA` card's fields, minus the end it serves.
@@ -199,7 +201,14 @@ fn build_antennas(itshfbc: &Path, inp: &RunInputs) -> Result<AntennaSet, String>
             // Only a transmit card carries power; the receive card's
             // last field is a gain and never becomes a `pwrdba`.
             let kw = if iat == 1 { card.power_field } else { 0.0 };
-            ants.install(iat, card.min_freq, card.max_freq, table, kw);
+            ants.install(Installation {
+                iat,
+                min_freq: card.min_freq,
+                max_freq: card.max_freq,
+                table,
+                power_kw: kw,
+                file: card.file.clone(),
+            });
         }
     }
     Ok(ants)
@@ -685,18 +694,57 @@ fn hour_setup<'a>(
     })
 }
 
-/// Runs the full prediction for all 24 hours.
-pub fn run(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<HourPrediction>, String> {
+/// What the listing header says about the path and the antennas.
+///
+/// The engine works all of it out on the way to a prediction — the
+/// bearings and the path length in `GEOM`, each card's model label in
+/// `ANTCALC` — so it comes back with the hours rather than being
+/// recomputed by whoever prints the header.
+#[derive(Debug, Clone)]
+pub struct PathReport {
+    /// The receive latitude as `GEOM` leaves it.
+    pub rlatd: R,
+    /// Bearings each way, degrees.
+    pub btrd: R,
+    pub brtd: R,
+    pub gcd_km: R,
+    /// The cards in slot order: every transmit card, then every receive
+    /// card.
+    pub antennas: Vec<AntennaLine>,
+}
+
+/// A whole run: the hours and what the header needs.
+#[derive(Debug, Clone)]
+pub struct Prediction {
+    pub hours: Vec<HourPrediction>,
+    pub path: PathReport,
+}
+
+/// Runs the full prediction for all 24 hours, with the header's path and
+/// antenna description.
+pub fn run_listing(itshfbc: &Path, inp: &RunInputs) -> Result<Prediction, String> {
     let set: CoefficientSet =
         redmap(itshfbc, inp.fof2, inp.month, inp.ssn).map_err(|e| e.to_string())?;
     let s = hour_setup(itshfbc, inp, &set, None)?;
+    let path = PathReport {
+        rlatd: s.geo.rlatd,
+        btrd: s.geo.btr_deg(),
+        brtd: s.geo.brt_deg(),
+        gcd_km: s.geo.gcd_km,
+        antennas: AntennaLine::from_set(&s.ants),
+    };
     let mut lp = ModeLoopState::default();
     let mut fsecv_carry = [0.0 as R; 3];
-    let mut out = Vec::with_capacity(24);
+    let mut hours = Vec::with_capacity(24);
     for jt in 1..=24i32 {
-        out.push(hour_body(&s, jt, &mut lp, &mut fsecv_carry));
+        hours.push(hour_body(&s, jt, &mut lp, &mut fsecv_carry));
     }
-    Ok(out)
+    Ok(Prediction { hours, path })
+}
+
+/// Runs the full prediction for all 24 hours.
+pub fn run(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<HourPrediction>, String> {
+    run_listing(itshfbc, inp).map(|p| p.hours)
 }
 
 /// Runs one hour on its own, from the program-start state.
@@ -1170,13 +1218,21 @@ fn build_area_antennas(
             azimuth_deg,
         };
         let kw = if iat == 1 { pwrkw } else { 0.0 };
+        let installed = |table| Installation {
+            iat,
+            min_freq: card.min_freq,
+            max_freq: card.max_freq,
+            table,
+            power_kw: kw,
+            file: card.file.clone(),
+        };
         if nf > 1 {
             let table = point_to_point_table(&setup).map_err(|e| e.to_string())?;
-            ants.install(iat, card.min_freq, card.max_freq, table, kw);
+            ants.install(installed(table));
         } else {
             let (header, table) =
                 area_table(&setup, area.freqs_mhz[0]).map_err(|e| e.to_string())?;
-            ants.install_area(iat, card.min_freq, card.max_freq, header, table, kw)?;
+            ants.install_area(installed(header), table)?;
         }
     }
     Ok(ants)
@@ -1396,9 +1452,20 @@ pub fn body_lines(method: u32, botlines: Option<&[u32]>) -> Vec<usize> {
 /// and the rows `lines` names, in that order, for comparison via
 /// `listing::parse_listing`. [`body_lines`] gives a method's selection.
 pub fn listing_text(hours: &[HourPrediction], lines: &[usize]) -> String {
+    hours.iter().map(|h| hour_block(h, lines).0).collect()
+}
+
+/// One hour of the body: the blank line `OUTBOD`'s format opens with,
+/// the FREQ line, and the selected rows.
+///
+/// The flag is false when no slot has a mode. `OUTBOD` then returns
+/// after the frequency line, so the hour prints nothing else.
+pub fn hour_block(h: &HourPrediction, lines: &[usize]) -> (String, bool) {
     let mut out = String::new();
-    for h in hours {
-        // The FREQ line: hour, the MUF, the eleven card frequencies.
+    {
+        // The FREQ line, after the blank record its format opens with:
+        // hour, the MUF, the eleven card frequencies.
+        out.push('\n');
         let mut line = format!("  {:4.1}", f64::from(h.gmt));
         line.push_str(&f5_1(h.allmuf));
         for f in &h.frel[..11] {
@@ -1424,7 +1491,7 @@ pub fn listing_text(hours: &[HourPrediction], lines: &[usize]) -> String {
         }
         let jfreq = jfreq.min(12);
         if jfreq <= 0 {
-            continue;
+            return (out, false);
         }
         let slots: Vec<usize> = (0..jfreq as usize).collect();
         let muf = &h.son[11];
@@ -1488,12 +1555,19 @@ pub fn listing_text(hours: &[HourPrediction], lines: &[usize]) -> String {
             };
             out.push_str(&row(label, muf_field, fields, jfreq));
             out.push('\n');
-            // The long path prints its reception angle after TANGLE as
-            // RANGLE; the comparison surface ignores it, so it is not
-            // rendered here.
+            // The long model prints a second angle line straight after
+            // TANGLE: the angle at the receiving end. `OUTLIN` does not
+            // count it, so a long-path page runs one line over the
+            // limit for every hour on it.
+            if line == 2 && h.long_model {
+                let fields: Vec<String> =
+                    slots.iter().map(|&i| f5_1(h.son[i].angler)).collect();
+                out.push_str(&row("RANGLE", f5_1(muf.angler), fields, jfreq));
+                out.push('\n');
+            }
         }
     }
-    out
+    (out, true)
 }
 
 #[cfg(test)]

@@ -114,6 +114,7 @@ pub fn gather(dir: &Path) -> Result<MonthSpread, String> {
             ursi: false,
             fprob: None,
             botlines: None,
+            toplines: None,
             month,
             year,
             ssn,

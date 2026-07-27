@@ -34,15 +34,16 @@ scratch files, deployment anywhere Rust runs, and code a person can read.
    worst difference per field. A porting mistake surfaces in the first
    stage that contains it.
 2. **Randomized decks.** `fuzz` generates valid decks from a seed and
-   requires the two engines to print identical listings. The sweep only
+   requires the two engines to write the same listing file, byte for
+   byte — banner, echoed deck, header blocks, page breaks and body rows. The sweep only
    holds combinations somebody chose; this covers the rest, cycles
    through six distance bands so short and near-antipodal paths are
    always represented, and reports a case index that reproduces any
    failure exactly (`--seed N`). Refusing the same case counts as
    agreement: the reference stops on some inputs and the port stops on
-   the same ones. **Result (2026-07-26): 600 isotrope cases identical
-   (2,031,840 cells), then 300 cases with directional antennas drawn
-   from every computable family, also identical (1,011,360 cells).** `porttest --seed N` runs one
+   the same ones. **Result (2026-07-27): 600 cases identical as text —
+   434,116 printed lines, holding 2,031,840 cells and 100,872 mode
+   labels.** `porttest --seed N` runs one
    generated case through the stage traces and `--fuzz N` runs a batch,
    because a difference the listing does not print is invisible to the
    whole-engine check: that is how the sporadic-E-off disagreement
@@ -85,17 +86,18 @@ propcore/tools/build-trace.sh      # the instrumented build the stage traces rea
 
 Then, from `propcore/`, with `cargo` as above:
 
-| harness     | what it proves                                        | flags                                                                                                                       |
-| ----------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `porttest`  | each stage's intermediates against the trace build    | `--cases N` `--only ID` `--seed N` `--fuzz N [--from N]`                                                                    |
-| `portcheck` | whole listings over the 96 sweep cases                | `--cases N`                                                                                                                 |
-| `fuzz`      | whole listings over generated decks                   | `--cases N` `--from N` `--jobs J` `--seed N` `--show N` `--method M` `--coeffs URSI88` `--fprob a,b,c,d` `--botlines a,b,c` |
-| `antcheck`  | antenna gain tables against the reference's own files | `--only NAME` `--verbose`                                                                                                   |
-| `lufcheck`  | `OUTMUF`'s table from a method-26 deck                | `--cases N` `--from N` `--jobs J`                                                                                           |
-| `mufcheck`  | methods 1, 3 and 7 tables                             | `--method 1\|3\|7` `--cases N` `--from N` `--jobs J`                                                                        |
-| `areacheck` | area coverage rows and antennas against the grid file | `--jobs J`                                                                                                                  |
+| harness     | what it proves                                        | flags                                                                                                                                          |
+| ----------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `porttest`  | each stage's intermediates against the trace build    | `--cases N` `--only ID` `--seed N` `--fuzz N [--from N]`                                                                                       |
+| `portcheck` | whole listings over the 96 sweep cases                | `--cases N`                                                                                                                                    |
+| `fuzz`      | whole listing files over generated decks              | `--cases N` `--from N` `--jobs J` `--seed N` `--show N` `--method M` `--coeffs URSI88` `--fprob a,b,c,d` `--botlines a,b,c` `--toplines a,b,c` |
+| `antcheck`  | antenna gain tables against the reference's own files | `--only NAME` `--verbose`                                                                                                                      |
+| `lufcheck`  | `OUTMUF`'s table from a method-26 deck                | `--cases N` `--from N` `--jobs J`                                                                                                              |
+| `mufcheck`  | methods 1, 3 and 7 tables                             | `--method 1\|3\|7` `--cases N` `--from N` `--jobs J`                                                                                           |
+| `areacheck` | area coverage rows and antennas against the grid file | `--jobs J`                                                                                                                                     |
 
-`fuzz`'s `--method`, `--coeffs`, `--fprob` and `--botlines` are applied
+`fuzz`'s `--method`, `--coeffs`, `--fprob`, `--botlines` and
+`--toplines` are applied
 after a case is generated, so the corpus is the same set of paths with
 one card changed. That is deliberate: a difference is then attributable
 to the card and not to a different path.
@@ -135,6 +137,7 @@ geometry trace only matches this way.
 | long-path model                       | `gmloss`, `settxr`, `seltxr`, `lngpat` and helpers                | `engine::modes`        | 14.4k two-end loss tables, exact rows    |
 | reliability, per-frequency outputs    | `relbil`, `serprb`, `mpath`, `setlng`, the smoothing blend        | `engine::modes`        | 31.7k slots + 8.6k smoothed, 24 fields   |
 | output fields, whole engine           | `setluf`, `outbod` listing body, `hfmufs` hour loop               | `engine::run`          | listing bit-identical over 96 cases      |
+| listing text: banner, header, paging  | `listin`, `outtop`, `setout`, `outlin` page breaks                | `engine::output`       | whole file identical over 600 cases      |
 
 Working order is data flow, top to bottom. Each stage lands with its trace
 instrumentation, its `porttest` comparison, and unit tests.
@@ -343,6 +346,105 @@ computes one, so the cell reads zero either way.
 `fuzz --method M` runs the corpus with a different `METHOD` card.
 Methods 16 to 22 are identical to the reference over 60 cases each.
 
+## The listing text (`engine::output`)
+
+The comparison used to be the printed cells a parser could recover.
+Now it is the whole file, byte for byte: the banner, the echoed input
+deck, every header block and every body row. That closes three gaps at
+once — the header was never checked, the page breaks were never checked,
+and the long model's `RANGLE` row was rendered nowhere.
+
+Three routines write it.
+
+- `LISTIN` writes the banner, the version line and a column ruler, then
+  echoes each input card with one leading space and its trailing blanks
+  dropped. The first character of the banner is a form-feed flag, blank
+  for a point-to-point run.
+- `OUTTOP` writes a header block: a page banner carrying the coefficient
+  set, the method, the model name, the version and the page number, then
+  up to seven lines describing the deck. Two of those seven are the
+  antenna lines, one per card, so a deck with several cards per end
+  prints a longer block.
+- `HFMUFS` writes one end-of-run line.
+
+The version is not a constant. The reference reads
+`database/version.w32` and takes the eight characters after `Version`,
+so the port reads the same file from the same tree and a tree with a
+different version file changes both engines together.
+
+### Which lines print
+
+`SETOUT` sets `NTOP`, turns on header lines 1 to `NTOP`, and stores the
+count in `LINTOP(15)`. A `TOPLINES` card replaces the selection with an
+arbitrary set, and — like `BOTLINES` — it does so for **any** method, not
+only method 23, because the jump that was meant to confine it to method
+23 is commented out. Its count is the number of accepted fields, so a
+card naming the same line twice counts two. Lines 8 to 14 may be named
+and counted although `OUTTOP` prints nothing for them.
+
+Method 23 without cards is the interesting case. `SETOUT` clears
+`LINTOP` and `LINBOT` to -1 and then jumps past the statements that would
+set both counts, so the page arithmetic runs on -1: the run prints no
+header at its first hour, one header at its second, and then none for the
+rest of the day, because each hour charges one line where it prints two.
+
+### Where the page breaks
+
+`OUTLIN` compares the row count of one hour against the lines left on
+the page and calls `OUTTOP` when the next hour would not fit. Three
+details decide the answer and all three are pinned by probes:
+
+- `SETOUT` leaves the counter at the page limit, so the first hour always
+  breaks a page.
+- After a header the counter is set to `LINTOP(15)` plus the antenna
+  lines printed — not to the number of lines the header actually wrote.
+  The two happen to agree for every method's own selection, and diverge
+  only under a `TOPLINES` card.
+- An hour with no mode in any slot prints its frequency line alone and
+  charges three lines.
+
+A `BOTLINES` card makes the counts disagree with each other. `SETOUT`
+accepts fields up to 25 and counts those; `OUTBOD` recounts as it prints
+and has no upper bound. So the first hour is charged `SETOUT`'s count and
+every hour after it `OUTBOD`'s, and a card naming line 26 raises the
+second without the first.
+
+Two defects fall out of the reading and are documented where they live.
+The long model prints `RANGLE` after `TANGLE`, and nothing counts it, so
+a long-path page runs one line over the limit for every hour on it. And
+the counter's value after a header is smaller than the block it printed
+whenever a `TOPLINES` card turns lines off.
+
+### What the header prints about an antenna
+
+`ANTMODEL` builds a ten-character model label from the antenna file's
+type number — `+  0.0 dBi` for an isotrope, carrying its gain, and
+`IONCAP #21`, `HFMUFES#37`, `NOSC-95#48` and the rest for the families.
+`ANTCALC` writes it as the first field of `gainNN.dat` and `DECRED` reads
+it back, so it reaches the header the same way the gain table does.
+
+The main beam bearing and the off-azimuth travel through that file's
+`f7.2`, and the header then prints one decimal of them. The off-azimuth
+is a computed bearing, so the rounding is visible and the port applies
+it. The main beam bearing comes from a card field five columns wide with
+one decimal, so `f7.2` can never change it: that rounding is
+unobservable by construction rather than untested.
+
+The transmit line ends with the card's power in kilowatts, after
+`DECRED` turns a non-positive power into one kilowatt. The receive line
+stops at the off-azimuth: `OUTTOP` passes one value fewer to the same
+format, and the record ends where the values run out.
+
+### Output formats still unported
+
+Methods 1 to 15 and 24 to 29 print through routines this stage does not
+cover — `OUTPAR`, `OUTION`/`IONPLT`, `OUTMUF`, `OUTLAY`, `OUTTAB` and
+`OUTGPH`, and method 25's `OUTALL`. `fuzz --method M` on any of them now
+reports differing lines, which is honest: the values behind those tables
+are checked through `mufcheck` and `lufcheck`, but the text is not
+written yet. It used to report zero cells compared, which read like a
+pass.
+
 ## Traps: how a passing or failing verdict has been wrong
 
 Every one of these produced a confident wrong answer at least once. Check
@@ -375,6 +477,29 @@ last one collides even with a single card per end, since the receive card
 would take slot 1 from the transmit card. Filling the whole gain table
 regardless of the card's range breaks nothing, and that is recorded as
 unobservable rather than verified.
+
+The listing text was checked the same way. Over 40 cases: printing the
+first page's tilde on every page breaks 40, numbering every page 1 breaks
+40, giving the receive antenna line a power column breaks 40, omitting
+the long model's `RANGLE` row breaks 19, mislabelling every antenna as an
+isotrope breaks 29, numbering the `IONCAP` and `HFMUFES` labels from one
+breaks 19, keeping the echoed deck's trailing blanks breaks 40, and not
+defaulting a non-positive transmit power to one kilowatt breaks 1 — the
+corpus draws a power that rounds to zero about that often. Over 24 method
+23 cases, charging the page zero rows instead of -1 breaks all 24.
+
+Two of these needed a card to become visible at all. Charging the page
+the lines the header printed rather than `LINTOP(15)` plus the antenna
+lines breaks nothing on any method's own selection, because the two are
+equal there; with `--toplines 1,1,1,1,1,1,1,1,1,1,1,1,1,1` it breaks 40
+of 40. Counting a repeated `TOPLINES` field once instead of twice needs
+the same card, and breaks 24 of 24 with it.
+
+Two details stay unobservable. Rounding the main beam bearing through the
+gain file's `f7.2` cannot change it, because the card field it comes from
+has one decimal. And for method 23 without cards, taking the header's own
+count as zero rather than -1 changes nothing, because either value leaves
+the counter far below the page limit for all 24 hours.
 
 **The listing does not print everything.** A difference in a value the
 listing never shows is invisible to `portcheck` and `fuzz`. That is what

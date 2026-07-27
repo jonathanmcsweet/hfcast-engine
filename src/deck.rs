@@ -16,7 +16,19 @@ use std::fmt;
 pub const FREQ_SLOTS: usize = 11;
 
 /// Isotropic at both ends unless the case names an antenna.
-const ANTENNA_FILE: &str = "default/isotrope";
+pub const ANTENNA_FILE: &str = "default/isotrope";
+
+/// The `LINEMAX` card: lines per page before the header repeats.
+pub const LINES_PER_PAGE: i32 = 55;
+
+/// `SYSTEM` card fields no case varies. They are named here because the
+/// listing header prints them, and printing one number while the card
+/// carries another would make the two engines answer different
+/// questions.
+pub const MIN_ANGLE_DEG: f64 = 0.10;
+pub const REQUIRED_RELIABILITY_PCT: i32 = 90;
+pub const MULTIPATH_POWER_DB: f64 = 3.00;
+pub const MULTIPATH_DELAY_MS: f64 = 0.10;
 
 /// One `ANTENNA` card.
 ///
@@ -105,6 +117,9 @@ pub struct DeckCase {
     /// are listed. It overrides whatever the method would select, and
     /// is how card method 23 says what to print.
     pub botlines: Option<Vec<u32>>,
+    /// A `TOPLINES` card: which of the header's lines print. Like
+    /// `BOTLINES` it overrides the method's own selection.
+    pub toplines: Option<Vec<u32>>,
 }
 
 impl DeckCase {
@@ -113,6 +128,12 @@ impl DeckCase {
     pub fn fprob(&self) -> [f64; 4] {
         self.fprob
             .unwrap_or([1.0, 1.0, 1.0, if self.sporadic_e { 1.0 } else { 0.0 }])
+    }
+
+    /// The `LABEL` card's forty characters, which the listing header
+    /// prints as four ten-character fields.
+    pub fn label(&self) -> String {
+        format!("{}{}", text(&self.id, 20), text("sweep", 20))
     }
 
     /// The `ANTENNA` cards this case writes, paired with the end each
@@ -214,6 +235,18 @@ fn antenna_ref(path: &str) -> String {
     format!("[{}]", text(path, 21))
 }
 
+/// A `TOPLINES` or `BOTLINES` card, or nothing when the case has none.
+fn line_card(name: &str, lines: Option<&[u32]>) -> Result<String, DeckError> {
+    let Some(lines) = lines else {
+        return Ok(String::new());
+    };
+    let mut card = format!("{name}  ");
+    for l in lines.iter().take(14) {
+        card.push_str(&field(&l.to_string(), 5)?);
+    }
+    Ok(card)
+}
+
 pub fn build_deck(c: &DeckCase) -> Result<String, DeckError> {
     if c.freqs_mhz.len() > FREQ_SLOTS {
         return Err(DeckError::TooManyFrequencies(c.freqs_mhz.len()));
@@ -252,7 +285,10 @@ pub fn build_deck(c: &DeckCase) -> Result<String, DeckError> {
     }
 
     let mut lines = vec![
-        "LINEMAX      55       number of lines-per-page".to_string(),
+        format!(
+            "LINEMAX   {}       number of lines-per-page",
+            field(&LINES_PER_PAGE.to_string(), 5)?
+        ),
         if c.ursi {
             "COEFFS    URSI88".to_string()
         } else {
@@ -272,7 +308,7 @@ pub fn build_deck(c: &DeckCase) -> Result<String, DeckError> {
             field(&format!("{:.2}", c.month as f64), 5)?
         ),
         format!("SUNSPOT   {}", field(&format!("{}.", c.ssn.round()), 5)?),
-        format!("LABEL     {}{}", text(&c.id, 20), text("sweep", 20)),
+        format!("LABEL     {}", c.label()),
         format!(
             "CIRCUIT   {}{}{}{}  S     0",
             lat_compact(c.from_lat)?,
@@ -284,11 +320,11 @@ pub fn build_deck(c: &DeckCase) -> Result<String, DeckError> {
             "SYSTEM    {}{}{}{}{}{}{}",
             field("1.", 5)?,
             field(&format!("{}.", c.noise_dbw), 5)?,
-            field("0.10", 5)?,
-            field("90.", 5)?,
+            field(&format!("{MIN_ANGLE_DEG:.2}"), 5)?,
+            field(&format!("{REQUIRED_RELIABILITY_PCT}."), 5)?,
             field(&format!("{:.1}", c.required_snr_db), 5)?,
-            field("3.00", 5)?,
-            field("0.10", 5)?
+            field(&format!("{MULTIPATH_POWER_DB:.2}"), 5)?,
+            field(&format!("{MULTIPATH_DELAY_MS:.2}"), 5)?
         ),
         {
             let p = c.fprob();
@@ -304,18 +340,11 @@ pub fn build_deck(c: &DeckCase) -> Result<String, DeckError> {
     lines.append(&mut antenna_lines);
     lines.extend([
         format!("FREQUENCY {freq_card}"),
-        // The BOTLINES card takes fourteen I5 fields; the unused ones
-        // stay blank, which reads as zero and selects no line.
-        match &c.botlines {
-            None => String::new(),
-            Some(lines) => {
-                let mut card = String::from("BOTLINES  ");
-                for l in lines.iter().take(14) {
-                    card.push_str(&field(&l.to_string(), 5)?);
-                }
-                card
-            }
-        },
+        // The TOPLINES and BOTLINES cards each take fourteen I5 fields;
+        // the unused ones stay blank, which reads as zero and selects no
+        // line.
+        line_card("TOPLINES", c.toplines.as_deref())?,
+        line_card("BOTLINES", c.botlines.as_deref())?,
         format!("METHOD    {}{}", field(&c.method.to_string(), 5)?, field("0", 5)?),
         "EXECUTE".to_string(),
         "QUIT".to_string(),
@@ -338,6 +367,7 @@ mod tests {
             ursi: false,
             fprob: None,
             botlines: None,
+            toplines: None,
             from_lat: 35.8,
             from_lon: -5.9,
             to_lat: 44.9,

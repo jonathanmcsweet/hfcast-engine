@@ -14,13 +14,14 @@
 //!
 //! Usage: `cargo run --release --bin fuzz [--cases N] [--from N]
 //! [--jobs J] [--seed N] [--show N] [--method M] [--coeffs URSI88]
-//! [--fprob a,b,c,d] [--botlines a,b,c]`
+//! [--fprob a,b,c,d] [--botlines a,b,c] [--toplines a,b,c]`
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::process::ExitCode;
 
-use propcore::deck::{build_deck, DeckCase};
-use propcore::engine::run::{body_lines, listing_text, run, RunInputs};
+use propcore::deck::{build_deck, DeckCase, LINES_PER_PAGE};
+use propcore::engine::output::{listing, nbod, read_version, Header};
+use propcore::engine::run::{body_lines, run_listing, RunInputs};
 use propcore::fuzz::{band_for, fuzz_cases};
 use propcore::listing::{parse_listing, ParsedListing};
 use propcore::runner::{map_limit, run_deck, variant_bin, IsolatedRoot};
@@ -49,13 +50,27 @@ struct ModeDiff {
     ported: Option<String>,
 }
 
+/// One line of the listing the two engines print differently. `None`
+/// means that engine's listing has no such line.
+#[derive(Debug, Clone)]
+struct LineDiff {
+    number: usize,
+    reference: Option<String>,
+    ported: Option<String>,
+}
+
 enum Outcome {
-    /// Every printed cell and mode label agreed.
-    Matched { cells: usize, modes: usize },
+    /// The two listings are the same text, byte for byte.
+    Matched {
+        cells: usize,
+        modes: usize,
+        lines: usize,
+    },
     Differed {
         cells: Vec<CellDiff>,
         modes: Vec<ModeDiff>,
         compared: usize,
+        lines: Vec<LineDiff>,
     },
     /// Both engines declined the case.
     BothRefused,
@@ -126,11 +141,16 @@ fn main() -> ExitCode {
     let botlines: Option<Vec<u32>> = flag("--botlines").map(|v| {
         v.split(',').filter_map(|t| t.trim().parse().ok()).collect()
     });
+    // `--toplines a,b,c` does the same for the header's lines.
+    let toplines: Option<Vec<u32>> = flag("--toplines").map(|v| {
+        v.split(',').filter_map(|t| t.trim().parse().ok()).collect()
+    });
     for case in cases.iter_mut() {
         case.method = method;
         case.ursi = ursi;
         case.fprob = fprob;
         case.botlines = botlines.clone();
+        case.toplines = toplines.clone();
     }
     let cases = cases;
 
@@ -152,15 +172,21 @@ fn main() -> ExitCode {
     let mut matched = 0usize;
     let mut cells = 0usize;
     let mut modes = 0usize;
+    let mut lines = 0usize;
     let mut both_refused = 0usize;
     let mut failures: Vec<(u64, &Outcome)> = Vec::new();
     for (offset, outcome) in outcomes.iter().enumerate() {
         let index = from + offset as u64;
         match outcome {
-            Outcome::Matched { cells: c, modes: m } => {
+            Outcome::Matched {
+                cells: c,
+                modes: m,
+                lines: l,
+            } => {
                 matched += 1;
                 cells += c;
                 modes += m;
+                lines += l;
             }
             Outcome::BothRefused => both_refused += 1,
             _ => failures.push((index, outcome)),
@@ -172,10 +198,12 @@ fn main() -> ExitCode {
     println!("| identical | {matched} |");
     println!("| both engines refused | {both_refused} |");
     println!("| differing | {} |", failures.len());
-    println!("\n{cells} printed cells and {modes} mode labels compared.\n");
+    println!(
+        "\n{lines} printed lines compared, holding {cells} cells and {modes} mode labels.\n"
+    );
 
     if failures.is_empty() {
-        println!("Verdict: identical on every case the reference answered.");
+        println!("Verdict: the same listing text on every case the reference answered.");
         return ExitCode::SUCCESS;
     }
 
@@ -189,12 +217,15 @@ fn main() -> ExitCode {
                 cells,
                 modes,
                 compared,
+                lines,
             } => {
                 println!(
-                    "{} of {compared} cells differ, {} mode labels.\n",
+                    "{} lines differ; {} of {compared} cells and {} mode labels.\n",
+                    lines.len(),
                     cells.len(),
                     modes.len()
                 );
+                print_lines(lines, show);
                 print_cells(cells, show);
                 print_modes(modes, show);
             }
@@ -240,8 +271,14 @@ fn single_case(reference: &std::path::Path, case: &DeckCase, index: u64, show: u
     }
 
     match check_case(reference, case) {
-        Outcome::Matched { cells, modes } => {
-            println!("Identical: {cells} cells and {modes} mode labels agree.");
+        Outcome::Matched {
+            cells,
+            modes,
+            lines,
+        } => {
+            println!(
+                "Identical: {lines} lines of listing, holding {cells} cells and {modes} mode labels."
+            );
             ExitCode::SUCCESS
         }
         Outcome::BothRefused => {
@@ -252,12 +289,15 @@ fn single_case(reference: &std::path::Path, case: &DeckCase, index: u64, show: u
             cells,
             modes,
             compared,
+            lines,
         } => {
             println!(
-                "{} of {compared} cells differ, {} mode labels.\n",
+                "{} lines differ; {} of {compared} cells and {} mode labels.\n",
+                lines.len(),
                 cells.len(),
                 modes.len()
             );
+            print_lines(&lines, show.max(40));
             print_cells(&cells, show.max(40));
             print_modes(&modes, show.max(40));
             ExitCode::FAILURE
@@ -271,6 +311,28 @@ fn single_case(reference: &std::path::Path, case: &DeckCase, index: u64, show: u
             ExitCode::FAILURE
         }
     }
+}
+
+/// The differing lines, as the two engines wrote them.
+fn print_lines(diffs: &[LineDiff], show: usize) {
+    if diffs.is_empty() {
+        return;
+    }
+    println!("```");
+    for d in diffs.iter().take(show) {
+        let side = |text: &Option<String>| match text {
+            // A form feed in the page banner would break the report's
+            // own layout, so it is shown as an escape.
+            Some(t) => t.replace('\u{c}', "<FF>"),
+            None => "<no line>".to_string(),
+        };
+        println!("{:5} ref  |{}|", d.number, side(&d.reference));
+        println!("      port |{}|", side(&d.ported));
+    }
+    if diffs.len() > show {
+        println!("...and {} more lines.", diffs.len() - show);
+    }
+    println!("```\n");
 }
 
 fn print_cells(diffs: &[CellDiff], show: usize) {
@@ -334,8 +396,8 @@ fn check_case(reference: &std::path::Path, case: &DeckCase) -> Outcome {
     let inputs = RunInputs::from(case);
     // The port panics where the engine stops, so a panic is caught and
     // compared against the Fortran's refusal rather than ending the run.
-    let ported = match catch_unwind(AssertUnwindSafe(|| run(root.path(), &inputs))) {
-        Ok(Ok(hours)) => Ok(hours),
+    let ported = match catch_unwind(AssertUnwindSafe(|| run_listing(root.path(), &inputs))) {
+        Ok(Ok(prediction)) => Ok(prediction),
         Ok(Err(e)) => Err(e),
         Err(payload) => Err(panic_message(payload)),
     };
@@ -353,25 +415,61 @@ fn check_case(reference: &std::path::Path, case: &DeckCase) -> Outcome {
             which: "port",
             why: pe,
         },
-        (Ok(text), Ok(hours)) => {
+        (Ok(text), Ok(prediction)) => {
+            let version = match read_version(root.path()) {
+                Ok(v) => v,
+                Err(e) => return Outcome::Broken(format!("version file: {e}")),
+            };
+            let rows = body_lines(case.method, case.botlines.as_deref());
+            let header = Header::for_case(case, &prediction.path, &version);
+            let ours = listing(
+                &deck,
+                &header,
+                &prediction.hours,
+                &rows,
+                nbod(case.method, case.botlines.as_deref()),
+                LINES_PER_PAGE,
+                case.botlines.is_some(),
+            );
+            let lines = line_diffs(&text, &ours);
             let a = parse_listing(&text);
-            let b = parse_listing(&listing_text(&hours, &body_lines(case.method, case.botlines.as_deref())));
+            let b = parse_listing(&ours);
             let (cells, compared) = cell_diffs(&a, &b);
             let modes = mode_diffs(&a, &b);
-            if cells.is_empty() && modes.is_empty() {
+            if cells.is_empty() && modes.is_empty() && lines.is_empty() {
                 Outcome::Matched {
                     cells: compared,
                     modes: a.modes.len(),
+                    lines: text.lines().count(),
                 }
             } else {
                 Outcome::Differed {
                     cells,
                     modes,
                     compared,
+                    lines,
                 }
             }
         }
     }
+}
+
+/// Every line the two listings do not agree on, byte for byte.
+///
+/// The listings are compared by position rather than aligned, because a
+/// port that dropped or added a line has a real difference there and
+/// realigning would hide it.
+fn line_diffs(reference: &str, ported: &str) -> Vec<LineDiff> {
+    let a: Vec<&str> = reference.lines().collect();
+    let b: Vec<&str> = ported.lines().collect();
+    (0..a.len().max(b.len()))
+        .filter(|n| a.get(*n) != b.get(*n))
+        .map(|n| LineDiff {
+            number: n + 1,
+            reference: a.get(n).map(|l| (*l).to_string()),
+            ported: b.get(n).map(|l| (*l).to_string()),
+        })
+        .collect()
 }
 
 fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {

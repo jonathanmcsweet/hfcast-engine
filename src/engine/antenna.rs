@@ -104,6 +104,39 @@ impl AntennaFile {
     }
 }
 
+/// `ANTMODEL`: the ten-character model label `ANTCALC` writes as the
+/// first field of `gainNN.dat` and `OUTTOP` prints in the header.
+///
+/// An isotrope's label carries its gain, which is why the design
+/// frequency is passed here: for type 0 that field is the gain.
+pub fn antmodel(jant: i32, gain: R) -> String {
+    let numbered = |prefix: &str| format!("{prefix}{jant:02}");
+    match jant {
+        0 => format!("+{} dBi", f5_1(gain)),
+        1..=10 => numbered("REC705 #"),
+        11 => "2-D Table ".to_string(),
+        12 => "NTIA87-215".to_string(),
+        13 => "3-D Table ".to_string(),
+        14 => "2-D P-to-P".to_string(),
+        21..=30 => numbered("IONCAP #"),
+        31..=47 => numbered("HFMUFES#"),
+        48 => numbered("NOSC-95#"),
+        90..=99 => numbered("Extern #"),
+        _ => "Unknown???".to_string(),
+    }
+}
+
+/// Fortran `F5.1`, asterisks on overflow, as `ANTMODEL`'s label writes
+/// an isotrope's gain.
+fn f5_1(v: R) -> String {
+    let s = format!("{:5.1}", f64::from(v));
+    if s.len() > 5 {
+        "*****".to_string()
+    } else {
+        s
+    }
+}
+
 /// A gain table, as `ANTCALC` computes it and `GAIN` consumes it.
 #[derive(Debug, Clone)]
 pub struct GainTable {
@@ -114,6 +147,10 @@ pub struct GainTable {
     pub gains: Vec<[R; ELEVS]>,
     /// `aeff(30)`: the efficiency per frequency row.
     pub eff: [R; FREQS],
+    /// The first line of `gainNN.dat`: [`antmodel`]'s label, which is
+    /// the only thing the header says about which antenna a card names
+    /// beyond the file's own name.
+    pub anttype: String,
     /// The second header line of `gainNN.dat`: first and last frequency,
     /// the main beam bearing, the off-azimuth, then `parm(4)` and
     /// `parm(3)` — conductivity and dielectric constant.
@@ -130,6 +167,7 @@ impl Default for GainTable {
         Self {
             gains: vec![[0.0; ELEVS]; FREQS],
             eff: [0.0; FREQS],
+            anttype: String::new(),
             fs: 0.0,
             fe: 0.0,
             beam_main: 0.0,
@@ -178,6 +216,32 @@ pub struct InstalledAntenna {
     pub area: Option<AreaGainTable>,
     /// `pwrdba`: 30 + 10 log10(kW), transmit cards only.
     pub pwrdba: R,
+    /// `pwrkw`: the card's power column, after `DECRED` turns a
+    /// non-positive transmit power into one kilowatt. The header prints
+    /// this, and it is a power only on a transmit card.
+    pub pwrkw: R,
+    /// `antfile`: the card's antenna file field, which the header prints
+    /// as it stands.
+    pub file: String,
+}
+
+/// One computed card, ready for [`AntennaSet::install`].
+///
+/// The reference holds these in parallel arrays indexed by the card's
+/// slot — `/cantenna/` for the table and the file name, `/pantenna/` for
+/// the power — so they arrive together and stay together.
+#[derive(Debug, Clone)]
+pub struct Installation {
+    /// 1 transmit, 2 receive.
+    pub iat: i32,
+    /// The card's frequency range in whole MHz.
+    pub min_freq: i32,
+    pub max_freq: i32,
+    pub table: GainTable,
+    /// The card's power column, in kilowatts.
+    pub power_kw: R,
+    /// The card's antenna file field.
+    pub file: String,
 }
 
 /// The installed antennas of one run: what `/cantenna/` holds while
@@ -216,13 +280,31 @@ fn pwrdba_of(iat: i32, power_kw: R) -> R {
     if iat != 1 {
         return 0.0;
     }
-    let kw = if power_kw <= 0.0 { 1.0 } else { power_kw };
-    30.0 + 10.0 * kw.log10()
+    30.0 + 10.0 * pwrkw_of(iat, power_kw).log10()
+}
+
+/// `pwrkw` as `DECRED` leaves it: a non-positive transmit power becomes
+/// one kilowatt. On a receive card the column is a gain, and `DECRED`
+/// stores it in the same array untouched.
+fn pwrkw_of(iat: i32, power_kw: R) -> R {
+    if iat == 1 && power_kw <= 0.0 {
+        1.0
+    } else {
+        power_kw
+    }
 }
 
 impl AntennaSet {
     /// Installs one computed table as `DECRED` would read it back.
-    pub fn install(&mut self, iat: i32, min_freq: i32, max_freq: i32, mut table: GainTable, power_kw: R) {
+    pub fn install(&mut self, ins: Installation) {
+        let Installation {
+            iat,
+            min_freq,
+            max_freq,
+            mut table,
+            power_kw,
+            file,
+        } = ins;
         for row in table.gains.iter_mut() {
             for slot in row.iter_mut() {
                 *slot = through_f7_3(*slot);
@@ -238,6 +320,8 @@ impl AntennaSet {
             table,
             area: None,
             pwrdba: pwrdba_of(iat, power_kw),
+            pwrkw: pwrkw_of(iat, power_kw),
+            file,
         });
     }
 
@@ -247,25 +331,27 @@ impl AntennaSet {
     /// The reference's area lookup picks the bearing from the antenna's
     /// position in the list rather than from the end it serves, and its
     /// table only has room for two, so this refuses a third.
-    pub fn install_area(
-        &mut self,
-        iat: i32,
-        min_freq: i32,
-        max_freq: i32,
-        header: GainTable,
-        area: AreaGainTable,
-        power_kw: R,
-    ) -> Result<(), String> {
+    pub fn install_area(&mut self, ins: Installation, area: AreaGainTable) -> Result<(), String> {
         if self.ants.len() >= 2 {
             return Err("an area run holds at most two antennas".to_string());
         }
+        let Installation {
+            iat,
+            min_freq,
+            max_freq,
+            table,
+            power_kw,
+            file,
+        } = ins;
         self.ants.push(InstalledAntenna {
             iat,
             xfqs: min_freq as R,
             xfqe: max_freq as R,
-            table: header,
+            table,
             area: Some(area),
             pwrdba: pwrdba_of(iat, power_kw),
+            pwrkw: pwrkw_of(iat, power_kw),
+            file,
         });
         Ok(())
     }
@@ -275,12 +361,21 @@ impl AntennaSet {
     pub fn isotropes(watts: R) -> Self {
         let mut set = Self::default();
         let table = GainTable {
+            anttype: antmodel(0, 0.0),
             fs: 2.0,
             fe: 30.0,
             ..Default::default()
         };
-        set.install(1, 2, 30, table.clone(), watts / 1000.0);
-        set.install(2, 2, 30, table, 0.0);
+        let card = |iat: i32, power_kw: R, table: GainTable| Installation {
+            iat,
+            min_freq: 2,
+            max_freq: 30,
+            table,
+            power_kw,
+            file: crate::deck::ANTENNA_FILE.to_string(),
+        };
+        set.install(card(1, watts / 1000.0, table.clone()));
+        set.install(card(2, 0.0, table));
         set
     }
 
@@ -610,9 +705,14 @@ pub fn point_to_point_table(s: &AntennaSetup) -> Result<GainTable, Unsupported> 
     }
 
     let mut table = GainTable {
+        anttype: antmodel(jant, design_freq),
         fs: s.min_freq as R,
         fe: s.max_freq as R,
-        beam_main: s.beam_deg,
+        // Both bearings go through the gain file's `f7.2`, so the header
+        // prints two decimals of them however precise the calculation
+        // was. The azimuth cut below uses the unrounded value, because
+        // `ANTCALC` looks up the table before it writes the file.
+        beam_main: through_f7_2(s.beam_deg),
         cond: parm[3],
         diel: parm[2],
         ..Default::default()
@@ -621,7 +721,7 @@ pub fn point_to_point_table(s: &AntennaSetup) -> Result<GainTable, Unsupported> 
     if offazim < 0.0 {
         offazim += 360.0;
     }
-    table.offazim = offazim;
+    table.offazim = through_f7_2(offazim);
 
     let lo = s.min_freq.max(1);
     let hi = s.max_freq.min(FREQS as i32);
@@ -859,6 +959,7 @@ pub fn area_table(s: &AntennaSetup, freq: R) -> Result<(GainTable, AreaGainTable
     // the -999 in the off-azimuth field is what tells `GAIN` to take the
     // area branch.
     let header = GainTable {
+        anttype: antmodel(jant, design_freq),
         fs: s.min_freq as R,
         fe: s.max_freq as R,
         beam_main: through_f7_2(s.beam_deg),

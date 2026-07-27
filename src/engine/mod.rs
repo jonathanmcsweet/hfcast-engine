@@ -64,5 +64,6 @@ pub mod magnetic;
 pub mod modes;
 pub mod muf;
 pub mod noise;
+pub mod output;
 pub mod run;
 pub mod sigdis;

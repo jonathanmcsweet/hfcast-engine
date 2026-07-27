@@ -310,6 +310,7 @@ mod tests {
             ursi: false,
             fprob: None,
             botlines: None,
+            toplines: None,
             from_lat: 35.8,
             from_lon: -5.9,
             to_lat: 44.9,

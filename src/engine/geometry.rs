@@ -49,6 +49,11 @@ pub struct PathGeometry {
     pub btr: R,
     /// Bearing receiver to transmitter, radians clockwise from north.
     pub brt: R,
+    /// `RLATD` of `/DON/`: the receive latitude in degrees as `GEOM`
+    /// leaves it, which the listing header prints. It differs from the
+    /// card when the receiver sat on top of the transmitter and was
+    /// moved off it.
+    pub rlatd: R,
     pub points: Vec<ControlPoint>,
 }
 
@@ -215,6 +220,7 @@ pub fn path_geometry(
         gcd_km,
         btr,
         brt,
+        rlatd,
         points,
     }
 }
