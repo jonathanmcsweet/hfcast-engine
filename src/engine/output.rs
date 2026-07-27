@@ -359,12 +359,34 @@ pub fn preamble(version: &str) -> String {
 pub fn echo_deck(deck: &str) -> String {
     let mut out = String::new();
     for line in deck.lines() {
+        // `LISTIN` drops this one card from the echo, and `DECRED`
+        // writes it back when it reads it — which is after the whole
+        // deck has been echoed. Nothing else about a `COMMENT` card
+        // reaches the run.
+        if line.starts_with(GROUP_COMMENT) {
+            continue;
+        }
         out.push(' ');
         out.push_str(line.trim_end());
         out.push('\n');
     }
+    for line in deck.lines() {
+        if let Some(rest) = line.strip_prefix(COMMENT_FIELD) {
+            if line.starts_with(GROUP_COMMENT) {
+                // The card body is read out of a `CHARACTER*85`, so the
+                // 75 characters after column 10 are written whether the
+                // card filled them or not.
+                out.push_str(&format!(" {COMMENT_FIELD}{}\n", text_field(rest, 75)));
+            }
+        }
+    }
     out
 }
+
+/// The `COMMENT` card's name field, ten characters.
+const COMMENT_FIELD: &str = "COMMENT   ";
+/// The one comment `LISTIN` treats specially.
+const GROUP_COMMENT: &str = "COMMENT   GROUP";
 
 /// `HFMUFS`'s last line.
 pub fn end_of_run(version: &str) -> String {

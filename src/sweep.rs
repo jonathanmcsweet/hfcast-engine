@@ -149,6 +149,8 @@ pub fn sweep_cases() -> Vec<DeckCase> {
                     // code paths that setting exercises.
                     outgraph: None,
             integrate: None,
+            comment: None,
+            extra_cards: Vec::new(),
                     sporadic_e: true,
                 });
             }

@@ -260,6 +260,8 @@ fn run_path(
         toplines: None,
         outgraph: None,
             integrate: None,
+            comment: None,
+            extra_cards: Vec::new(),
         from_lat: path.tx_lat,
         from_lon: path.tx_lon,
         to_lat: path.rx_lat,

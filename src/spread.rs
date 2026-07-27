@@ -126,6 +126,8 @@ pub fn gather(dir: &Path) -> Result<MonthSpread, String> {
             rx_antennas: Vec::new(),
             outgraph: None,
             integrate: None,
+            comment: None,
+            extra_cards: Vec::new(),
             sporadic_e: SPORADIC_E,
         };
         let deck = build_deck(&case).map_err(|e| e.to_string())?;

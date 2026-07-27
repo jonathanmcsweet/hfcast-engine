@@ -182,10 +182,56 @@ pub fn fuzz_case(index: u64) -> DeckCase {
         sporadic_e: rng.chance(0.5),
         outgraph: pick_outgraph(&mut rng),
         integrate: pick_integrate(&mut rng),
+        comment: pick_comment(&mut rng),
+        extra_cards: pick_extra_cards(&mut rng),
         tx_antennas: pick_antennas(&mut rng, 1),
         rx_antennas: pick_antennas(&mut rng, 2),
         freqs_mhz,
     }
+}
+
+/// Cards that reach no computation, drawn so a run carrying one can be
+/// compared against the reference. `FREEFORM` sets `ITYPE` and `ANTOUT`
+/// sets `IANTOU`; nothing reads either.
+fn pick_extra_cards(rng: &mut Rng) -> Vec<String> {
+    let mut cards = Vec::new();
+    if rng.chance(0.15) {
+        cards.push(if rng.chance(0.5) {
+            "FREEFORM  ON".to_string()
+        } else {
+            "FREEFORM  OFF".to_string()
+        });
+    }
+    if rng.chance(0.15) {
+        cards.push(if rng.chance(0.5) {
+            "ANTOUT    ON".to_string()
+        } else {
+            "ANTOUT    OFF".to_string()
+        });
+    }
+    if rng.chance(0.15) {
+        // Control point 1 given values nothing like the path's, to make
+        // any surviving field visible. `GEOM`, `MAGVAR`, `GEOTIM` and
+        // `SIGDIS` overwrite every one of them.
+        cards.push(
+            "SAMPLE        145.00N    10.00E    40.00N     500. 1.0012.0030.00 0.10 0.00 4.00"
+                .to_string(),
+        );
+    }
+    cards
+}
+
+/// A sixth of the cases carry a `COMMENT` card. Half of those begin
+/// with `GROUP`, which is the spelling the listing moves to the end.
+fn pick_comment(rng: &mut Rng) -> Option<String> {
+    if !rng.chance(0.17) {
+        return None;
+    }
+    Some(if rng.chance(0.5) {
+        format!("GROUP {} test", rng.int(1, 99))
+    } else {
+        format!("case note {}", rng.int(1, 99))
+    })
 }
 
 /// A fifth of the cases carry an `INTEGRATE` card, which switches the

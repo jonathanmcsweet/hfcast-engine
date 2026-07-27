@@ -578,20 +578,26 @@ gains, some of which round to zero from below.
 interpolated antenna gain across a rounding boundary, so every
 conversion in the engine goes through `con::R2D` and `con::D2R`.
 
-**A gain table cell can land on the `f7.3` half-thousandth.** The
-reference writes its computed pattern to `run/gainNN.dat` with `F7.3`
-and reads it back, so a pattern value differing from the port's in its
-last `f32` bit becomes a whole 0.001 difference in the table when the
-two straddle a half-thousandth. `GAIN` then carries that into the
-interpolated gain, and card method 25 is the only output that prints a
-gain to two decimals, so it is the only place it can show. One cell in
-40 generated cases does: card method 25, case 39, 27.93 MHz at 15 UT,
-`R. GAIN` -12.32 against -12.33, from `samples/sample.43`'s 28 MHz /
-9 degree cell reading -11.801 in the reference's file against the
-port's -11.8015003. Every IEEE-conformant build of the reference agrees
-with itself here, so this is the port's own last bit, not build noise.
-It is inside the tolerance envelope and is the only cell in any method
-that is not byte-identical.
+**Card method 25 prints two decimals, and that is enough to expose the
+last bit.** Every other method prints a gain or a loss to one decimal,
+where a difference in the last `f32` bit is invisible. `OUTALL` prints
+`F9.2`, so a value sitting within about 5e-6 of a half-hundredth
+rounds the other way. Two have been seen, both inside the tolerance
+envelope. Only the second is in the current corpus — adding a fuzzer
+draw shifts every case after it — but the first is worth keeping
+because it was traced all the way down:
+
+- 27.93 MHz at 15 UT, `R. GAIN` -12.32 against -12.33. Traced
+  to `samples/sample.43`'s 28 MHz / 9 degree pattern value, which the
+  reference writes to `run/gainNN.dat` with `F7.3` and reads back: the
+  port's -11.8015003 and the reference's differ in the last bit, and
+  the file's three decimals turn that into a whole 0.001.
+- Case 2, 28.53 MHz at 2 UT, `TRAN.LOSS` 227.69 against 227.70, with
+  `SIG. POW.` following it. The printed gains agree, so the difference
+  is below print precision in one of the loss terms.
+
+Every IEEE-conformant build of the reference agrees with itself on
+both, so this is the port's own last bit rather than build noise.
 
 **State survives between hours and between calls.** `/SON/`, `/REFLX/`,
 `/ZON/`, `/allMODE/` and `/MODES/` persist across hours and are read
@@ -688,6 +694,32 @@ At zero or above, three places change.
 
 `IONPLT` also prints `MODEL SEG` instead of `GAUSSIAN` in its heading
 when the point has no F1 layer and `IEDP` is not negative.
+
+## Cards that reach no computation
+
+Four of the input cards set a variable nothing reads, or write values
+something else overwrites before they are used. The deck builder can
+write all of them, and the fuzzer draws them, so "no effect" is a
+measured result rather than a reading of the source.
+
+- `FREEFORM` sets `ITYPE`. Nothing reads it; the source's own comment
+  says the free-form input analyser was never developed.
+- `ANTOUT` sets `IANTOU`. Nothing reads it, although `OUTANT`'s header
+  comment claims the card makes it write an antenna file.
+- `SAMPLE` writes the control point coordinates, gyrofrequency,
+  magnetic dip, local time, excess loss and ground constants. `GEOM`
+  and the `MAGVAR` call inside it overwrite the first six at every
+  `EXECUTE`, `GEOTIM` overwrites the local time every hour, and
+  `SIGDIS` overwrites the excess loss every hour.
+- `COMMENT` reaches nothing either, but it is not invisible: `LISTIN`
+  drops a card whose first fifteen characters are `COMMENT   GROUP`
+  from the echoed deck, and `DECRED` writes it back when it reads it,
+  which is after the whole deck has been echoed. So that one spelling
+  moves to the end of the deck listing and is padded to the 75
+  characters its `CHARACTER*85` buffer holds.
+
+`MONTHLOOP` and `NEXT` are not usable at all: the reference reaches a
+`pause` and a `stop` on both.
 
 ## The COEFFS and FPROB cards
 

@@ -120,6 +120,17 @@ pub struct DeckCase {
     /// A `TOPLINES` card: which of the header's lines print. Like
     /// `BOTLINES` it overrides the method's own selection.
     pub toplines: Option<Vec<u32>>,
+    /// Cards written verbatim before the `METHOD` card. This is how the
+    /// deck carries a card that reaches no computation — `FREEFORM` and
+    /// `ANTOUT` both set a variable nothing reads — so that a run with
+    /// one can be compared against the reference and shown to be
+    /// unchanged.
+    pub extra_cards: Vec<String>,
+    /// A `COMMENT` card's text, which follows the ten-character name
+    /// field. The card reaches no computation; it is here because a
+    /// comment beginning `GROUP` is echoed in a different place from
+    /// every other card.
+    pub comment: Option<String>,
     /// An `INTEGRATE` card, carrying the value it puts in `IEDP`. The
     /// card decides how layer heights are obtained: without it `IEDP`
     /// stays at its program-start -1 and every height comes from the
@@ -366,6 +377,11 @@ pub fn build_deck(c: &DeckCase) -> Result<String, DeckError> {
         // The TOPLINES and BOTLINES cards each take fourteen I5 fields;
         // the unused ones stay blank, which reads as zero and selects no
         // line.
+        c.extra_cards.join("\n"),
+        match &c.comment {
+            Some(text) => format!("COMMENT   {text}"),
+            None => String::new(),
+        },
         match c.integrate {
             Some(v) => format!("INTEGRATE {}", field(&v.to_string(), 5)?),
             None => String::new(),
@@ -416,6 +432,8 @@ mod tests {
             sporadic_e: false,
             outgraph: None,
             integrate: None,
+            comment: None,
+            extra_cards: Vec::new(),
         }
     }
 

@@ -312,6 +312,8 @@ mod tests {
             botlines: None,
             outgraph: None,
             integrate: None,
+            comment: None,
+            extra_cards: Vec::new(),
             toplines: None,
             from_lat: 35.8,
             from_lon: -5.9,
