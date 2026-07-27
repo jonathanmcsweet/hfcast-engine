@@ -859,7 +859,7 @@ pub fn run_luf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<MufHourOut>, Strin
             nang,
             long,
         };
-        let (xluf, _frea) = luffy_luf(&mut lp, &ctx, &mut hour, &noise_for, deck.lufp);
+        let (xluf, _frea) = luffy_luf(&mut lp, &ctx, &mut hour, &noise_for, deck.lufp, inp.model);
         out.push(MufHourOut {
             gmt,
             lmt: times.lmt_tx,

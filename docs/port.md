@@ -120,7 +120,7 @@ Then, from `propcore/`, with `cargo` as above:
 | `mufcheck`     | methods 1, 3 and 7 tables                             | `--method 1\|3\|7` `--cases N` `--from N` `--jobs J`                                                                                           |
 | `areacheck`    | area coverage rows and antennas against the grid file | `--jobs J`                                                                                                                                     |
 | `paritycheck`  | the fields the server reads, both production paths    | `--jobs J`                                                                                                                                     |
-| `correctcheck` | what one corrected-tier fix changes                   | `--fix NAME` `--cases N` `--jobs J`                                                                                                            |
+| `correctcheck` | what one corrected-tier fix changes                   | `--fix NAME` `--corpus sweep\|luf` `--cases N` `--jobs J`                                                                                      |
 
 `porttest --fuzz` is not currently usable: it reports stage mismatches
 on generated decks where `fuzz` finds the finished listings identical,
@@ -631,6 +631,16 @@ stale. `FSECV` carries from each hour into the next, which is why an area
 run's single hour is not the same computation as that hour inside a
 24-hour run. Some antenna locals survive between calls on gfortran's
 stack without being in a `SAVE` statement.
+
+**A file in the shared tree can neutralise a fix under measurement.**
+`validate --fix` renders against `~/itshfbc` directly, with no
+`IsolatedRoot`, so whatever is in that tree applies to both sides of the
+comparison. A leftover `run/north_pole.txt` is the case to know about: it
+is read on both tiers, so with one present the `pole_file` fix changes
+nothing and the null accuracy result is an artifact of the tree rather
+than a finding. Check that the file is absent before trusting a null, or
+confirm the fix is live the way the pole measurement did — by showing
+that some printed number moved between the two runs.
 
 ## Every card method's own output routine
 
@@ -1256,3 +1266,20 @@ implemented**, because the sweep is method 30, point-to-point and
 isotropic, and those fixes live on the LUF, area and curtain-antenna
 paths. A zero there is not evidence the fix is harmless; it is evidence
 the corpus never reached it. Each of those needs its own corpus.
+
+`--corpus` chooses:
+
+| corpus  | cases                                | fixes it reaches                 |
+| ------- | ------------------------------------ | -------------------------------- |
+| `sweep` | the 96 method-30 systems cases       | `pole_file`                      |
+| `luf`   | fuzz cases with the method set to 26 | `luf_scan_best`, `luf_pass_area` |
+
+Each corpus needs an oracle for its compatible half, or the movement it
+reports could be a port that drifted rather than a fix. The sweep has
+`portcheck`; the LUF corpus has `lufcheck`, which runs the same 48
+cases through the reference and compares every column of the method-26
+table. Run it after touching anything in `luffy_luf`.
+
+`correctcheck` also prints which cases moved, not only how many. A fix
+biting in a minority of cases needs a named case before anything can be
+read back from it — including for a test that has to pick one.

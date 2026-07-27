@@ -79,9 +79,9 @@ pub struct Fixes {
     /// compares every slot against slot 1 and returns the last slot
     /// beating slot 1 rather than the most reliable one.
     pub luf_scan_best: bool,
-    /// The short LUF pass reads its modes from whichever column was
-    /// written last, because `FINDF` and `FDIST` take the area as an
-    /// argument while the mode routines set it internally.
+    /// The short LUF pass splits its area in two: `FINDF` and `FDIST`
+    /// build the reflectrix and the raysets for the receiver-end area,
+    /// while the mode routines read the controlling area's column.
     pub luf_pass_area: bool,
     /// An area run's nudge off the transmitter compares a folded
     /// longitude against an unfolded one, so a transmitter at a
@@ -158,6 +158,20 @@ impl Model {
     }
 }
 
+impl Model {
+    /// Keeps the running best while scanning for the most reliable
+    /// frequency when no LUF was found.
+    pub(crate) fn luf_scan_reassigns(self) -> bool {
+        self.fixes().luf_scan_best
+    }
+
+    /// Builds the short LUF pass's raysets for the same area its mode
+    /// routines read, as the systems pass does.
+    pub(crate) fn luf_pass_uses_one_area(self) -> bool {
+        self.fixes().luf_pass_area
+    }
+}
+
 /// The accessors below have no callers until their fix is
 /// implemented. Each loses this allow when its site starts reading
 /// it.
@@ -167,18 +181,6 @@ impl Model {
     /// than `0001`.
     pub(crate) fn curtain_elevation_threshold(self) -> bool {
         self.fixes().curtain_elevation
-    }
-
-    /// Keeps the running best while scanning for the most reliable
-    /// frequency when no LUF was found.
-    pub(crate) fn luf_scan_reassigns(self) -> bool {
-        self.fixes().luf_scan_best
-    }
-
-    /// Reads the short LUF pass's modes from the area it built its
-    /// raysets for.
-    pub(crate) fn luf_pass_reads_own_area(self) -> bool {
-        self.fixes().luf_pass_area
     }
 
     /// Compares both longitudes the same way when nudging a grid
@@ -204,7 +206,7 @@ mod tests {
         assert!(!c.reads_pole_file());
         assert!(!c.curtain_elevation_threshold());
         assert!(!c.luf_scan_reassigns());
-        assert!(!c.luf_pass_reads_own_area());
+        assert!(!c.luf_pass_uses_one_area());
         assert!(!c.area_nudge_compares_alike());
         assert!(!c.area_antenna_by_end());
 
@@ -212,7 +214,7 @@ mod tests {
         assert!(f.reads_pole_file());
         assert!(f.curtain_elevation_threshold());
         assert!(f.luf_scan_reassigns());
-        assert!(f.luf_pass_reads_own_area());
+        assert!(f.luf_pass_uses_one_area());
         assert!(f.area_nudge_compares_alike());
         assert!(f.area_antenna_by_end());
     }

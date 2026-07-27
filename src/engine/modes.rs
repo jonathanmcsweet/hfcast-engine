@@ -26,6 +26,7 @@
 
 use super::con::{D2R, DCL, PIO2, R, R2D, RZ, VOFL};
 use super::ionogram::{Ionogram, ANG};
+use super::model::Model;
 use super::ionosphere::{EsParams, LayerParams};
 use super::magnetic::MagneticVars;
 use super::muf::{IonoState, MufHour};
@@ -2792,6 +2793,7 @@ pub fn luffy_luf(
     muf: &mut MufHour,
     noise_for: &dyn Fn(R) -> NoiseResult,
     lufp: i32,
+    model: Model,
 ) -> (R, [R; 13]) {
     let mut frea = frqcom(muf, 0);
     let pluf = 0.01 * lufp as R;
@@ -2815,7 +2817,19 @@ pub fn luffy_luf(
         let noise = noise_for(freq);
         if !ctx.long {
             let jm = ctx.jmode;
-            let kc = ctx.kctl;
+            // The area the reflectrix and the raysets are built for.
+            // The reference leaves `K = KFX` here — the receiver-end
+            // area — while the mode routines below read column `JMODE`,
+            // so this pass builds its raysets from one area and reads
+            // its modes from another. The fix uses the controlling area
+            // throughout, which is what the systems pass does and what
+            // makes this search's reliability comparable to the
+            // reliability whose threshold it is looking for.
+            let kc = if model.luf_pass_uses_one_area() {
+                jm
+            } else {
+                ctx.kctl
+            };
             findf(
                 &mut lp.reflectrix[kc],
                 ctx.state,
@@ -2902,15 +2916,18 @@ pub fn luffy_luf(
             return (xluf, frea);
         }
     }
-    // No LUF found: take the highest reliability. The comparison is
-    // against the *first* slot's reliability throughout — REL is never
-    // updated — so IG lands on the last slot beating slot 1, not on
-    // the true maximum. Kept as written.
+    // No LUF found: take the highest reliability. The reference never
+    // updates its running best — REL keeps the *first* slot's value
+    // throughout — so IG lands on the last slot beating slot 1 rather
+    // than on the true maximum. The fix keeps the running best.
     let mut ig = 0usize;
-    let rel = lp.son[0].reliab;
+    let mut rel = lp.son[0].reliab;
     for i in 1..12 {
         if lp.son[i].reliab > rel {
             ig = i;
+            if model.luf_scan_reassigns() {
+                rel = lp.son[i].reliab;
+            }
         }
     }
     let xluf = -frea[ig];

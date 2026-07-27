@@ -11,18 +11,29 @@
 //! say that, and only for defects that touch the point-to-point
 //! systems path. `docs/corrected.md` records both.
 //!
-//! Usage: `cargo run --release --bin correctcheck -- [--fix NAME]
-//! [--cases N] [--jobs J]`
+//! A corpus that never reaches a fix's site reports no movement, which
+//! looks identical to a fix that changes nothing. `--corpus` chooses
+//! the corpus, and every fix names the one that reaches it:
 //!
-//! With no `--fix`, every fix is listed with the cases it touches.
+//! | corpus  | cases                        | fixes it can see            |
+//! | ------- | ---------------------------- | --------------------------- |
+//! | `sweep` | 96 method-30 systems runs    | `pole_file`                 |
+//! | `luf`   | fuzz cases rewritten to 26   | `luf_scan_best`, `luf_pass_area` |
+//!
+//! Usage: `cargo run --release --bin correctcheck -- [--fix NAME]
+//! [--corpus NAME] [--cases N] [--jobs J]`
+//!
+//! With no `--fix`, every fix is listed with the corpus that reaches
+//! it.
 
 use std::collections::BTreeMap;
 use std::process::ExitCode;
 
-use propcore::deck::build_deck;
+use propcore::deck::{build_deck, DeckCase};
 use propcore::engine::model::{Fixes, Model};
 use propcore::engine::output::render;
-use propcore::listing::{parse_listing, Sample};
+use propcore::fuzz::fuzz_cases;
+use propcore::listing::{parse_listing, ModeSample, Sample};
 use propcore::runner::{map_limit, IsolatedRoot};
 use propcore::sweep::sweep_cases;
 
@@ -43,14 +54,106 @@ fn fix_by_name(name: &str) -> Option<Fixes> {
     Some(f)
 }
 
-const FIX_NAMES: [&str; 6] = [
-    "pole_file",
-    "curtain_elevation",
-    "luf_scan_best",
-    "luf_pass_area",
-    "area_centre_nudge",
-    "area_antenna_end",
+/// Every fix, with the corpus that reaches its site.
+const FIX_NAMES: [(&str, &str); 6] = [
+    ("pole_file", "sweep"),
+    ("curtain_elevation", "needs a curtain-antenna corpus"),
+    ("luf_scan_best", "luf"),
+    ("luf_pass_area", "luf"),
+    ("area_centre_nudge", "needs an area corpus"),
+    ("area_antenna_end", "needs an area corpus"),
 ];
+
+/// Which cases to run, and how to read what they print.
+#[derive(Clone, Copy, PartialEq)]
+enum Corpus {
+    /// The 96 method-30 systems cases the port is verified on.
+    Sweep,
+    /// Method-26 decks, the only card methods that run the LUF search.
+    /// The paths, seasons and antennas come from the fuzz corpus,
+    /// whose frequencies the LUF methods ignore — they sweep their own
+    /// complement. This is the corpus `lufcheck` verifies the
+    /// compatible tier on against the reference.
+    Luf,
+}
+
+impl Corpus {
+    fn by_name(name: &str) -> Option<Corpus> {
+        match name {
+            "sweep" => Some(Corpus::Sweep),
+            "luf" => Some(Corpus::Luf),
+            _ => None,
+        }
+    }
+
+    fn cases(self, limit: Option<usize>) -> Vec<DeckCase> {
+        let mut cases = match self {
+            Corpus::Sweep => sweep_cases(),
+            Corpus::Luf => {
+                let mut cases = fuzz_cases(0, limit.unwrap_or(48) as u64);
+                for case in cases.iter_mut() {
+                    case.method = 26;
+                }
+                cases
+            }
+        };
+        if let Some(n) = limit {
+            cases.truncate(n);
+        }
+        cases
+    }
+
+    /// The printed values, as cells that can be aligned across two
+    /// runs. A systems listing and a MUF table are different formats,
+    /// so each corpus reads its own.
+    fn samples(self, text: &str) -> (Vec<Sample>, Vec<ModeSample>) {
+        match self {
+            Corpus::Sweep => {
+                let parsed = parse_listing(text);
+                (parsed.numeric, parsed.modes)
+            }
+            Corpus::Luf => (outmuf_samples(text), Vec::new()),
+        }
+    }
+}
+
+/// The data rows of a method-26 table, as cells.
+///
+/// `OUTMUF` builds its format as `(1H ,2X,2F6.1,` then one `F7.2` per
+/// column, so the fields are read by column: a MUF of 1000.00 fills
+/// its field and leaves no space before the next. Same reading as
+/// `lufcheck`, which is what proves the compatible tier of this corpus
+/// against the reference.
+fn outmuf_samples(text: &str) -> Vec<Sample> {
+    const NAMES: [&str; 5] = ["FOT", "HPF", "ES MUF", "MUF", "LUF"];
+    let field = |line: &str, from: usize, to: usize| -> Option<f64> {
+        if line.len() < to {
+            return None;
+        }
+        line[from..to].trim().parse().ok()
+    };
+    let mut out = Vec::new();
+    for line in text.lines() {
+        let (Some(gmt), Some(_lmt)) = (field(line, 3, 9), field(line, 9, 15)) else {
+            continue;
+        };
+        if !(1.0..=24.0).contains(&gmt) {
+            continue;
+        }
+        let hour = ((gmt.round() as i64).rem_euclid(24)) as u8;
+        for (c, name) in NAMES.iter().enumerate() {
+            if let Some(v) = field(line, 15 + c * 7, 22 + c * 7) {
+                out.push(Sample {
+                    hour,
+                    row: (*name).to_string(),
+                    slot: 0,
+                    value: v,
+                });
+            }
+        }
+    }
+    out
+}
 
 /// One row's worth of movement.
 struct Moved {
@@ -84,9 +187,9 @@ fn main() -> ExitCode {
     let limit = flag("--cases").and_then(|v| v.parse::<usize>().ok());
 
     let Some(name) = flag("--fix") else {
-        println!("Fixes, by the name --fix takes:");
-        for n in FIX_NAMES {
-            println!("  {n}");
+        println!("Fixes, by the name --fix takes, and the corpus that reaches each:");
+        for (n, corpus) in FIX_NAMES {
+            println!("  {n:<18} {corpus}");
         }
         println!();
         println!("Model::Corrected turns on all of them at once. This binary");
@@ -97,12 +200,17 @@ fn main() -> ExitCode {
         eprintln!("unknown fix {name:?}; run with no --fix to list them");
         return ExitCode::FAILURE;
     };
+    let corpus_name = flag("--corpus").unwrap_or_else(|| "sweep".to_string());
+    let Some(corpus) = Corpus::by_name(&corpus_name) else {
+        eprintln!("unknown corpus {corpus_name:?}; try sweep or luf");
+        return ExitCode::FAILURE;
+    };
 
-    let mut cases = sweep_cases();
-    if let Some(n) = limit {
-        cases.truncate(n);
-    }
-    eprintln!("running {} sweep cases with only {name} on", cases.len());
+    let cases = corpus.cases(limit);
+    eprintln!(
+        "running {} {corpus_name} cases with only {name} on",
+        cases.len()
+    );
 
     let outcomes = map_limit(&cases, jobs, |case, index| {
         let mut out = Outcome {
@@ -143,11 +251,11 @@ fn main() -> ExitCode {
             }
         };
 
-        compare(&base, &fixed, &mut out);
+        compare(corpus, &base, &fixed, &mut out);
         out
     });
 
-    report(&name, &outcomes)
+    report(&name, &corpus_name, &outcomes)
 }
 
 /// Renders with an arbitrary fix set.
@@ -164,13 +272,13 @@ fn render_with(
     render(root, case, deck, Model::from_fixes(fixes))
 }
 
-fn compare(base: &str, fixed: &str, out: &mut Outcome) {
-    let a = parse_listing(base);
-    let b = parse_listing(fixed);
+fn compare(corpus: Corpus, base: &str, fixed: &str, out: &mut Outcome) {
+    let (a_numeric, a_modes) = corpus.samples(base);
+    let (b_numeric, b_modes) = corpus.samples(fixed);
 
     let key = |s: &Sample| (s.hour, s.row.clone(), s.slot);
-    let left: BTreeMap<_, f64> = a.numeric.iter().map(|s| (key(s), s.value)).collect();
-    let right: BTreeMap<_, f64> = b.numeric.iter().map(|s| (key(s), s.value)).collect();
+    let left: BTreeMap<_, f64> = a_numeric.iter().map(|s| (key(s), s.value)).collect();
+    let right: BTreeMap<_, f64> = b_numeric.iter().map(|s| (key(s), s.value)).collect();
 
     let mut keys: Vec<_> = left.keys().cloned().collect();
     keys.extend(right.keys().cloned());
@@ -199,8 +307,8 @@ fn compare(base: &str, fixed: &str, out: &mut Outcome) {
     }
 
     // A propagation mode is discrete: it matches or it does not.
-    let modes_a: BTreeMap<_, _> = a.modes.iter().map(|m| (m.key(), &m.mode)).collect();
-    let modes_b: BTreeMap<_, _> = b.modes.iter().map(|m| (m.key(), &m.mode)).collect();
+    let modes_a: BTreeMap<_, _> = a_modes.iter().map(|m| (m.key(), &m.mode)).collect();
+    let modes_b: BTreeMap<_, _> = b_modes.iter().map(|m| (m.key(), &m.mode)).collect();
     for (k, v) in &modes_a {
         out.compared += 1;
         if modes_b.get(k) != Some(v) {
@@ -211,7 +319,7 @@ fn compare(base: &str, fixed: &str, out: &mut Outcome) {
     }
 }
 
-fn report(name: &str, outcomes: &[Outcome]) -> ExitCode {
+fn report(name: &str, corpus: &str, outcomes: &[Outcome]) -> ExitCode {
     let failures: Vec<&Outcome> = outcomes.iter().filter(|o| o.failure.is_some()).collect();
     for o in &failures {
         eprintln!("{}: {}", o.id, o.failure.as_deref().unwrap_or(""));
@@ -238,13 +346,16 @@ fn report(name: &str, outcomes: &[Outcome]) -> ExitCode {
     println!("# What `{name}` changes");
     println!();
     println!(
-        "{} of {} sweep cases touched; {moved} of {compared} cells moved, {structural} structural.",
+        "{} of {} {corpus} cases touched; {moved} of {compared} cells moved, {structural} structural.",
         touched,
         outcomes.len()
     );
     println!();
     if rows.is_empty() {
-        println!("No printed cell changes on this corpus.");
+        println!(
+            "No printed cell changes on the {corpus} corpus. That is only \
+             evidence about the fix if this corpus reaches its site."
+        );
     } else {
         println!("| row | cells moved | worst change |");
         println!("| --- | --: | --: |");
@@ -253,6 +364,19 @@ fn report(name: &str, outcomes: &[Outcome]) -> ExitCode {
         for m in sorted {
             println!("| {} | {} | {:.2} |", m.row, m.cells, m.worst);
         }
+    }
+
+    // Which cases moved, not only how many: a fix that bites in a
+    // minority of cases needs a named case before anything can be read
+    // back from it.
+    let names: Vec<&str> = outcomes
+        .iter()
+        .filter(|o| o.moved + o.structural > 0)
+        .map(|o| o.id.as_str())
+        .collect();
+    if !names.is_empty() {
+        println!();
+        println!("Cases touched: {}", names.join(", "));
     }
 
     if !failures.is_empty() {
