@@ -110,15 +110,16 @@ propcore/tools/build-trace.sh      # the instrumented build the stage traces rea
 
 Then, from `propcore/`, with `cargo` as above:
 
-| harness     | what it proves                                        | flags                                                                                                                                          |
-| ----------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `porttest`  | each stage's intermediates against the trace build    | `--cases N` `--only ID` `--seed N` `--fuzz N [--from N]`                                                                                       |
-| `portcheck` | whole listings over the 96 sweep cases                | `--cases N`                                                                                                                                    |
-| `fuzz`      | whole listing files over generated decks              | `--cases N` `--from N` `--jobs J` `--seed N` `--show N` `--method M` `--coeffs URSI88` `--fprob a,b,c,d` `--botlines a,b,c` `--toplines a,b,c` |
-| `antcheck`  | antenna gain tables against the reference's own files | `--only NAME` `--verbose`                                                                                                                      |
-| `lufcheck`  | `OUTMUF`'s table from a method-26 deck                | `--cases N` `--from N` `--jobs J`                                                                                                              |
-| `mufcheck`  | methods 1, 3 and 7 tables                             | `--method 1\|3\|7` `--cases N` `--from N` `--jobs J`                                                                                           |
-| `areacheck` | area coverage rows and antennas against the grid file | `--jobs J`                                                                                                                                     |
+| harness       | what it proves                                        | flags                                                                                                                                          |
+| ------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `porttest`    | each stage's intermediates against the trace build    | `--cases N` `--only ID` `--seed N` `--fuzz N [--from N]`                                                                                       |
+| `portcheck`   | whole listings over the 96 sweep cases                | `--cases N`                                                                                                                                    |
+| `fuzz`        | whole listing files over generated decks              | `--cases N` `--from N` `--jobs J` `--seed N` `--show N` `--method M` `--coeffs URSI88` `--fprob a,b,c,d` `--botlines a,b,c` `--toplines a,b,c` |
+| `antcheck`    | antenna gain tables against the reference's own files | `--only NAME` `--verbose`                                                                                                                      |
+| `lufcheck`    | `OUTMUF`'s table from a method-26 deck                | `--cases N` `--from N` `--jobs J`                                                                                                              |
+| `mufcheck`    | methods 1, 3 and 7 tables                             | `--method 1\|3\|7` `--cases N` `--from N` `--jobs J`                                                                                           |
+| `areacheck`   | area coverage rows and antennas against the grid file | `--jobs J`                                                                                                                                     |
+| `paritycheck` | the fields the server reads, both production paths    | `--jobs J`                                                                                                                                     |
 
 `porttest --fuzz` is not currently usable: it reports stage mismatches
 on generated decks where `fuzz` finds the finished listings identical,
@@ -1121,3 +1122,62 @@ One card field takes no fraction at all: man-made noise is written as
 the value followed by a point, so 145.42 would produce `145.42.` and
 overflow the five-column field rather than round. `as_written` rounds
 it to a whole number, which is the only thing the card can say.
+
+## Serving predictions: the `predict` binary
+
+`predict` is the interface between the TypeScript server and the
+engine. It reads one request object as JSON on stdin and writes the
+prediction as JSON on stdout — a process boundary rather than a
+binding, which is the least machinery that takes the Fortran
+toolchain out of the deployment.
+
+What it removes from the server: writing a fixed-width card deck,
+running `voacapl`, parsing a printed listing, and giving every
+concurrent run a private copy of the `itshfbc` tree. That last one
+was needed because the Fortran names its antenna scratch files from a
+global counter, so two runs sharing a tree overwrite each other. The
+port holds no such state, so runs are independent and the tree is
+read only.
+
+### Why it renders a listing and reads it back
+
+The server has always consumed _printed_ values — reliability to two
+decimals, SNR to the nearest dB, the deciles to one — and its
+correction factors were fitted against exactly those numbers. So
+`predict` renders the listing with the verified formatter and parses
+it with `listing::parse_listing`. That makes the values identical to
+the reference's by construction, rather than by a second
+implementation of `OUTBOD`'s rounding, its at-the-MUF column, and its
+rule for how many frequency slots print at all.
+
+The raw `f32` values are richer and are what a later tier should use.
+Reaching for them changes the numbers the fitted corrections were
+built on, so it is a deliberate change to measure rather than a side
+effect of moving off Fortran.
+
+### `paritycheck`
+
+Narrower than `portcheck` on purpose: not every printed cell, but
+exactly the four fields `server/src/voacap/parse.ts` reads —
+reliability, SNR and the two SNR deciles — plus the MUF, over eight
+request shapes the server actually sends. Both sides run the whole
+production chain: the Fortran through `voacapl` and the printed
+listing, the Rust through the `predict` binary as a subprocess so the
+JSON boundary is under test too.
+
+**Result (2026-07-27): 7104 fields over 8 shapes, 0 differing.**
+
+The harness was checked by breaking it: adding 1 dB to the Rust
+side's SNR makes all 1728 SNR fields differ and the verdict flip. A
+green run with no such check would say nothing, because both sides
+end in the same parser.
+
+### A stale fixture, worth knowing about
+
+`server/test/fixtures/seattle-tokyo-jul2026-ssn68.out` was generated
+with `FPROB 1.00 1.00 1.00 0.00` — sporadic E off. The server turned
+it on in 0.2.0 on the evidence in `accuracy.md`, so that fixture is a
+listing for a deck the server no longer sends. It stays because the
+parser tests use it as known text. Comparing engine output against it
+compares two different questions, which cost a confusing test failure
+once; the `-es` fixture beside it is the current deck's listing.

@@ -10,6 +10,8 @@
 //! - [`api`] is the public face of the ported engine: structured
 //!   requests in, structured reports or a reference-identical listing
 //!   out. Library callers start here.
+//! - [`json`] reads and writes JSON, for the `predict` binary the
+//!   server talks to. The crate takes no dependencies on purpose.
 //! - [`deck`] writes VOACAP's fixed-width input deck.
 //! - [`listing`] reads every numeric field back out of a method 30 listing.
 //! - [`sweep`] enumerates input cases covering the model's regimes.
@@ -26,6 +28,7 @@
 
 pub mod api;
 pub mod compare;
+pub mod json;
 pub mod deck;
 pub mod engine;
 pub mod fuzz;
