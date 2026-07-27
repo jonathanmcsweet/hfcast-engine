@@ -1,0 +1,32 @@
+HFcast Engine
+Copyright 2026 jonathanmcsweet
+
+This product includes software translated from VOACAP, the Voice of
+America Coverage Analysis Program.
+
+VOACAP was developed by the Institute for Telecommunication Sciences
+(ITS), National Telecommunications and Information Administration
+(NTIA), United States Department of Commerce, and is maintained by
+Greg Hand. As a work of the United States Government it is stated to
+be not subject to copyright protection in the United States.
+
+The Unix build of VOACAP, `voacapl`, and the changes it carries, are
+by J.A. Watson, released under CC0 1.0 Universal.
+
+The Rust translation in `src/voacap/`, and the instrumented copies of
+reference routines in `trace/`, derive from those two works.
+
+NTIA/ITS disclaimer, carried forward from the original distribution:
+
+    The NTIA/ITS makes no warranty, express or implied, as to the
+    accuracy, completeness or usefulness of this software, and assumes
+    no liability for its use. Use of this software does not imply
+    endorsement by NTIA/ITS or the United States Government.
+
+This product does not distribute the ionospheric coefficient files
+that VOACAP reads at run time. Those originate in CCIR and URSI
+publications rather than with NTIA/ITS. See docs/licence.md.
+
+The comparisons in docs/engines.md drive the ITU-R Study Group 3
+reference implementation of Recommendation P.533. That software is not
+included here and is not part of this product.

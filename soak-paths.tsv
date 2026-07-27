@@ -1,0 +1,206 @@
+# Soak path list: 200 paths spanning the regimes the model behaves
+# differently in. Fields are tab-separated:
+#   id  tx_lat  tx_lon  TX_LABEL  rx_lat  rx_lon  RX_LABEL
+# The month, year and sunspot number come from the command line, so
+# the geography here stays fixed while the live inputs move.
+# Generated once and checked in; see docs/soak.md.
+antipodal-toronto-singapore	43.6532	-79.3832	TORONTO	1.3521	103.8198	SINGAPORE
+antipodal-chicago-singapore	41.8781	-87.6298	CHICAGO	1.3521	103.8198	SINGAPORE
+antipodal-brisbane-manaus	-27.4698	153.0251	BRISBANE	-3.119	-60.0217	MANAUS
+antipodal-boston-singapore	42.3601	-71.0589	BOSTON	1.3521	103.8198	SINGAPORE
+antipodal-delhi-bogota	28.7041	77.1025	DELHI	4.711	-74.0721	BOGOTA
+antipodal-buenosaires-jakarta	-34.6037	-58.3816	BUENOS AIRES	-6.2088	106.8456	JAKARTA
+antipodal-mumbai-bogota	19.076	72.8777	MUMBAI	4.711	-74.0721	BOGOTA
+antipodal-washington-singapore	38.9072	-77.0369	WASHINGTON	1.3521	103.8198	SINGAPORE
+antipodal-santiago-jakarta	-33.4489	-70.6693	SANTIAGO	-6.2088	106.8456	JAKARTA
+antipodal-saopaulo-jakarta	-23.5505	-46.6333	SAO PAULO	-6.2088	106.8456	JAKARTA
+antipodal-mexicocity-mumbai	19.4326	-99.1332	MEXICO CITY	19.076	72.8777	MUMBAI
+equatorial-bogota-quito	4.711	-74.0721	BOGOTA	-0.1807	-78.4678	QUITO
+equatorial-singapore-jakarta	1.3521	103.8198	SINGAPORE	-6.2088	106.8456	JAKARTA
+equatorial-lima-quito	-12.0464	-77.0428	LIMA	-0.1807	-78.4678	QUITO
+equatorial-bogota-manaus	4.711	-74.0721	BOGOTA	-3.119	-60.0217	MANAUS
+equatorial-lima-bogota	-12.0464	-77.0428	LIMA	4.711	-74.0721	BOGOTA
+equatorial-quito-manaus	-0.1807	-78.4678	QUITO	-3.119	-60.0217	MANAUS
+equatorial-lima-manaus	-12.0464	-77.0428	LIMA	-3.119	-60.0217	MANAUS
+equatorial-manila-singapore	14.5995	120.9842	MANILA	1.3521	103.8198	SINGAPORE
+equatorial-dakar-lagos	14.7167	-17.4677	DAKAR	6.5244	3.3792	LAGOS
+equatorial-darwin-jakarta	-12.4634	130.8456	DARWIN	-6.2088	106.8456	JAKARTA
+equatorial-manila-jakarta	14.5995	120.9842	MANILA	-6.2088	106.8456	JAKARTA
+equatorial-manila-darwin	14.5995	120.9842	MANILA	-12.4634	130.8456	DARWIN
+equatorial-darwin-singapore	-12.4634	130.8456	DARWIN	1.3521	103.8198	SINGAPORE
+equatorial-lagos-nairobi	6.5244	3.3792	LAGOS	-1.2921	36.8219	NAIROBI
+equatorial-dakar-manaus	14.7167	-17.4677	DAKAR	-3.119	-60.0217	MANAUS
+equatorial-dakar-nairobi	14.7167	-17.4677	DAKAR	-1.2921	36.8219	NAIROBI
+equatorial-dakar-bogota	14.7167	-17.4677	DAKAR	4.711	-74.0721	BOGOTA
+equatorial-dakar-quito	14.7167	-17.4677	DAKAR	-0.1807	-78.4678	QUITO
+equatorial-lagos-manaus	6.5244	3.3792	LAGOS	-3.119	-60.0217	MANAUS
+equatorial-dakar-lima	14.7167	-17.4677	DAKAR	-12.0464	-77.0428	LIMA
+equatorial-lagos-bogota	6.5244	3.3792	LAGOS	4.711	-74.0721	BOGOTA
+equatorial-lagos-quito	6.5244	3.3792	LAGOS	-0.1807	-78.4678	QUITO
+equatorial-lima-lagos	-12.0464	-77.0428	LIMA	6.5244	3.3792	LAGOS
+equatorial-manila-nairobi	14.5995	120.9842	MANILA	-1.2921	36.8219	NAIROBI
+equatorial-darwin-nairobi	-12.4634	130.8456	DARWIN	-1.2921	36.8219	NAIROBI
+equatorial-nairobi-manaus	-1.2921	36.8219	NAIROBI	-3.119	-60.0217	MANAUS
+equatorial-lagos-singapore	6.5244	3.3792	LAGOS	1.3521	103.8198	SINGAPORE
+equatorial-lagos-jakarta	6.5244	3.3792	LAGOS	-6.2088	106.8456	JAKARTA
+equatorial-bogota-nairobi	4.711	-74.0721	BOGOTA	-1.2921	36.8219	NAIROBI
+equatorial-lima-nairobi	-12.0464	-77.0428	LIMA	-1.2921	36.8219	NAIROBI
+equatorial-manila-lagos	14.5995	120.9842	MANILA	6.5244	3.3792	LAGOS
+equatorial-lima-darwin	-12.0464	-77.0428	LIMA	-12.4634	130.8456	DARWIN
+equatorial-darwin-quito	-12.4634	130.8456	DARWIN	-0.1807	-78.4678	QUITO
+equatorial-dakar-darwin	14.7167	-17.4677	DAKAR	-12.4634	130.8456	DARWIN
+equatorial-darwin-bogota	-12.4634	130.8456	DARWIN	4.711	-74.0721	BOGOTA
+equatorial-manila-bogota	14.5995	120.9842	MANILA	4.711	-74.0721	BOGOTA
+equatorial-manila-quito	14.5995	120.9842	MANILA	-0.1807	-78.4678	QUITO
+equatorial-darwin-manaus	-12.4634	130.8456	DARWIN	-3.119	-60.0217	MANAUS
+equatorial-lima-jakarta	-12.0464	-77.0428	LIMA	-6.2088	106.8456	JAKARTA
+equatorial-manila-lima	14.5995	120.9842	MANILA	-12.0464	-77.0428	LIMA
+equatorial-singapore-manaus	1.3521	103.8198	SINGAPORE	-3.119	-60.0217	MANAUS
+equatorial-manaus-jakarta	-3.119	-60.0217	MANAUS	-6.2088	106.8456	JAKARTA
+highlat-helsinki-moscow	60.1699	24.9384	HELSINKI	55.7558	37.6173	MOSCOW
+highlat-helsinki-berlin	60.1699	24.9384	HELSINKI	52.52	13.405	BERLIN
+highlat-reykjavik-edinburgh	64.1466	-21.9426	REYKJAVIK	55.9533	-3.1883	EDINBURGH
+highlat-reykjavik-dublin	64.1466	-21.9426	REYKJAVIK	53.3498	-6.2603	DUBLIN
+highlat-helsinki-edinburgh	60.1699	24.9384	HELSINKI	55.9533	-3.1883	EDINBURGH
+highlat-tromso-moscow	69.6492	18.9553	TROMSO	55.7558	37.6173	MOSCOW
+highlat-helsinki-london	60.1699	24.9384	HELSINKI	51.5072	-0.1276	LONDON
+highlat-tromso-edinburgh	69.6492	18.9553	TROMSO	55.9533	-3.1883	EDINBURGH
+highlat-reykjavik-london	64.1466	-21.9426	REYKJAVIK	51.5072	-0.1276	LONDON
+highlat-helsinki-paris	60.1699	24.9384	HELSINKI	48.8566	2.3522	PARIS
+highlat-tromso-berlin	69.6492	18.9553	TROMSO	52.52	13.405	BERLIN
+highlat-longyearbyen-edinburgh	78.2232	15.6267	LONGYEARBYEN	55.9533	-3.1883	EDINBURGH
+highlat-yakutsk-beijing	62.0355	129.6755	YAKUTSK	39.9042	116.4074	BEIJING
+highlat-longyearbyen-moscow	78.2232	15.6267	LONGYEARBYEN	55.7558	37.6173	MOSCOW
+highlat-yakutsk-seoul	62.0355	129.6755	YAKUTSK	37.5665	126.978	SEOUL
+highlat-tromso-milan	69.6492	18.9553	TROMSO	45.4642	9.19	MILAN
+highlat-reykjavik-milan	64.1466	-21.9426	REYKJAVIK	45.4642	9.19	MILAN
+highlat-longyearbyen-berlin	78.2232	15.6267	LONGYEARBYEN	52.52	13.405	BERLIN
+highlat-longyearbyen-dublin	78.2232	15.6267	LONGYEARBYEN	53.3498	-6.2603	DUBLIN
+highlat-yakutsk-tokyo	62.0355	129.6755	YAKUTSK	35.6762	139.6503	TOKYO
+highlat-longyearbyen-london	78.2232	15.6267	LONGYEARBYEN	51.5072	-0.1276	LONDON
+highlat-tromso-rome	69.6492	18.9553	TROMSO	41.9028	12.4964	ROME
+highlat-tromso-nairobi	69.6492	18.9553	TROMSO	-1.2921	36.8219	NAIROBI
+highlat-longyearbyen-lagos	78.2232	15.6267	LONGYEARBYEN	6.5244	3.3792	LAGOS
+highlat-anchorage-milan	61.2181	-149.9003	ANCHORAGE	45.4642	9.19	MILAN
+highlat-reykjavik-sapporo	64.1466	-21.9426	REYKJAVIK	43.0618	141.3545	SAPPORO
+highlat-helsinki-denver	60.1699	24.9384	HELSINKI	39.7392	-104.9903	DENVER
+highlat-tiksi-singapore	71.6366	128.8675	TIKSI	1.3521	103.8198	SINGAPORE
+highlat-fairbanks-rome	64.8378	-147.7164	FAIRBANKS	41.9028	12.4964	ROME
+highlat-thule-delhi	76.5312	-68.7032	THULE	28.7041	77.1025	DELHI
+highlat-reykjavik-manaus	64.1466	-21.9426	REYKJAVIK	-3.119	-60.0217	MANAUS
+highlat-johannesburg-mcmurdo	-26.2041	28.0473	JOHANNESBURG	-77.8419	166.6863	MCMURDO
+highlat-tiksi-houston	71.6366	128.8675	TIKSI	29.7604	-95.3698	HOUSTON
+highlat-thule-perth	76.5312	-68.7032	THULE	-31.9523	115.8613	PERTH
+highlat-tromso-sydney	69.6492	18.9553	TROMSO	-33.8688	151.2093	SYDNEY
+highlat-helsinki-ushuaia	60.1699	24.9384	HELSINKI	-54.8019	-68.303	USHUAIA
+highlat-helsinki-sydney	60.1699	24.9384	HELSINKI	-33.8688	151.2093	SYDNEY
+highlat-athens-mcmurdo	37.9838	23.7275	ATHENS	-77.8419	166.6863	MCMURDO
+highlat-alert-ushuaia	82.5018	-62.3481	ALERT	-54.8019	-68.303	USHUAIA
+highlat-toronto-mcmurdo	43.6532	-79.3832	TORONTO	-77.8419	166.6863	MCMURDO
+highlat-longyearbyen-auckland	78.2232	15.6267	LONGYEARBYEN	-36.8485	174.7633	AUCKLAND
+highlat-boston-mcmurdo	42.3601	-71.0589	BOSTON	-77.8419	166.6863	MCMURDO
+highlat-reykjavik-perth	64.1466	-21.9426	REYKJAVIK	-31.9523	115.8613	PERTH
+highlat-tromso-ushuaia	69.6492	18.9553	TROMSO	-54.8019	-68.303	USHUAIA
+midlat-boston-washington	42.3601	-71.0589	BOSTON	38.9072	-77.0369	WASHINGTON
+midlat-paris-milan	48.8566	2.3522	PARIS	45.4642	9.19	MILAN
+midlat-toronto-boston	43.6532	-79.3832	TORONTO	42.3601	-71.0589	BOSTON
+midlat-toronto-chicago	43.6532	-79.3832	TORONTO	41.8781	-87.6298	CHICAGO
+midlat-sydney-brisbane	-33.8688	151.2093	SYDNEY	-27.4698	153.0251	BRISBANE
+midlat-dublin-paris	53.3498	-6.2603	DUBLIN	48.8566	2.3522	PARIS
+midlat-montreal-washington	45.5019	-73.5674	MONTREAL	38.9072	-77.0369	WASHINGTON
+midlat-sapporo-tokyo	43.0618	141.3545	SAPPORO	35.6762	139.6503	TOKYO
+midlat-berlin-milan	52.52	13.405	BERLIN	45.4642	9.19	MILAN
+midlat-edinburgh-paris	55.9533	-3.1883	EDINBURGH	48.8566	2.3522	PARIS
+midlat-berlin-paris	52.52	13.405	BERLIN	48.8566	2.3522	PARIS
+midlat-moscow-london	55.7558	37.6173	MOSCOW	51.5072	-0.1276	LONDON
+midlat-edinburgh-moscow	55.9533	-3.1883	EDINBURGH	55.7558	37.6173	MOSCOW
+midlat-milan-cairo	45.4642	9.19	MILAN	30.0444	31.2357	CAIRO
+midlat-boston-houston	42.3601	-71.0589	BOSTON	29.7604	-95.3698	HOUSTON
+midlat-montreal-houston	45.5019	-73.5674	MONTREAL	29.7604	-95.3698	HOUSTON
+midlat-santiago-saopaulo	-33.4489	-70.6693	SANTIAGO	-23.5505	-46.6333	SAO PAULO
+midlat-seoul-manila	37.5665	126.978	SEOUL	14.5995	120.9842	MANILA
+midlat-montreal-denver	45.5019	-73.5674	MONTREAL	39.7392	-104.9903	DENVER
+midlat-montreal-boulder	45.5019	-73.5674	MONTREAL	40.015	-105.2705	BOULDER
+midlat-sanfrancisco-houston	37.7749	-122.4194	SAN FRANCISCO	29.7604	-95.3698	HOUSTON
+midlat-perth-darwin	-31.9523	115.8613	PERTH	-12.4634	130.8456	DARWIN
+midlat-paris-seattle	48.8566	2.3522	PARIS	47.6062	-122.3321	SEATTLE
+midlat-johannesburg-ushuaia	-26.2041	28.0473	JOHANNESBURG	-54.8019	-68.303	USHUAIA
+midlat-houston-dakar	29.7604	-95.3698	HOUSTON	14.7167	-17.4677	DAKAR
+midlat-delhi-lagos	28.7041	77.1025	DELHI	6.5244	3.3792	LAGOS
+midlat-milan-beijing	45.4642	9.19	MILAN	39.9042	116.4074	BEIJING
+midlat-paris-houston	48.8566	2.3522	PARIS	29.7604	-95.3698	HOUSTON
+midlat-buenosaires-johannesburg	-34.6037	-58.3816	BUENOS AIRES	-26.2041	28.0473	JOHANNESBURG
+midlat-toronto-athens	43.6532	-79.3832	TORONTO	37.9838	23.7275	ATHENS
+midlat-berlin-seattle	52.52	13.405	BERLIN	47.6062	-122.3321	SEATTLE
+midlat-edinburgh-sanfrancisco	55.9533	-3.1883	EDINBURGH	37.7749	-122.4194	SAN FRANCISCO
+polar-fairbanks-anchorage	64.8378	-147.7164	FAIRBANKS	61.2181	-149.9003	ANCHORAGE
+polar-alert-thule	82.5018	-62.3481	ALERT	76.5312	-68.7032	THULE
+polar-longyearbyen-tromso	78.2232	15.6267	LONGYEARBYEN	69.6492	18.9553	TROMSO
+polar-tiksi-yakutsk	71.6366	128.8675	TIKSI	62.0355	129.6755	YAKUTSK
+polar-tromso-helsinki	69.6492	18.9553	TROMSO	60.1699	24.9384	HELSINKI
+polar-alert-longyearbyen	82.5018	-62.3481	ALERT	78.2232	15.6267	LONGYEARBYEN
+polar-tromso-reykjavik	69.6492	18.9553	TROMSO	64.1466	-21.9426	REYKJAVIK
+polar-longyearbyen-thule	78.2232	15.6267	LONGYEARBYEN	76.5312	-68.7032	THULE
+polar-longyearbyen-reykjavik	78.2232	15.6267	LONGYEARBYEN	64.1466	-21.9426	REYKJAVIK
+polar-longyearbyen-helsinki	78.2232	15.6267	LONGYEARBYEN	60.1699	24.9384	HELSINKI
+polar-thule-reykjavik	76.5312	-68.7032	THULE	64.1466	-21.9426	REYKJAVIK
+polar-thule-tromso	76.5312	-68.7032	THULE	69.6492	18.9553	TROMSO
+polar-longyearbyen-tiksi	78.2232	15.6267	LONGYEARBYEN	71.6366	128.8675	TIKSI
+polar-alert-fairbanks	82.5018	-62.3481	ALERT	64.8378	-147.7164	FAIRBANKS
+polar-alert-tiksi	82.5018	-62.3481	ALERT	71.6366	128.8675	TIKSI
+polar-thule-fairbanks	76.5312	-68.7032	THULE	64.8378	-147.7164	FAIRBANKS
+polar-tiksi-fairbanks	71.6366	128.8675	TIKSI	64.8378	-147.7164	FAIRBANKS
+polar-alert-anchorage	82.5018	-62.3481	ALERT	61.2181	-149.9003	ANCHORAGE
+polar-thule-anchorage	76.5312	-68.7032	THULE	61.2181	-149.9003	ANCHORAGE
+polar-alert-helsinki	82.5018	-62.3481	ALERT	60.1699	24.9384	HELSINKI
+polar-tiksi-anchorage	71.6366	128.8675	TIKSI	61.2181	-149.9003	ANCHORAGE
+polar-anchorage-mcmurdo	61.2181	-149.9003	ANCHORAGE	-77.8419	166.6863	MCMURDO
+polar-yakutsk-mcmurdo	62.0355	129.6755	YAKUTSK	-77.8419	166.6863	MCMURDO
+polar-fairbanks-mcmurdo	64.8378	-147.7164	FAIRBANKS	-77.8419	166.6863	MCMURDO
+polar-tiksi-mcmurdo	71.6366	128.8675	TIKSI	-77.8419	166.6863	MCMURDO
+polar-helsinki-mcmurdo	60.1699	24.9384	HELSINKI	-77.8419	166.6863	MCMURDO
+polar-reykjavik-mcmurdo	64.1466	-21.9426	REYKJAVIK	-77.8419	166.6863	MCMURDO
+polar-tromso-mcmurdo	69.6492	18.9553	TROMSO	-77.8419	166.6863	MCMURDO
+polar-thule-mcmurdo	76.5312	-68.7032	THULE	-77.8419	166.6863	MCMURDO
+polar-alert-mcmurdo	82.5018	-62.3481	ALERT	-77.8419	166.6863	MCMURDO
+polar-longyearbyen-mcmurdo	78.2232	15.6267	LONGYEARBYEN	-77.8419	166.6863	MCMURDO
+short-vancouver-seattle	49.2827	-123.1207	VANCOUVER	47.6062	-122.3321	SEATTLE
+short-london-paris	51.5072	-0.1276	LONDON	48.8566	2.3522	PARIS
+short-edinburgh-dublin	55.9533	-3.1883	EDINBURGH	53.3498	-6.2603	DUBLIN
+short-montreal-boston	45.5019	-73.5674	MONTREAL	42.3601	-71.0589	BOSTON
+short-dublin-london	53.3498	-6.2603	DUBLIN	51.5072	-0.1276	LONDON
+short-milan-rome	45.4642	9.19	MILAN	41.9028	12.4964	ROME
+short-montreal-toronto	45.5019	-73.5674	MONTREAL	43.6532	-79.3832	TORONTO
+short-edinburgh-london	55.9533	-3.1883	EDINBURGH	51.5072	-0.1276	LONDON
+short-sanfrancisco-losangeles	37.7749	-122.4194	SAN FRANCISCO	34.0522	-118.2437	LOS ANGELES
+short-toronto-washington	43.6532	-79.3832	TORONTO	38.9072	-77.0369	WASHINGTON
+transequatorial-miami-quito	25.7617	-80.1918	MIAMI	-0.1807	-78.4678	QUITO
+transequatorial-mexicocity-quito	19.4326	-99.1332	MEXICO CITY	-0.1807	-78.4678	QUITO
+transequatorial-cairo-nairobi	30.0444	31.2357	CAIRO	-1.2921	36.8219	NAIROBI
+transequatorial-houston-quito	29.7604	-95.3698	HOUSTON	-0.1807	-78.4678	QUITO
+transequatorial-miami-manaus	25.7617	-80.1918	MIAMI	-3.119	-60.0217	MANAUS
+transequatorial-perth-singapore	-31.9523	115.8613	PERTH	1.3521	103.8198	SINGAPORE
+transequatorial-miami-lima	25.7617	-80.1918	MIAMI	-12.0464	-77.0428	LIMA
+transequatorial-mexicocity-lima	19.4326	-99.1332	MEXICO CITY	-12.0464	-77.0428	LIMA
+transequatorial-santiago-bogota	-33.4489	-70.6693	SANTIAGO	4.711	-74.0721	BOGOTA
+transequatorial-saopaulo-bogota	-23.5505	-46.6333	SAO PAULO	4.711	-74.0721	BOGOTA
+transequatorial-seattle-lima	47.6062	-122.3321	SEATTLE	-12.0464	-77.0428	LIMA
+transequatorial-dublin-manaus	53.3498	-6.2603	DUBLIN	-3.119	-60.0217	MANAUS
+transequatorial-athens-capetown	37.9838	23.7275	ATHENS	-33.9249	18.4241	CAPE TOWN
+transequatorial-manila-auckland	14.5995	120.9842	MANILA	-36.8485	174.7633	AUCKLAND
+transequatorial-delhi-johannesburg	28.7041	77.1025	DELHI	-26.2041	28.0473	JOHANNESBURG
+transequatorial-washington-santiago	38.9072	-77.0369	WASHINGTON	-33.4489	-70.6693	SANTIAGO
+transequatorial-buenosaires-houston	-34.6037	-58.3816	BUENOS AIRES	29.7604	-95.3698	HOUSTON
+transequatorial-montreal-saopaulo	45.5019	-73.5674	MONTREAL	-23.5505	-46.6333	SAO PAULO
+transequatorial-sydney-honolulu	-33.8688	151.2093	SYDNEY	21.3069	-157.8583	HONOLULU
+transequatorial-vancouver-lima	49.2827	-123.1207	VANCOUVER	-12.0464	-77.0428	LIMA
+transequatorial-denver-capetown	39.7392	-104.9903	DENVER	-33.9249	18.4241	CAPE TOWN
+transequatorial-losangeles-perth	34.0522	-118.2437	LOS ANGELES	-31.9523	115.8613	PERTH
+transequatorial-sydney-miami	-33.8688	151.2093	SYDNEY	25.7617	-80.1918	MIAMI
+transequatorial-toronto-brisbane	43.6532	-79.3832	TORONTO	-27.4698	153.0251	BRISBANE
+transequatorial-sapporo-capetown	43.0618	141.3545	SAPPORO	-33.9249	18.4241	CAPE TOWN
+transequatorial-boulder-capetown	40.015	-105.2705	BOULDER	-33.9249	18.4241	CAPE TOWN
+transequatorial-chicago-darwin	41.8781	-87.6298	CHICAGO	-12.4634	130.8456	DARWIN
+transequatorial-boulder-jakarta	40.015	-105.2705	BOULDER	-6.2088	106.8456	JAKARTA
+transequatorial-sapporo-manaus	43.0618	141.3545	SAPPORO	-3.119	-60.0217	MANAUS
+transequatorial-seoul-quito	37.5665	126.978	SEOUL	-0.1807	-78.4678	QUITO

@@ -114,7 +114,7 @@ Then, from the repository root:
 | `lufcheck`     | `OUTMUF`'s table from a method-26 deck                | `--cases N` `--from N` `--jobs J`                                                                                                              |
 | `mufcheck`     | methods 1, 3 and 7 tables                             | `--method 1\|3\|7` `--cases N` `--from N` `--jobs J`                                                                                           |
 | `areacheck`    | area coverage rows and antennas against the grid file | `--jobs J`                                                                                                                                     |
-| `paritycheck`  | the fields the server reads, both production paths    | `--jobs J`                                                                                                                                     |
+| `paritycheck`  | the fields an application reads, both production paths | `--jobs J` `--paths FILE --month M --year Y --ssn S` `--dump DIR`                                                                              |
 | `correctcheck` | what one corrected-tier fix changes                   | `--fix NAME` `--corpus sweep\|luf\|curtain\|area` `--cases N` `--jobs J`                                                                       |
 
 `porttest --fuzz` is not currently usable: it reports stage mismatches
@@ -1164,7 +1164,7 @@ effect of moving off Fortran.
 ### `paritycheck`
 
 Narrower than `portcheck` on purpose: not every printed cell, but
-exactly the four fields `server/src/voacap/parse.ts` reads —
+exactly the four fields an application reads out of a listing —
 reliability, SNR and the two SNR deciles — plus the MUF, over eight
 request shapes the server actually sends. Both sides run the whole
 production chain: the Fortran through `voacapl` and the printed

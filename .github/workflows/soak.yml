@@ -1,0 +1,154 @@
+name: Parity soak
+
+# Runs the same 200 paths through both engines every day, against that
+# day's real space weather, and records the result. docs/soak.md holds
+# the criteria this is measured against; read it before changing
+# anything here.
+#
+# The job is deliberately dumb: it either finds zero differing fields
+# and appends one line to the record, or it fails and keeps everything
+# needed to reproduce the difference. No judgement happens here.
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+# The commit of jawatson/voacapl the reference is built from. Pinned so
+# a soak day's result is a statement about this engine and not about a
+# reference that moved underneath it.
+env:
+  VOACAPL_COMMIT: c12a98b348c39f36f2659b8b3aa97b86284c8a1d
+  SWPC: https://services.swpc.noaa.gov
+
+permissions:
+  contents: write
+
+concurrency:
+  group: parity-soak
+  cancel-in-progress: false
+
+jobs:
+  soak:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install gfortran
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran
+
+      - name: Record the toolchain
+        id: toolchain
+        run: |
+          gfortran --version | head -1
+          cargo --version
+          echo "gfortran=$(gfortran -dumpversion)" >> "$GITHUB_OUTPUT"
+
+      - name: Build the reference
+        run: |
+          git clone https://github.com/jawatson/voacapl.git vendor/voacapl
+          git -C vendor/voacapl checkout --quiet "$VOACAPL_COMMIT"
+          cd vendor/voacapl
+          ./configure --prefix="$HOME/.local"
+          make -j4
+          make install
+          # The installed copy, not the one in the source tree: the
+          # prefix is substituted into it by the install hook, and the
+          # source copy still says __PREFIX__.
+          "$HOME/.local/bin/makeitshfbc"
+          cd "$GITHUB_WORKSPACE"
+          VARIANTS=O2 tools/build-variants.sh
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: soak-cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Build the port
+        run: cargo build --release --bin paritycheck --bin predict --bin spacewx
+
+      - name: Fetch today's space weather
+        id: swx
+        run: |
+          # A soak day that quietly fell back to a canned value would
+          # look live and prove nothing, so both fetches are fatal.
+          curl -sSf --max-time 60 -o flux.json "$SWPC/json/f107_cm_flux.json"
+          curl -sSf --max-time 60 -o kp.json "$SWPC/products/noaa-planetary-k-index.json"
+          ./target/release/spacewx \
+            --flux flux.json --kp kp.json --month "$(date -u +%Y-%m)" > swx.txt
+          cat swx.txt
+          cat swx.txt >> "$GITHUB_OUTPUT"
+
+      - name: Run the parity sweep
+        id: parity
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          ./target/release/paritycheck \
+            --paths soak-paths.tsv \
+            --month "${{ steps.swx.outputs.month }}" \
+            --year "${{ steps.swx.outputs.year }}" \
+            --ssn "${{ steps.swx.outputs.ssn }}" \
+            --jobs 3 \
+            --dump dumps \
+            | tee parity.md
+
+      - name: Record the day
+        if: always()
+        run: |
+          DAY="$(date -u +%Y-%m-%d)"
+          PATHS="$(grep -cv -e '^[[:space:]]*#' -e '^[[:space:]]*$' soak-paths.tsv)"
+          FIELDS="$(sed -n 's/^\([0-9]*\) fields compared.*/\1/p' parity.md | tail -1)"
+          DIFFERING="$(sed -n 's/^[0-9]* fields compared, \([0-9]*\) differing.*/\1/p' parity.md | tail -1)"
+          VERDICT=clean
+          if [ "${{ steps.parity.outcome }}" != "success" ]; then VERDICT=FAILED; fi
+
+          git init -q results
+          cd results
+          git remote add origin \
+            "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          if git fetch -q --depth 1 origin soak-results 2>/dev/null; then
+            git checkout -q -b soak-results FETCH_HEAD
+          else
+            git checkout -q --orphan soak-results
+            printf '# Parity soak record\n\nOne line per day in `log.tsv`. Criteria are in `docs/soak.md` on `main`.\n' > README.md
+          fi
+
+          if [ ! -f log.tsv ]; then
+            printf 'date\tpaths\tfields\tdiffering\tverdict\tf107\tssn\tkp\tkpmax24h\tgfortran\tvoacapl\trun\n' > log.tsv
+          fi
+          printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+            "$DAY" "$PATHS" "${FIELDS:-0}" "${DIFFERING:-unknown}" "$VERDICT" \
+            "${{ steps.swx.outputs.f107 }}" "${{ steps.swx.outputs.ssn }}" \
+            "${{ steps.swx.outputs.kp }}" "${{ steps.swx.outputs.kpmax24h }}" \
+            "${{ steps.toolchain.outputs.gfortran }}" \
+            "${VOACAPL_COMMIT:0:7}" "${{ github.run_id }}" \
+            >> log.tsv
+
+          mkdir -p reports
+          cp ../parity.md "reports/$DAY.md" 2>/dev/null || true
+          if [ -d ../dumps ] && [ -n "$(ls -A ../dumps 2>/dev/null)" ]; then
+            mkdir -p "dumps/$DAY"
+            cp -r ../dumps/. "dumps/$DAY/"
+          fi
+
+          git config user.name "parity soak"
+          git config user.email "noreply@github.com"
+          git add -A
+          git commit -q -m "soak: $DAY $VERDICT (${DIFFERING:-unknown} differing of ${FIELDS:-0})" \
+            || echo "nothing to record"
+          git push -q origin soak-results
+
+      - name: Fail if the day was not clean
+        if: steps.parity.outcome != 'success'
+        run: |
+          echo "The parity sweep reported a difference or could not run."
+          echo "The deck and both outputs are on the soak-results branch."
+          exit 1

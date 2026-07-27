@@ -37,7 +37,7 @@ use hfcast::spread::{
 };
 use hfcast::stats::quantile;
 
-/// The spread scales the server ships (`server/src/voacap/correct.ts`).
+/// The spread scales the reference application ships.
 const SHIPPED_SCALE_LOW: f64 = 0.40;
 const SHIPPED_SCALE_UP: f64 = 0.59;
 

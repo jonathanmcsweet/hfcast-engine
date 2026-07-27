@@ -76,11 +76,10 @@ Kp 7+ fades (15 dB and beyond) still exceed what any bell curve can say —
 during a severe storm, a shown reliability should be read as a lower bound
 of doubt, not an exact probability.
 
-## Where the server applies it
+## Where it applies
 
-Only a now-cast knows the recent Kp, so only now-casts widen
-(`server/src/voacap/correct.ts`, fed from the NOAA K-index feed by
-`spaceweather.ts`). Predictions for other days describe a typical day of the
+Only a now-cast knows the recent Kp, so only now-casts widen, fed from
+the NOAA K-index feed. Predictions for other days describe a typical day of the
 month and keep the quiet-day calibration — including the honest limitation,
 now confirmed rather than suspected, that a small share of days (storm days)
 will be worse than a typical-day forecast can know.

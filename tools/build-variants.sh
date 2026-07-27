@@ -24,7 +24,11 @@ JOBS="${JOBS:-4}"
 # -ffast-math is included deliberately as an out-of-contract case: it permits
 # reassociation and drops strict IEEE semantics, so it shows what a port that
 # rearranges arithmetic "harmlessly" would cost.
-VARIANT_NAMES=(O0 O1 O2 O3 fastmath)
+#
+# VARIANTS names a subset, space separated. The soak needs only the
+# reference build, and building the other four would be four times the
+# work for nothing.
+read -r -a VARIANT_NAMES <<<"${VARIANTS:-O0 O1 O2 O3 fastmath}"
 variant_flags() {
   case "$1" in
     O0) echo "-g -O0" ;;
