@@ -282,8 +282,15 @@ pub fn outant(
                 f(a.diel, 10, 3)
             ));
             let columns = pattern_columns(a.xfqs, a.xfqe);
+            // A card whose range runs backwards has no columns at all,
+            // and then the leading `X` of each of these records writes
+            // nothing: positioning at the end of a record produces no
+            // characters.
             let ruler = {
-                let mut r = format!("{:4}", "");
+                let mut r = String::new();
+                if !columns.is_empty() {
+                    r.push_str(&format!("{:4}", ""));
+                }
                 for c in &columns {
                     r.push_str(&format!("{:4}{}", "", i(*c as i64, 2)));
                 }
@@ -305,7 +312,9 @@ pub fn outant(
             out.push_str(&ruler);
             out.push_str(&format!("\n\n{:48}FREQUENCY IN MEGAHERTZ\n", ""));
             out.push_str(&format!("\n\n{:48}ANTENNA EFFICIENCY\n", ""));
-            out.push_str(&format!("{:5}", ""));
+            // The literal blank of `' ',4X,21F6.1` is written; the `4X`
+            // after it is not, when no value follows.
+            out.push_str(if columns.is_empty() { " " } else { "     " });
             for c in &columns {
                 out.push_str(&f(a.eff[*c - 1], 6, 1));
             }
@@ -348,10 +357,6 @@ const ES_MARKS: [u8; 3] = *b"UML";
 const INTEGRATION: [&str; 2] = ["GAUSSIAN  ", "MODEL SEG "];
 /// `IFONE`: what the F1 layer is doing.
 const F1_STATE: [&str; 3] = ["GONE      ", "PARABOLIC ", "LINEAR    "];
-/// `IEDP` with no `INTEGRATE` card, which is what `blkdat.for` sets.
-/// Only a card can raise it, and raising it would pick `MODEL SEG` for
-/// a point with no F1 layer.
-const IEDP: i32 = -1;
 /// Columns across the plot, one per `FINC` of sounding frequency.
 const ION_COLUMNS: usize = 100;
 /// Rows down it, 10 km of virtual height each from 605 km.
@@ -394,7 +399,7 @@ fn ionplt(p: &IonPlot) -> String {
     let ine;
     if p.fi[1] <= 0.0 {
         ine = 0;
-        if IEDP >= 0 {
+        if p.iedp >= 0 {
             index = 1;
         }
     } else if p.fsecv <= 0.0 {

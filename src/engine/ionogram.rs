@@ -7,15 +7,18 @@
 //! `lecden` call for the chosen area: once for the short-path control
 //! area, or for both end areas on long paths.
 //!
-//! `genion` is ported for the `IEDP < 0` configuration only (the decks
-//! carry no INTEGRATE card): every ionogram height comes from `gethp`
-//! on the density profile, so the parabolic fast path is dead code.
+//! `genion` has both height paths: the default `IEDP < 0`, where every
+//! height comes from `gethp` on the density profile, and the `IEDP >= 0`
+//! fast path an `INTEGRATE` card selects, where the E layer is a table
+//! and the F layer is a true-height lookup with parabolic bending and
+//! retardation.
 
 // Constants are kept digit for digit with the Fortran.
 #![allow(clippy::excessive_precision)]
 
 use super::con::{D2R, R, RZ};
-use super::muf::{gethp, IonoState, LayerMuf};
+use super::muf::{bendy, gethp, pen, IonoState, LayerMuf};
+use super::sigdis::xlin;
 
 /// The elevation-angle scan, `ANG(40)` from `blkdat.for`, degrees.
 pub const ANG: [R; 40] = [
@@ -86,10 +89,27 @@ pub struct Ionogram {
     pub afac: [R; 30],
 }
 
-/// Port of `GENION` for `IEDP < 0`: the sounding-frequency grid and its
-/// true and virtual heights from the density profile (which `lecden`
-/// must have built for the same area first). `afac` is zeroed here and
-/// filled by [`alosfv`].
+/// True and virtual heights of the first ten sounding frequencies for
+/// an E layer with the default 110 km height and 20 km semithickness,
+/// which is what the `IEDP >= 0` path substitutes for `gethp` there.
+const HTE: [R; 10] = [
+    70.00, 84.51, 88.52, 93.00, 94.26, 95.71, 97.68, 100.27, 104.22, 107.19,
+];
+const HPE: [R; 10] = [
+    70.00, 87.40, 94.00, 98.68, 100.20, 102.65, 107.15, 113.74, 125.25, 140.03,
+];
+
+/// Port of `GENION`: the sounding-frequency grid and its true and
+/// virtual heights from the density profile (which `lecden` must have
+/// built for the same area first). `afac` is zeroed here and filled by
+/// [`alosfv`].
+///
+/// `IEDP >= 0` takes the fast path: the E layer's ten points come from
+/// the table above, the F layer's true heights from a lookup in the
+/// profile, and its virtual heights from the parabolic bending and
+/// retardation — except where an F1 layer exists, which has too many
+/// shapes for the closed form, and where the source falls back to
+/// `gethp`.
 pub fn genion(s: &IonoState, k: usize) -> Ionogram {
     let fi0 = s.fi[k][0];
     let fi1 = s.fi[k][1];
@@ -141,10 +161,31 @@ pub fn genion(s: &IonoState, k: usize) -> Ionogram {
         htrue: [0.0; 30],
         afac: [0.0; 30],
     };
-    for i in 0..30 {
-        let (hp, ht) = gethp(s, ion.fvert[i]);
-        ion.hprim[i] = hp;
-        ion.htrue[i] = ht;
+    if s.iedp < 0 {
+        for i in 0..30 {
+            let (hp, ht) = gethp(s, ion.fvert[i]);
+            ion.hprim[i] = hp;
+            ion.htrue[i] = ht;
+        }
+        return ion;
+    }
+    ion.htrue[..10].copy_from_slice(&HTE);
+    ion.hprim[..10].copy_from_slice(&HPE);
+    for i in 10..30 {
+        let fn_ = ion.fvert[i] * ion.fvert[i];
+        ion.htrue[i] = xlin(fn_, &s.fnsq, &s.htr);
+    }
+    if s.fi[k][1] > 0.0 {
+        for i in 10..30 {
+            let (hp, _) = gethp(s, ion.fvert[i]);
+            ion.hprim[i] = hp;
+        }
+    } else {
+        for i in 10..30 {
+            let f = ion.fvert[i];
+            ion.hprim[i] = s.hi[k][2] - s.yi[k][2] + bendy(s, 2, k, f)
+                + (pen(s, 0, k, f) - 2.0 * s.yi[k][0]);
+        }
     }
     ion
 }

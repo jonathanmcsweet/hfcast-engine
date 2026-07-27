@@ -181,10 +181,21 @@ pub fn fuzz_case(index: u64) -> DeckCase {
         noise_dbw: rng.int(100, 170) as f64,
         sporadic_e: rng.chance(0.5),
         outgraph: pick_outgraph(&mut rng),
+        integrate: pick_integrate(&mut rng),
         tx_antennas: pick_antennas(&mut rng, 1),
         rx_antennas: pick_antennas(&mut rng, 2),
         freqs_mhz,
     }
+}
+
+/// A fifth of the cases carry an `INTEGRATE` card, which switches the
+/// layer heights to the fast parabolic path. Negative values are drawn
+/// too, because a negative one leaves the default path in place.
+fn pick_integrate(rng: &mut Rng) -> Option<i32> {
+    if !rng.chance(0.2) {
+        return None;
+    }
+    Some(rng.int(-2, 3) as i32)
 }
 
 /// A quarter of the cases carry an `OUTGRAPH` card, drawn from the

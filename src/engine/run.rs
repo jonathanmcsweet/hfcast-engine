@@ -100,6 +100,8 @@ pub struct RunInputs {
     pub fof2: FoF2Model,
     /// The `FPROB` card: the E, F1, F2 and sporadic-E multipliers.
     pub psc: [R; 4],
+    /// `IEDP`, from the `INTEGRATE` card. -1 without one.
+    pub iedp: i32,
 }
 
 /// Asks the engine the same question the deck card asks.
@@ -132,6 +134,7 @@ impl From<&DeckCase> for RunInputs {
                 FoF2Model::Ccir
             },
             psc: c.fprob().map(|v| v as R),
+            iedp: c.integrate.unwrap_or(-1),
         }
     }
 }
@@ -366,6 +369,8 @@ pub struct IonPlot {
     /// `FSECV` after `LECDEN`, which chooses the F1 description in the
     /// heading.
     pub fsecv: R,
+    /// `IEDP`, which chooses the integration name in the heading.
+    pub iedp: i32,
     pub ion: Ionogram,
 }
 
@@ -403,6 +408,7 @@ pub fn run_ion(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<Vec<IonPlot>>, Str
         let params = layer_parameters(&set, &ab, &geo.points, &mags, inp.month, inp.ssn, gmt, &psc);
         let es = esind(&set, &ab, &geo.points, &mags, &psc);
         let mut state = IonoState::from_layers(&params);
+        state.iedp = inp.iedp;
         state.fsecv = fsecv_carry;
         ionset(&mut state);
         let (fs, hs) = es_slots(&es);
@@ -426,6 +432,7 @@ pub fn run_ion(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<Vec<IonPlot>>, Str
                 fs: fs[k],
                 hs: hs[k],
                 fsecv: state.fsecv[k],
+                iedp: state.iedp,
                 ion,
             });
         }
@@ -493,6 +500,7 @@ pub fn run_muf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<MufHourOut>, Strin
         let params = layer_parameters(&set, &ab, &geo.points, &mags, inp.month, inp.ssn, gmt, &psc);
         let es = esind(&set, &ab, &geo.points, &mags, &psc);
         let mut state = IonoState::from_layers(&params);
+        state.iedp = inp.iedp;
         state.fsecv = fsecv_carry;
         ionset(&mut state);
         let mut es_state = es.clone();
@@ -590,6 +598,7 @@ pub fn run_luf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<MufHourOut>, Strin
         let params = layer_parameters(&set, &ab, &geo.points, &mags, inp.month, inp.ssn, gmt, &psc);
         let es = esind(&set, &ab, &geo.points, &mags, &psc);
         let mut state = IonoState::from_layers(&params);
+        state.iedp = inp.iedp;
         state.fsecv = fsecv_carry;
         ionset(&mut state);
         let mut es_state = es.clone();
@@ -748,6 +757,8 @@ struct HourSetup<'a> {
     ssn: R,
     noise_dbw: i32,
     method: u32,
+    /// `IEDP` from the `INTEGRATE` card.
+    iedp: i32,
     /// Whether the area driver's own comparison applies: `HFAREA` tests
     /// the path length against `GCDLNG` with `.GT.` where `HFMUFS` uses
     /// `.GE.`, so a path of exactly 10000 km takes the short model in an
@@ -824,6 +835,7 @@ fn hour_setup<'a>(
         ssn: inp.ssn,
         noise_dbw: inp.noise_dbw,
         method: inp.method,
+        iedp: inp.iedp,
         area: false,
         outbod: super::output::itout(inp.method) == 7,
     })
@@ -937,6 +949,7 @@ fn hour_body(
         let params = layer_parameters(set, &ab, &geo.points, &s.mags, s.month, s.ssn, gmt, &psc);
         let es = esind(set, &ab, &geo.points, &s.mags, &psc);
         let mut state = IonoState::from_layers(&params);
+        state.iedp = s.iedp;
         state.fsecv = *fsecv_carry;
         ionset(&mut state);
         let mut es_state = es.clone();
@@ -1352,6 +1365,8 @@ pub fn run_area(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<AreaPoint>, Str
                 method: area.method,
                 fof2: area.fof2,
                 psc: area.psc,
+                // The area driver reads no `INTEGRATE` card.
+                iedp: -1,
             };
             let mut s = hour_setup(itshfbc, &inp, &set, Some(ants.clone()))?;
             // `HFAREA` compares against `GCDLNG` with `.GT.` where the

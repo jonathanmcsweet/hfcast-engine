@@ -120,6 +120,12 @@ pub struct DeckCase {
     /// A `TOPLINES` card: which of the header's lines print. Like
     /// `BOTLINES` it overrides the method's own selection.
     pub toplines: Option<Vec<u32>>,
+    /// An `INTEGRATE` card, carrying the value it puts in `IEDP`. The
+    /// card decides how layer heights are obtained: without it `IEDP`
+    /// stays at its program-start -1 and every height comes from the
+    /// density profile; at zero or above the E layer takes fixed heights
+    /// and a profile with no F1 layer takes parabolic segments.
+    pub integrate: Option<i32>,
     /// An `OUTGRAPH` card: up to twelve further card methods whose MUF
     /// table or diurnal graph is printed after the run's own output. A
     /// negative number sends that method's pages to a second output
@@ -360,6 +366,10 @@ pub fn build_deck(c: &DeckCase) -> Result<String, DeckError> {
         // The TOPLINES and BOTLINES cards each take fourteen I5 fields;
         // the unused ones stay blank, which reads as zero and selects no
         // line.
+        match c.integrate {
+            Some(v) => format!("INTEGRATE {}", field(&v.to_string(), 5)?),
+            None => String::new(),
+        },
         outgraph_card(c.outgraph.as_deref())?,
         line_card("TOPLINES", c.toplines.as_deref())?,
         line_card("BOTLINES", c.botlines.as_deref())?,
@@ -405,6 +415,7 @@ mod tests {
             rx_antennas: Vec::new(),
             sporadic_e: false,
             outgraph: None,
+            integrate: None,
         }
     }
 

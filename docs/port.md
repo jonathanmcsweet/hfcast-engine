@@ -663,6 +663,32 @@ A negative request writes to a second output unit the driver never
 opens, so those pages land in a stray `fort.16`. They still advance the
 page number, which is why the port counts them without printing them.
 
+## The INTEGRATE card
+
+`IEDP` decides how layer heights are obtained. Its program-start value
+is -1 and only an `INTEGRATE` card raises it, including in the card's
+own `OFF` form: `DECRED` assigns 1 before it tests for `OFF` and never
+restores -1, so `INTEGRATE OFF` selects the fast path rather than
+turning it off.
+
+At zero or above, three places change.
+
+- `CURMUF` gives the E layer the fixed pair a 110 km, 20 km parabolic
+  layer would produce (`HTE = 104.25`, `HPE = 125.30`) instead of
+  reading the profile.
+- `CURMUF` gives the F2 layer a parabolic true height and a virtual
+  height from `BENDY` plus `PEN`, but only when there is no F1 layer;
+  with one it falls back to `GETHP` for both. The parabolic true height
+  reads `XT2` after the short-distance `BETA` scaling, so that store,
+  which is dead on the default path, is live here.
+- `GENION` takes the E layer's ten points from a table, the F layer's
+  true heights from a profile lookup, and its virtual heights from the
+  same `BENDY` and `PEN` — again falling back to `GETHP` where an F1
+  layer exists.
+
+`IONPLT` also prints `MODEL SEG` instead of `GAUSSIAN` in its heading
+when the point has no F1 layer and `IEDP` is not negative.
+
 ## The COEFFS and FPROB cards
 
 `COEFFS` chooses the foF2 map set: `URSI88` instead of the default

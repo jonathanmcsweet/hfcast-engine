@@ -259,6 +259,7 @@ fn run_path(
         botlines: None,
         toplines: None,
         outgraph: None,
+            integrate: None,
         from_lat: path.tx_lat,
         from_lon: path.tx_lon,
         to_lat: path.rx_lat,

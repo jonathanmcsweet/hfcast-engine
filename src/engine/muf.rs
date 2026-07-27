@@ -105,6 +105,16 @@ pub struct IonoState {
     /// hour's state into the next (`from_layers` starts it at the
     /// program-start value, zero).
     pub fsecv: [R; 3],
+    /// `IEDP` of `/MFAC/`: how the layer heights are obtained. Below
+    /// zero — the program-start value, and what a deck without an
+    /// `INTEGRATE` card leaves — every height comes from `gethp` on the
+    /// density profile. At zero or above the E layer takes fixed
+    /// heights and a profile with no F1 layer takes parabolic segments.
+    ///
+    /// An `INTEGRATE` card always sets it to at least 1, even in its
+    /// `OFF` form: `DECRED` assigns 1 before it tests for `OFF` and
+    /// never restores the program-start value.
+    pub iedp: i32,
 }
 
 impl IonoState {
@@ -119,6 +129,7 @@ impl IonoState {
             htr: [0.0; 50],
             fnsq: [0.0; 50],
             fsecv: [0.0; 3],
+            iedp: -1,
         };
         for (k, p) in params.iter().enumerate() {
             state.fi[k] = p.fi;
@@ -382,6 +393,18 @@ fn profile_interpolate(from: &[R; 50], to: &[R; 50], probe: R) -> R {
 
 /// Port of `GETHP`: the true and virtual heights `(hpx, htx)` for a
 /// vertical frequency, from the density profile by Gaussian integration.
+/// `BENDY`: the bending a parabolic layer adds to the virtual height.
+pub fn bendy(s: &IonoState, i: usize, k: usize, f: R) -> R {
+    let x = (f / s.fi[k][i]).min(0.999);
+    0.5 * x * s.yi[k][i] * ((1.0 + x) / (1.0 - x)).ln()
+}
+
+/// `PEN`: the retardation a parabolic layer below the reflection adds.
+pub fn pen(s: &IonoState, i: usize, k: usize, f: R) -> R {
+    let x = (f / s.fi[k][i]).max(1.001);
+    s.yi[k][i] * ((1.0 + x) / (x - 1.0)).ln() * x
+}
+
 pub fn gethp(s: &IonoState, fxx: R) -> (R, R) {
     let fr = fxx * fxx;
     if fr - s.fnsq[0] <= 0.0 {
@@ -687,20 +710,28 @@ pub fn curmuf(
         let xt1 = 1.0 / (1.0 + A1 * s.yi[ks][1] / s.hi[ks][1]).sqrt();
         fx1 = xt1 * s.fi[ks][1];
     }
-    let xt2 = 1.0 / (1.0 + A2 * s.yi[ks][2] / s.hi[ks][2]).sqrt();
+    let mut xt2 = 1.0 / (1.0 + A2 * s.yi[ks][2] / s.hi[ks][2]).sqrt();
     let mut fx2 = xt2 * s.fi[ks][2];
-    // Force the F2 MUF to approach MUF(0) at short distances. (The source
-    // also scales XT2 by BETA; that store is dead — XT2 is not read again.)
+    // Force the F2 MUF to approach MUF(0) at short distances. `XT2` is
+    // scaled too, and is read again only on the `IEDP >= 0` path, where
+    // it sets the F2 true height.
     if gcdkm - DZF < 0.0 {
         let a = -1.0 + 1.0 / xt2;
         let beta = 1.0 + a * (-BEX * gcdkm / DZF).exp();
         fx2 *= beta;
+        xt2 *= beta;
     }
 
     let mut layers = [LayerMuf::default(); 4];
 
-    // E layer MUF. IEDP < 0: heights from the profile.
-    let (hpe, hte) = gethp(s, fxe);
+    // E layer MUF. Below zero `IEDP` reads the heights off the profile;
+    // at zero or above it uses the pair a 110 km, 20 km parabolic E
+    // layer would give.
+    let (hpe, hte) = if s.iedp < 0 {
+        gethp(s, fxe)
+    } else {
+        (125.30, 104.25)
+    };
     let g = hop_geometry(gcdkm, amind, hpe, hte, true);
     let emuf = fxe * g.secp;
     layers[0] = LayerMuf {
@@ -719,8 +750,18 @@ pub fn curmuf(
     layers[0].yfot = emuf - 1.28 * layers[0].sigl;
     layers[0].yhpf = emuf + 1.28 * layers[0].sigu;
 
-    // F2 layer MUF with the Martyn's-theorem iteration.
-    let (hp2, ht2) = gethp(s, fx2);
+    // F2 layer MUF with the Martyn's-theorem iteration. The parabolic
+    // form applies only when there is no F1 layer: with one there are
+    // too many shapes to write down, and the source falls back to
+    // `gethp` for both heights.
+    let (hp2, ht2) = if s.iedp < 0 || s.fi[ks][1] > 0.0 {
+        gethp(s, fx2)
+    } else {
+        (
+            s.hi[ks][2] - s.yi[ks][2] + bendy(s, 2, ks, fx2) + (pen(s, 0, ks, fx2) - 2.0 * s.yi[ks][0]),
+            s.hi[ks][2] - s.yi[ks][2] + s.yi[ks][2] * (1.0 - (1.0 - xt2 * xt2).sqrt()),
+        )
+    };
     let g = hop_geometry(gcdkm, amind, hp2, ht2, false);
     let mut sphe = g.sphe;
     let mut fob2 = fx2 * g.secp;

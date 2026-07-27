@@ -311,6 +311,7 @@ mod tests {
             fprob: None,
             botlines: None,
             outgraph: None,
+            integrate: None,
             toplines: None,
             from_lat: 35.8,
             from_lon: -5.9,

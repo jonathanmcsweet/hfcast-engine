@@ -148,6 +148,7 @@ pub fn sweep_cases() -> Vec<DeckCase> {
                     // sporadic-E layer on, so the tolerance must cover the
                     // code paths that setting exercises.
                     outgraph: None,
+            integrate: None,
                     sporadic_e: true,
                 });
             }
