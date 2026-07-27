@@ -1181,3 +1181,56 @@ listing for a deck the server no longer sends. It stays because the
 parser tests use it as known text. Comparing engine output against it
 compares two different questions, which cost a confusing test failure
 once; the `-es` fixture beside it is the current deck's listing.
+
+## Two tiers in one engine (`engine::model`)
+
+The port is bug-compatible on purpose, and that is what makes
+"identical to the reference" checkable. But several reproduced
+behaviours are plainly defects, and a readable engine exists partly to
+be able to fix them. So both behaviours live in one engine, chosen at
+run time by `api::Request::model`:
+
+- `Model::Compatible` — VOACAP as it is. The default, and the only
+  tier any harness here can judge, because the reference has no other
+  behaviour to compare against.
+- `Model::Corrected` — VOACAP with its documented defects fixed.
+
+Three rules keep this from spreading:
+
+1. **Every divergence is named in `engine/model.rs`.** Engine code
+   never asks "am I corrected?"; it asks about one defect, such as
+   `Model::reads_pole_file`. The methods on `Model` are therefore the
+   complete list of ways the tiers can differ, and counting them
+   counts the divergence.
+2. **Two configurations are public**, all-off and all-on. The
+   per-defect `Fixes` struct is `pub(crate)`, because the
+   combinations between are a measurement tool — isolating one fix so
+   its effect can be attributed — and not a promise to build on.
+3. **Point defects only.** A fix that is one branch at one documented
+   site belongs here. `f32` to `f64`, evaluation order, and the state
+   that persists between hours and between calls do not: a flag
+   cannot honestly describe them, and the result would not be VOACAP
+   with a fix but a different model. Those belong to a later tier's
+   structural work.
+
+Why not the alternatives: a fork would double maintenance and let the
+two drift everywhere rather than only where a fix was intended. A
+Cargo feature would be additive, so two dependents could silently
+change each other's numbers, and compile-time selection would make it
+impossible to run both behaviours in one process — which is exactly
+what measuring a fix requires.
+
+`Model` is deliberately not on `DeckCase`. A deck describes cards, and
+no card asks for a defect to be fixed; a case converted from a deck is
+always `Compatible`, which is what keeps every harness judging the
+tier it can judge.
+
+### Adding a fix
+
+Add a field to `Fixes`, a method that reads it, and take the branch at
+the one site the defect lives at. Then measure it: a differential test
+recording exactly which outputs move, and a run of the WSPR validation
+with only that fix on. `docs/corrected.md` holds the results —
+including for any fix that measured worse and was therefore left off,
+because a VOACAP defect can be load-bearing when the model's empirical
+constants were tuned with it present.

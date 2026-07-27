@@ -62,6 +62,7 @@ pub mod ioncap;
 pub mod ionogram;
 pub mod ionosphere;
 pub mod magnetic;
+pub mod model;
 pub mod modes;
 pub mod muf;
 pub mod noise;

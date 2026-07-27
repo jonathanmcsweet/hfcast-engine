@@ -19,6 +19,7 @@ use std::process::ExitCode;
 
 use propcore::engine::area::{Grid, Projection};
 use propcore::engine::coefficients::FoF2Model;
+use propcore::engine::model::Model;
 use propcore::engine::run::{f_fixed, run_area as port_area, AntennaCardSpec, AreaInputs};
 use propcore::runner::{map_limit, run_area, variant_bin, IsolatedRoot};
 
@@ -442,6 +443,9 @@ fn main() -> ExitCode {
             // receive card a gain, in the same field.
             tx_antenna: Some(spec(&case.tx, case.tx.value, WATTS / 1000.0)),
             rx_antenna: Some(spec(&case.rx, 0.0, case.rx.value)),
+            // The reference has only the compatible behaviour, so
+            // that is the only tier this comparison can judge.
+            model: Model::Compatible,
         };
         let ported = match port_area(root.path(), &inputs) {
             Ok(p) => p,

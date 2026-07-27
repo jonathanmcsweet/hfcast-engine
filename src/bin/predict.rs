@@ -30,7 +30,7 @@ use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use propcore::api::{listing, FoF2Model, Ionosphere, Request, Site, Task};
+use propcore::api::{listing, FoF2Model, Ionosphere, Model, Request, Site, Task};
 use propcore::json::{self, num, obj, str_of, Json};
 use propcore::listing::{parse_listing, MUF_ROW, MUF_SLOT};
 use propcore::runner::itshfbc_dir;
@@ -122,6 +122,15 @@ fn build_request(req: &Json) -> Result<(Request, Vec<f64>), String> {
         tx_antennas: Vec::new(),
         rx_antennas: Vec::new(),
         ionosphere: Ionosphere::default(),
+        // `"model": "corrected"` asks for VOACAP with its documented
+        // defects fixed. Absent, a request gets the behaviour proven
+        // identical to the reference, which is what the server wants
+        // and what every harness can judge.
+        model: match req.get("model").and_then(Json::as_str) {
+            None | Some("compatible") => Model::Compatible,
+            Some("corrected") => Model::Corrected,
+            Some(other) => return Err(format!("unknown model {other:?}")),
+        },
     };
     Ok((request, freqs))
 }

@@ -10,7 +10,7 @@
 //! binary and data tree, so `cargo test` stays runnable anywhere.
 
 use propcore::api::{
-    deck, listing, predict, EfVar, EsVar, FoF2Model, Heights, Ionosphere, Recompute, Report,
+    deck, listing, predict, EfVar, EsVar, FoF2Model, Heights, Ionosphere, Model, Recompute, Report,
     Request, Site, Task,
 };
 use propcore::runner::{itshfbc_dir, run_deck, variant_bin, IsolatedRoot};
@@ -49,6 +49,9 @@ fn a_request() -> Request {
         tx_antennas: Vec::new(),
         rx_antennas: Vec::new(),
         ionosphere: Ionosphere::default(),
+        // Every test in this file compares against the reference, so
+        // the compatible tier is the only one they can judge.
+        model: Model::Compatible,
     }
 }
 
@@ -172,6 +175,30 @@ fn a_request_finer_than_the_cards_still_prints_the_reference_listing() {
         let fortran = run_deck(&bin, root.path(), &cards).expect("reference run");
         let ported = listing(root.path(), &req, task).expect("ported run");
         assert_eq!(ported, fortran, "task {task:?} listing differs");
+    }
+}
+
+/// The model switch exists but fixes nothing yet, so both tiers must
+/// still be the reference's own output.
+///
+/// This is what says adding the switch changed no behaviour. When the
+/// first fix lands, the `Corrected` half of this test is expected to
+/// fail and moves to `corrected.md`'s differential record — that
+/// failure is the fix becoming visible, and it should be read as
+/// such rather than as a regression.
+#[test]
+fn both_tiers_still_print_the_reference_listing() {
+    let Some((bin, root)) = reference("api-model") else {
+        return;
+    };
+    let req = a_request();
+    let cards = deck(&req, Task::Systems).expect("deck");
+    let fortran = run_deck(&bin, root.path(), &cards).expect("reference run");
+
+    for model in [Model::Compatible, Model::Corrected] {
+        let ported = listing(root.path(), &Request { model, ..req.clone() }, Task::Systems)
+            .expect("ported run");
+        assert_eq!(ported, fortran, "{model:?} differs from the reference");
     }
 }
 

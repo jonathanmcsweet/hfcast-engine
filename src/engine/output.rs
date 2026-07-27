@@ -725,14 +725,23 @@ fn outgraph(pager: &mut Pager, case: &DeckCase, hours: &[super::run::MufHourOut]
 /// line. Methods that print through a routine still being ported return
 /// the preamble and the last line, which is what the reference would
 /// print if its own routine printed nothing.
-pub fn render(itshfbc: &Path, case: &DeckCase, deck: &str) -> Result<String, String> {
+pub fn render(
+    itshfbc: &Path,
+    case: &DeckCase,
+    deck: &str,
+    model: super::model::Model,
+) -> Result<String, String> {
     use super::run::{
         muf_view, path_report, run_listing, run_luf, run_muf, run_par, MufHourOut, RunInputs,
     };
     use super::tables::{outall, outlay, outmuf, outpar, outtab};
 
     let version = read_version(itshfbc)?;
-    let inp = RunInputs::from(case);
+    let mut inp = RunInputs::from(case);
+    // A deck cannot ask for a defect to be fixed, so the model comes
+    // from the caller rather than from the cards.
+    inp.model = model;
+    let inp = inp;
     let mut out = preamble(&version);
     out.push_str(&echo_deck(deck));
 

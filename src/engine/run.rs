@@ -29,6 +29,7 @@ use super::ionosphere::{
     EsParams, LayerParams,
 };
 use super::magnetic::{magvar, MagneticVars};
+use super::model::Model;
 use super::modes::{
     es_slots, luffy_freq_loop, luffy_luf, luffy_smooth, outbod_sentinels, setlng, setluf,
     AllModesOut, DeckParams, Geog, HourSaves, ModeLoopState, PassCtx, Son,
@@ -115,6 +116,13 @@ pub struct RunInputs {
     /// An `EDP` card's profile: 50 true heights and 50 plasma
     /// frequencies squared, which `LECDEN` then leaves alone.
     pub edp: Option<([R; 50], [R; 50])>,
+    /// Whether the run reproduces VOACAP's defects or fixes them.
+    ///
+    /// Not on [`DeckCase`]: a deck describes cards, and no card asks
+    /// for a defect to be fixed. It comes from the API instead, and a
+    /// case converted from a deck is [`Model::Compatible`] — which is
+    /// what keeps every harness judging the tier it can judge.
+    pub model: Model,
 }
 
 /// Asks the engine the same question the deck card asks.
@@ -170,6 +178,8 @@ impl From<&DeckCase> for RunInputs {
                 .edp
                 .as_ref()
                 .map(|e| (e.htr.map(|v| v as R), e.fnsq.map(|v| v as R))),
+            // A deck can only ask for what VOACAP does.
+            model: Model::Compatible,
         }
     }
 }
@@ -937,6 +947,10 @@ struct HourSetup<'a> {
     /// `.GE.`, so a path of exactly 10000 km takes the short model in an
     /// area run and the long one point to point.
     area: bool,
+    /// Which behaviour this run reproduces. Read at the defect sites
+    /// a fix touches; see `engine::model`.
+    #[allow(dead_code)]
+    model: Model,
     /// Whether this method's output goes through `OUTBOD`, which is the
     /// only routine that applies the high-MUF sentinels. `OUTTAB`,
     /// `OUTALL` and the area driver print the same hour without them, so
@@ -1012,6 +1026,7 @@ fn hour_setup<'a>(
         krun: inp.krun,
         edp: inp.edp,
         area: false,
+        model: inp.model,
         outbod: super::output::itout(inp.method) == 7,
     })
 }
@@ -1406,6 +1421,10 @@ pub struct AreaInputs {
     /// area gain table holds two antennas.
     pub tx_antenna: Option<AntennaCardSpec>,
     pub rx_antenna: Option<AntennaCardSpec>,
+    /// Whether the grid reproduces VOACAP's defects or fixes them.
+    /// Two of them are area-only, so this is the tier an area run
+    /// reads as much as a point-to-point one.
+    pub model: Model,
 }
 
 /// One grid point's output row: the indices, the coordinates and
@@ -1550,6 +1569,7 @@ pub fn run_area(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<AreaPoint>, Str
                 efvar: Vec::new(),
                 esvar: Vec::new(),
                 edp: None,
+                model: area.model,
             };
             let mut s = hour_setup(itshfbc, &inp, &set, Some(ants.clone()))?;
             // `HFAREA` compares against `GCDLNG` with `.GT.` where the

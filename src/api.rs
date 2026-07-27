@@ -56,6 +56,7 @@ use crate::engine::run::{run_ion, run_listing, run_luf, run_muf, run_par, RunInp
 // nothing forces them into the harness or engine modules.
 pub use crate::deck::{AntennaChoice, Edp, EfVar, EsVar, FREQ_SLOTS};
 pub use crate::engine::coefficients::FoF2Model;
+pub use crate::engine::model::Model;
 pub use crate::engine::modes::{AllModesOut, Son};
 pub use crate::engine::run::{
     HourPrediction, IonPlot, MufHourOut, ParRow, PathReport, Prediction,
@@ -212,6 +213,10 @@ pub struct Request {
     pub tx_antennas: Vec<AntennaChoice>,
     pub rx_antennas: Vec<AntennaChoice>,
     pub ionosphere: Ionosphere,
+    /// Whether the run reproduces VOACAP's documented defects or
+    /// fixes them. [`Model::Compatible`] by default, which is the
+    /// only tier proven identical to the reference.
+    pub model: Model,
 }
 
 /// What a [`Task`] computed.
@@ -233,7 +238,9 @@ pub enum Report {
 /// task's data.
 pub fn predict(itshfbc: &Path, req: &Request, task: Task) -> Result<Report, String> {
     let case = deck_case(req, task)?;
-    let inp = RunInputs::from(&case);
+    let mut inp = RunInputs::from(&case);
+    inp.model = req.model;
+    let inp = inp;
     match task {
         Task::Parameters => run_par(itshfbc, &inp).map(Report::Parameters),
         Task::Ionograms => run_ion(itshfbc, &inp).map(Report::Ionograms),
@@ -249,7 +256,7 @@ pub fn predict(itshfbc: &Path, req: &Request, task: Task) -> Result<Report, Stri
 pub fn listing(itshfbc: &Path, req: &Request, task: Task) -> Result<String, String> {
     let case = deck_case(req, task)?;
     let deck = build_deck(&case).map_err(|e| e.to_string())?;
-    render(itshfbc, &case, &deck)
+    render(itshfbc, &case, &deck, req.model)
 }
 
 /// The card deck this request resolves to: what the reference program
@@ -366,6 +373,7 @@ mod tests {
             tx_antennas: Vec::new(),
             rx_antennas: Vec::new(),
             ionosphere: Ionosphere::default(),
+            model: Model::default(),
         }
     }
 

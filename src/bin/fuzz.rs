@@ -20,6 +20,7 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::process::ExitCode;
 
 use propcore::deck::{build_deck, DeckCase};
+use propcore::engine::model::Model;
 use propcore::engine::output::render;
 use propcore::fuzz::{band_for, fuzz_cases};
 use propcore::listing::{parse_listing, ParsedListing};
@@ -392,7 +393,11 @@ fn check_case(reference: &std::path::Path, case: &DeckCase) -> Outcome {
     let fortran = run_deck(reference, root.path(), &deck);
     // The port panics where the engine stops, so a panic is caught and
     // compared against the Fortran's refusal rather than ending the run.
-    let ported = match catch_unwind(AssertUnwindSafe(|| render(root.path(), case, &deck))) {
+    // The reference has only the compatible behaviour, so that is the
+    // only tier this comparison can judge.
+    let ported = match catch_unwind(AssertUnwindSafe(|| {
+        render(root.path(), case, &deck, Model::Compatible)
+    })) {
         Ok(Ok(text)) => Ok(text),
         Ok(Err(e)) => Err(e),
         Err(payload) => Err(panic_message(payload)),
