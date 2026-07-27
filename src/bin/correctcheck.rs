@@ -15,11 +15,15 @@
 //! looks identical to a fix that changes nothing. `--corpus` chooses
 //! the corpus, and every fix names the one that reaches it:
 //!
-//! | corpus    | cases                          | fixes it can see                 |
-//! | --------- | ------------------------------ | -------------------------------- |
-//! | `sweep`   | 96 method-30 systems runs      | `pole_file`                      |
-//! | `luf`     | fuzz cases rewritten to 26     | `luf_scan_best`, `luf_pass_area` |
-//! | `curtain` | sweep paths with a KOP=6 aerial | `curtain_elevation`             |
+//! | corpus    | cases                           | fixes it can see                 |
+//! | --------- | ------------------------------- | -------------------------------- |
+//! | `sweep`   | 96 method-30 systems runs       | `pole_file`                      |
+//! | `luf`     | fuzz cases rewritten to 26      | `luf_scan_best`, `luf_pass_area` |
+//! | `curtain` | sweep paths with a KOP=6 aerial | `curtain_elevation`              |
+//! | `area`    | area grids over their centres   | `area_centre_nudge`              |
+//!
+//! `area_antenna_end` has no corpus, and the reason is recorded in
+//! `docs/corrected.md`: no input this crate can build reaches it.
 //!
 //! Usage: `cargo run --release --bin correctcheck -- [--fix NAME]
 //! [--corpus NAME] [--cases N] [--jobs J]`
@@ -31,8 +35,11 @@ use std::collections::BTreeMap;
 use std::process::ExitCode;
 
 use propcore::deck::{build_deck, AntennaChoice, DeckCase};
+use propcore::engine::area::{Grid, Projection};
+use propcore::engine::coefficients::FoF2Model;
 use propcore::engine::model::{Fixes, Model};
 use propcore::engine::output::render;
+use propcore::engine::run::{run_area, AreaInputs};
 use propcore::fuzz::fuzz_cases;
 use propcore::listing::{parse_listing, ModeSample, Sample};
 use propcore::runner::{map_limit, IsolatedRoot};
@@ -61,8 +68,8 @@ const FIX_NAMES: [(&str, &str); 6] = [
     ("curtain_elevation", "curtain"),
     ("luf_scan_best", "luf"),
     ("luf_pass_area", "luf"),
-    ("area_centre_nudge", "needs an area corpus"),
-    ("area_antenna_end", "needs an area corpus"),
+    ("area_centre_nudge", "area"),
+    ("area_antenna_end", "no corpus can reach it; see corrected.md"),
 ];
 
 /// The one sample file in the tree whose antenna type is the IONCAP
@@ -90,6 +97,8 @@ enum Corpus {
     /// table at different elevations and a fix at either end can move
     /// a printed cell.
     Curtain,
+    /// Area grids, which have no deck at all. See [`area_cases`].
+    Area,
 }
 
 impl Corpus {
@@ -98,6 +107,7 @@ impl Corpus {
             "sweep" => Some(Corpus::Sweep),
             "luf" => Some(Corpus::Luf),
             "curtain" => Some(Corpus::Curtain),
+            "area" => Some(Corpus::Area),
             _ => None,
         }
     }
@@ -124,6 +134,8 @@ impl Corpus {
                 }
                 cases
             }
+            // Not a deck corpus; `area_cases` builds these.
+            Corpus::Area => Vec::new(),
         };
         if let Some(n) = limit {
             cases.truncate(n);
@@ -141,6 +153,7 @@ impl Corpus {
                 (parsed.numeric, parsed.modes)
             }
             Corpus::Luf => (outmuf_samples(text), Vec::new()),
+            Corpus::Area => (Vec::new(), Vec::new()),
         }
     }
 }
@@ -182,6 +195,163 @@ fn outmuf_samples(text: &str) -> Vec<Sample> {
     }
     out
 }
+
+/// One area grid to run twice, and why it is here.
+struct AreaCase {
+    id: &'static str,
+    inputs: AreaInputs,
+}
+
+/// The area grids, chosen for what `area_centre_nudge` needs: a grid
+/// point that lands exactly on the fixed station, at a longitude on
+/// each side of zero.
+///
+/// The nudge that moves a point off the station is what the defect
+/// skips, so a grid whose centre point coincides with the station is
+/// the only thing that can show it. An odd number of points on each
+/// side puts a point at offset zero, which is that centre. The
+/// positive-longitude grid is the control: there the comparison
+/// already worked, so nothing should move.
+fn area_cases() -> Vec<AreaCase> {
+    let grid = |plat: f32, plon: f32| Grid {
+        projection: Projection::GreatCircle,
+        plat,
+        plon,
+        xmin: -3000.0,
+        xmax: 3000.0,
+        ymin: -3000.0,
+        ymax: 3000.0,
+        nx: 5,
+        ny: 5,
+    };
+    let inputs = |plat: f32, plon: f32, inverse: bool| AreaInputs {
+        grid: grid(plat, plon),
+        tx_lat_deg: f64::from(plat),
+        tx_lon_deg: f64::from(plon),
+        month: 6,
+        ssn: 100.0,
+        hour: 18,
+        freqs_mhz: vec![11.850],
+        required_snr_db: 73.0,
+        noise_dbw: 145,
+        watts: 100.0,
+        psc: [1.0, 1.0, 1.0, 0.0],
+        method: 30,
+        fof2: FoF2Model::Ccir,
+        inverse,
+        tx_antenna: None,
+        rx_antenna: None,
+        model: Model::Compatible,
+    };
+    vec![
+        AreaCase {
+            id: "west-of-greenwich",
+            inputs: inputs(35.8, -5.9, false),
+        },
+        AreaCase {
+            id: "east-of-greenwich",
+            inputs: inputs(35.8, 5.9, false),
+        },
+        AreaCase {
+            id: "west-of-greenwich-inverse",
+            inputs: inputs(35.8, -5.9, true),
+        },
+        AreaCase {
+            id: "far-west",
+            inputs: inputs(40.0, -105.0, false),
+        },
+    ]
+}
+
+/// Runs one area grid twice and reports which printed fields moved.
+///
+/// The grid file prints each point's coordinates before its values, so
+/// the coordinates are compared too: with this fix they are the first
+/// thing to move, and a grid point that changed place changes every
+/// value under it.
+fn area_outcome(case: &AreaCase, fixes: Fixes, index: usize) -> Outcome {
+    let mut out = Outcome {
+        id: case.id.to_string(),
+        compared: 0,
+        moved: 0,
+        structural: 0,
+        by_row: BTreeMap::new(),
+        failure: None,
+    };
+    let root = match IsolatedRoot::create(&format!("correct-area{index}")) {
+        Ok(r) => r,
+        Err(e) => {
+            out.failure = Some(format!("tree: {e}"));
+            return out;
+        }
+    };
+    let run = |model: Model| {
+        let mut inputs = case.inputs.clone();
+        inputs.model = model;
+        run_area(root.path(), &inputs)
+    };
+    let base = match run(Model::Compatible) {
+        Ok(p) => p,
+        Err(e) => {
+            out.failure = Some(format!("compatible: {e}"));
+            return out;
+        }
+    };
+    let fixed = match run(Model::from_fixes(fixes)) {
+        Ok(p) => p,
+        Err(e) => {
+            out.failure = Some(format!("fixed: {e}"));
+            return out;
+        }
+    };
+    if base.len() != fixed.len() {
+        out.failure = Some(format!("{} points against {}", base.len(), fixed.len()));
+        return out;
+    }
+
+    let note = |row: &str, delta: f64, out: &mut Outcome| {
+        out.moved += 1;
+        let e = out.by_row.entry(row.to_string()).or_insert((0, 0.0));
+        e.0 += 1;
+        e.1 = e.1.max(delta);
+    };
+    for (a, b) in base.iter().zip(&fixed) {
+        out.compared += 2;
+        if a.lat != b.lat {
+            note("LAT", f64::from((a.lat - b.lat).abs()), &mut out);
+        }
+        if a.print_lon != b.print_lon {
+            note(
+                "LON",
+                f64::from((a.print_lon - b.print_lon).abs()),
+                &mut out,
+            );
+        }
+        for (i, (x, y)) in a.fields.iter().zip(&b.fields).enumerate() {
+            out.compared += 1;
+            if x == y {
+                continue;
+            }
+            let row = AREA_COLUMNS.get(i).copied().unwrap_or("?");
+            // The fields are text, and some of them are not numbers,
+            // so the size of the change is only reported where both
+            // sides parse.
+            let delta = match (x.trim().parse::<f64>(), y.trim().parse::<f64>()) {
+                (Ok(p), Ok(q)) => (p - q).abs(),
+                _ => 0.0,
+            };
+            note(row, delta, &mut out);
+        }
+    }
+    out
+}
+
+/// `OUTAREA`'s columns, in the order it writes them.
+const AREA_COLUMNS: [&str; 24] = [
+    "MUF", "MODE", "ANGLE", "DELAY", "VHITE", "MUFda", "LOSS", "DBU", "SDBW", "NDBW", "SNR",
+    "RPWRG", "REL", "MPROB", "SPROB", "TGAIN", "RGAIN", "SNRxx", "DU", "DL", "SIGLW", "SIGUP",
+    "PWRCT", "ANGLER",
+];
 
 /// One row's worth of movement.
 struct Moved {
@@ -230,9 +400,18 @@ fn main() -> ExitCode {
     };
     let corpus_name = flag("--corpus").unwrap_or_else(|| "sweep".to_string());
     let Some(corpus) = Corpus::by_name(&corpus_name) else {
-        eprintln!("unknown corpus {corpus_name:?}; try sweep or luf");
+        eprintln!("unknown corpus {corpus_name:?}; try sweep, luf, curtain or area");
         return ExitCode::FAILURE;
     };
+
+    // An area run has no deck and prints a grid file rather than a
+    // listing, so it takes its own path from here.
+    if corpus == Corpus::Area {
+        let cases = area_cases();
+        eprintln!("running {} area grids with only {name} on", cases.len());
+        let outcomes = map_limit(&cases, jobs, |case, index| area_outcome(case, fixes, index));
+        return report(&name, &corpus_name, &outcomes);
+    }
 
     let cases = corpus.cases(limit);
     eprintln!(

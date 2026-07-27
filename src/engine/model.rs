@@ -46,6 +46,12 @@
 //! of the WSPR validation with only that fix on. `docs/corrected.md`
 //! holds the results, including for any fix that measured worse and
 //! was therefore left off.
+//!
+//! Measuring needs a corpus that reaches the site, and finding one is
+//! most of the work — five of the six fixes here live on paths the
+//! sweep corpus cannot reach, and one on a path no input this crate
+//! can build reaches at all. `correctcheck --corpus` holds what exists
+//! and `docs/corrected.md` says what each corpus can and cannot show.
 
 /// Which of the documented defects are fixed.
 ///
@@ -58,13 +64,7 @@
 /// is a more honest statement of "for measuring, not for building on"
 /// than a public promise would be.
 ///
-/// Every field here is unused until the fix it names is implemented
-/// and takes its branch at the defect's own site. That is why the
-/// allow is on the whole type rather than on individual fields: a
-/// field with no reader yet is the expected state, and the allow
-/// comes off when the last fix lands.
 #[doc(hidden)]
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Fixes {
     /// `MagneticPole::for_tree` builds the database path without a
@@ -93,7 +93,6 @@ pub struct Fixes {
     pub area_antenna_end: bool,
 }
 
-#[allow(dead_code)]
 impl Fixes {
     const NONE: Fixes = Fixes {
         pole_file: false,
@@ -156,9 +155,7 @@ impl Model {
     pub(crate) fn reads_pole_file(self) -> bool {
         self.fixes().pole_file
     }
-}
 
-impl Model {
     /// Keeps the running best while scanning for the most reliable
     /// frequency when no LUF was found.
     pub(crate) fn luf_scan_reassigns(self) -> bool {
@@ -170,13 +167,7 @@ impl Model {
     pub(crate) fn luf_pass_uses_one_area(self) -> bool {
         self.fixes().luf_pass_area
     }
-}
 
-/// The accessors below have no callers until their fix is
-/// implemented. Each loses this allow when its site starts reading
-/// it.
-#[allow(dead_code)]
-impl Model {
     /// Compares a curtain elevation against `.0001` radians rather
     /// than `0001`.
     pub(crate) fn curtain_elevation_threshold(self) -> bool {

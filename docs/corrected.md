@@ -27,11 +27,16 @@ Two measurements per fix:
 | `luf_scan_best`     | yes         | 51% of LUFs, 41 of 48 method-26   | unmeasurable; kept on    |
 | `luf_pass_area`     | yes         | 13% of LUFs, 11 of 48 method-26   | unmeasurable; kept on    |
 | `curtain_elevation` | yes         | 6.9% of cells, 56 of 96 curtain   | unmeasurable; kept on    |
-| `area_centre_nudge` | no          | —                                 | —                        |
-| `area_antenna_end`  | no          | —                                 | —                        |
+| `area_centre_nudge` | yes         | the centre point of 3 of 4 grids  | unmeasurable; kept on    |
+| `area_antenna_end`  | yes         | nothing any input can reach       | unmeasurable; kept on    |
+
+All six are implemented, so `Model::Corrected` is now the complete set
+of documented defects with their fixes on.
 
 "Unmeasurable" is not "none": it means no corpus of measured radio
 exists for the quantity the fix changes. See the last section.
+`area_antenna_end` is weaker still — no corpus of any kind reaches it,
+for the reason its own section gives.
 
 ## `pole_file` — the magnetic pole database file is read
 
@@ -262,16 +267,75 @@ whole upper half of its pattern. Against that, note what is being
 assumed: that the intent was a small number and the decimal point was
 lost. Nothing in the source states the intended value.
 
-## The other two fixes need their own corpora
+## `area_centre_nudge` — a zero-length path at the grid's own centre
 
-Not yet implemented, and worth recording why the obvious measurement
-will not serve them. `area_centre_nudge` and `area_antenna_end` are
-area-coverage only, and every corpus above is point-to-point, so
-`correctcheck` reports zero movement for both whether or not they are
-implemented — a measurement that proves nothing. They need an area
-grid corpus.
+**The defect.** An area run predicts to every point of a grid, and one
+of those points can land on the station itself, which would be a
+path of no length. The driver moves such a point a twentieth of a
+degree east. The test that decides this compares the grid point's
+longitude, which `GRIDXY` has already folded into 0 to 360, against
+the station's, which is the value the input file gave and may be
+negative. A station at 5.9 degrees west therefore differs from its own
+grid point by a full 360 degrees, the offset never happens, and the run
+computes a zero-length path at its own centre.
 
-## Why four of the fixes have no accuracy measurement
+**The fix** folds the station's longitude the same way before comparing.
+
+**The corpus.** Four grids, each five points on a side so that a point
+lands exactly on the centre, three of them west of Greenwich and one
+east as the control. `correctcheck --corpus area` runs them. Its
+compatible half is `areacheck`, whose `odd` case is a grid centred on a
+station at 0.13 degrees west with a point at the origin — the defect's
+own conditions, matching the reference in every printed cell.
+
+**What moved.** 3 of 4 grids; 59 of 2600 printed cells. The east-of-
+Greenwich control did not move, and in each of the other three exactly
+one point did: the centre. Under it the takeoff angle moves by 72.85
+degrees, the virtual height by 347 km, the signal power by 30 dB.
+
+Those are the numbers a zero-length path produces against those of a
+path 0.05 degrees long, so this fix does not adjust a prediction so
+much as replace a meaningless one.
+
+**Whether it helped: no measurement exists.** See the last section.
+
+**Decision: kept on.** The offset exists to avoid the degenerate path,
+and with the defect it never runs for half the world's longitudes.
+
+## `area_antenna_end` — aiming an area antenna by the end it serves
+
+**The defect.** An area antenna's pattern is one frequency over 360
+bearings, so the lookup cuts it at a bearing rather than interpolating
+in frequency. `GAIN` picks which of the two path bearings to use from
+the antenna's **position in the list** — it tests the loop index
+against 1 and 2 — where every other test in the same routine goes
+through `iats`, the end the card serves. A list holding the receive
+card first would cut the receive pattern along the transmitter's
+bearing.
+
+**The fix** asks which end the card serves.
+
+**There is no corpus, and this is the one fix with no differential.**
+Every area run this crate can build installs the transmit card first,
+because `build_area_antennas` iterates the two ends in that order, so
+"first in the list" and "serves the transmitter" name the same card and
+the fix cannot change a printed cell. Running `correctcheck` over the
+area corpus would report zero movement, which here means the corpus
+cannot reach the site rather than that the fix is inert.
+
+What stands in its place is a unit test,
+`an_area_antenna_is_aimed_by_its_end_only_on_the_corrected_tier`, which
+builds the antenna set by hand with the receive card first and shows
+the two tiers reading different bearings — 20 dB against the floor. It
+is a smaller claim than a corpus makes: it shows the branch is wired
+and does what it says, not that any run's numbers change.
+
+**Decision: kept on**, with that limit stated. The alternative was to
+leave a documented defect unfixed on the corrected tier because no
+input reaches it, which would make `Model::Corrected` mean "the defects
+we could measure" rather than "the defects we found".
+
+## Why five of the fixes have no accuracy measurement
 
 The WSPR pipeline cannot score the LUF fixes, the curtain fix or the
 area fixes at all. It measures point-to-point systems predictions

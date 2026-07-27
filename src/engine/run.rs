@@ -354,7 +354,10 @@ fn build_antennas(itshfbc: &Path, inp: &RunInputs) -> Result<AntennaSet, String>
         (1, AntennaEnd::Transmit, taz, &inp.tx_antennas),
         (2, AntennaEnd::Receive, raz, &inp.rx_antennas),
     ];
-    let mut ants = AntennaSet::default();
+    let mut ants = AntennaSet {
+        model: inp.model,
+        ..Default::default()
+    };
     for (iat, end, azimuth_deg, cards) in ends {
         for card in cards {
             let file = read_antenna(itshfbc, &card.file)?;
@@ -1537,9 +1540,9 @@ pub fn run_area(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<AreaPoint>, Str
             // transmitter in an inverse one. Either way it is the point
             // the output row names.
             let (glon, glat) = if area.inverse {
-                area.grid.transmitter(ix, iy, fixed_lat, fixed_lon)
+                area.grid.transmitter(ix, iy, fixed_lat, fixed_lon, area.model)
             } else {
-                area.grid.receiver(ix, iy, fixed_lat, fixed_lon)
+                area.grid.receiver(ix, iy, fixed_lat, fixed_lon, area.model)
             };
             let (from, to) = if area.inverse {
                 ((glat, glon), (fixed_lat, fixed_lon))
@@ -1640,7 +1643,10 @@ fn build_area_antennas(itshfbc: &Path, area: &AreaInputs, nf: usize) -> Result<A
         (2, rx, &rxf, AntennaEnd::Receive, raz),
     ];
 
-    let mut ants = AntennaSet::default();
+    let mut ants = AntennaSet {
+        model: area.model,
+        ..Default::default()
+    };
     for (iat, card, file, end, azimuth_deg) in ends {
         let setup = AntennaSetup {
             file,

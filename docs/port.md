@@ -120,7 +120,7 @@ Then, from `propcore/`, with `cargo` as above:
 | `mufcheck`     | methods 1, 3 and 7 tables                             | `--method 1\|3\|7` `--cases N` `--from N` `--jobs J`                                                                                           |
 | `areacheck`    | area coverage rows and antennas against the grid file | `--jobs J`                                                                                                                                     |
 | `paritycheck`  | the fields the server reads, both production paths    | `--jobs J`                                                                                                                                     |
-| `correctcheck` | what one corrected-tier fix changes                   | `--fix NAME` `--corpus sweep\|luf\|curtain` `--cases N` `--jobs J`                                                                             |
+| `correctcheck` | what one corrected-tier fix changes                   | `--fix NAME` `--corpus sweep\|luf\|curtain\|area` `--cases N` `--jobs J`                                                                       |
 
 `porttest --fuzz` is not currently usable: it reports stage mismatches
 on generated decks where `fuzz` finds the finished listings identical,
@@ -1261,11 +1261,11 @@ the control, so both sides are the same engine and the comparison is
 one fix rather than a fix plus a change of engine.
 
 A trap worth knowing: `correctcheck` over the sweep corpus reports zero
-movement for four of the six fixes **whether or not they are
+movement for five of the six fixes **whether or not they are
 implemented**, because the sweep is method 30, point-to-point and
 isotropic, and those fixes live on the LUF, area and curtain-antenna
 paths. A zero there is not evidence the fix is harmless; it is evidence
-the corpus never reached it. Each of those needs its own corpus.
+the corpus never reached it. Each of those needed its own corpus.
 
 `--corpus` chooses:
 
@@ -1274,6 +1274,7 @@ the corpus never reached it. Each of those needs its own corpus.
 | `sweep`   | the 96 method-30 systems cases                                  | `pole_file`                      |
 | `luf`     | fuzz cases with the method set to 26                            | `luf_scan_best`, `luf_pass_area` |
 | `curtain` | the sweep paths with a `samples/sample.26` curtain at both ends | `curtain_elevation`              |
+| `area`    | four area grids with a point on their own station               | `area_centre_nudge`              |
 
 Each corpus needs an oracle for its compatible half, or the movement it
 reports could be a port that drifted rather than a fix. The sweep has
@@ -1283,7 +1284,18 @@ table — run it after touching anything in `luffy_luf`. The curtain
 corpus has `antcheck --only sample.26` for the gain table and the
 `a_curtain_at_both_ends_prints_the_reference_listing` integration test
 for a whole listing; the fuzz corpus does not cover it, because its
-antenna draws include IONCAP types 21, 24 and 27 but not 26.
+antenna draws include IONCAP types 21, 24 and 27 but not 26. The area
+corpus has `areacheck`, whose `odd` case is a grid centred on a station
+0.13 degrees west with a point at the origin — the same conditions the
+nudge fix is about.
+
+`area_antenna_end` has no corpus at all, and that is a property of the
+defect rather than a gap waiting to be filled: every area run this
+crate can build installs the transmit card first, so the position an
+antenna is aimed by and the end it serves are the same card. A unit
+test builds the set by hand in the other order instead, and
+`docs/corrected.md` records that this is weaker evidence than the
+other fixes have.
 
 `correctcheck` also prints which cases moved, not only how many. A fix
 biting in a minority of cases needs a named case before anything can be

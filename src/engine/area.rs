@@ -13,6 +13,7 @@
 //! far along that bearing. Longitudes come back folded into 0 to 360.
 
 use super::con::{D2R, R};
+use super::model::Model;
 
 /// Which projection the grid uses.
 ///
@@ -44,6 +45,18 @@ pub struct Grid {
     pub ny: usize,
 }
 
+/// Puts a station's longitude in the same range a grid point's is in,
+/// so the two can be compared. Compatible leaves it alone, which is
+/// the defect: the station's value comes from the input file and may
+/// be negative, while `GRIDXY` has already added 360 to its own.
+fn fold_like_a_grid_point(lon: R, model: Model) -> R {
+    if model.area_nudge_compares_alike() && lon < 0.0 {
+        lon + 360.0
+    } else {
+        lon
+    }
+}
+
 impl Grid {
     /// The receiver location the driver uses at grid point
     /// `(ix, iy)`: [`Grid::point`], then `HFAREA`'s two corrections.
@@ -62,9 +75,11 @@ impl Grid {
     /// and a folded one: a transmitter at 0.13 degrees west differs
     /// from its own grid point by a full 360 degrees and never
     /// triggers the offset, so that run computes a zero-length path at
-    /// its centre instead. A bug, kept as written.
-    pub fn receiver(&self, ix: usize, iy: usize, tlat: R, tlon: R) -> (R, R) {
+    /// its centre instead. The corrected tier folds the transmitter's
+    /// longitude the same way before comparing.
+    pub fn receiver(&self, ix: usize, iy: usize, tlat: R, tlon: R, model: Model) -> (R, R) {
         let (mut lon, lat) = self.point(ix, iy);
+        let tlon = fold_like_a_grid_point(tlon, model);
         if (lat - tlat).abs() < 0.05 && (lon - tlon).abs() <= 0.05 {
             lon = tlon + 0.05;
             if lon >= 360.0 {
@@ -86,9 +101,9 @@ impl Grid {
     /// comparison, so the port makes the same round trip through the
     /// degree conversion — which does not always return the number it
     /// started from in single precision.
-    pub fn transmitter(&self, ix: usize, iy: usize, rlat: R, rlon: R) -> (R, R) {
+    pub fn transmitter(&self, ix: usize, iy: usize, rlat: R, rlon: R, model: Model) -> (R, R) {
         let rlatd = (rlat * D2R) / D2R;
-        let rlond = (rlon * D2R) / D2R;
+        let rlond = fold_like_a_grid_point((rlon * D2R) / D2R, model);
         let (mut lon, lat) = self.point(ix, iy);
         if (lat - rlatd).abs() < 0.05 && (lon - rlond).abs() <= 0.05 {
             lon = rlond + 0.05;
@@ -235,6 +250,41 @@ fn dayinterp(snr: &[R; 11], snrx: R) -> R {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A grid point on its own station, west of Greenwich: the
+    /// conditions the nudge exists for and the reference's comparison
+    /// misses.
+    #[test]
+    fn the_corrected_tier_nudges_a_point_off_a_western_station() {
+        let grid = Grid {
+            projection: Projection::GreatCircle,
+            plat: 35.8,
+            plon: -5.9,
+            xmin: -3000.0,
+            xmax: 3000.0,
+            ymin: -3000.0,
+            ymax: 3000.0,
+            nx: 5,
+            ny: 5,
+        };
+        // Point (3,3) of five is the centre, which is the station.
+        let (lon, lat) = grid.receiver(3, 3, 35.8, -5.9, Model::Compatible);
+        assert_eq!((lat, lon), (35.8, 354.1), "the reference leaves it in place");
+
+        let (lon, lat) = grid.receiver(3, 3, 35.8, -5.9, Model::Corrected);
+        assert_eq!(lat, 35.8);
+        assert!(
+            (lon - 354.15).abs() < 1e-4,
+            "the corrected tier moves it a twentieth of a degree east: {lon}"
+        );
+
+        // East of Greenwich both tiers already agreed.
+        let east = Grid { plon: 5.9, ..grid };
+        assert_eq!(
+            east.receiver(3, 3, 35.8, 5.9, Model::Compatible),
+            east.receiver(3, 3, 35.8, 5.9, Model::Corrected)
+        );
+    }
 
     #[test]
     fn xlimit6_clamps_to_its_field() {

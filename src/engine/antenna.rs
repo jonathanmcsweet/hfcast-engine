@@ -32,6 +32,7 @@ use std::fs;
 use std::path::Path;
 
 use super::con::{R, R2D};
+use super::model::Model;
 
 /// Frequencies in a table: 1 to 30 MHz, one row each.
 pub const FREQS: usize = 30;
@@ -269,6 +270,12 @@ pub struct AntennaSet {
     pub btrd: R,
     /// `BRTD`: bearing receiver to transmitter, degrees.
     pub brtd: R,
+    /// Which behaviour the area lookup follows. It lives on the set
+    /// rather than being passed to [`AntennaSet::gain`], because the
+    /// set is built once per run where the model is known, while
+    /// `gain` is called from the mode loop, which has no business
+    /// knowing about tiers.
+    pub model: Model,
 }
 
 /// Rounds through the gain file's `f7.3` field: `ANTCALC` writes the
@@ -414,16 +421,26 @@ impl AntennaSet {
     /// `iarray360` is dimensioned for two antennas and a third leaves the
     /// off-azimuth unset, which is why [`AntennaSet::install_area`]
     /// refuses one.
+    ///
+    /// The corrected tier asks which end the card serves instead. On
+    /// every input this crate can build the two agree, because
+    /// `build_area_antennas` always installs the transmit card first —
+    /// see `docs/corrected.md` for what that means for measuring it.
     pub fn gain(&self, itr: i32, delta_rad: R, fmc: R) -> (R, R) {
         for (slot, a) in self.ants.iter().enumerate() {
             if a.iat == itr && a.xfqs <= fmc && fmc <= a.xfqe {
                 let Some(area) = &a.area else {
                     return gain_lookup(&a.table, fmc, delta_rad);
                 };
+                let transmit = if self.model.area_antenna_by_end() {
+                    a.iat == 1
+                } else {
+                    slot == 0
+                };
                 // A negative main beam marks a non-terminated rhombic,
                 // whose table was built over the folded azimuths; the
                 // receive branch does not take the magnitude.
-                let ofaz = if slot == 0 {
+                let ofaz = if transmit {
                     self.btrd - a.table.beam_main.abs()
                 } else {
                     self.brtd - a.table.beam_main
@@ -468,7 +485,7 @@ pub struct AntennaSetup<'a> {
     /// curtain reads it, for the elevation threshold its source
     /// mistyped; every other family computes the same table on both
     /// tiers.
-    pub model: super::model::Model,
+    pub model: Model,
 }
 
 /// Fortran's `NINT`: round half away from zero.
@@ -1611,6 +1628,64 @@ mod tests {
         let table = AreaGainTable { gains, eff: 0.0 };
         let (gain, _) = area_gain_lookup(&table, 359.5, 0.0);
         assert!((gain - 6.0).abs() < 1e-4, "got {gain}");
+    }
+
+    /// The two tiers disagree only when the cards are in the other
+    /// order, which is why this is a unit test rather than a corpus.
+    ///
+    /// `build_area_antennas` always installs the transmit card first,
+    /// so on every input this crate can build, "first in the list" and
+    /// "serves the transmitter" name the same card and the fix moves
+    /// nothing. The set is therefore built here by hand, receive card
+    /// first, which is what a deck listing the cards that way would
+    /// give the reference. `docs/corrected.md` records that this test
+    /// is the whole of the evidence for `area_antenna_end`.
+    #[test]
+    fn an_area_antenna_is_aimed_by_its_end_only_on_the_corrected_tier() {
+        let directional = |bearing: usize| {
+            let mut gains = vec![[0i16; ELEVS]; 360];
+            // A single-degree spike, so which bearing the lookup asks
+            // for is visible in the answer.
+            gains[bearing] = [2000; ELEVS];
+            AreaGainTable { gains, eff: 0.0 }
+        };
+        let card = |iat: i32| Installation {
+            iat,
+            min_freq: 2,
+            max_freq: 30,
+            table: GainTable::default(),
+            power_kw: 0.1,
+            file: "test".to_string(),
+            design_freq: 0.0,
+        };
+        let build = |model: Model| {
+            let mut set = AntennaSet {
+                // The two path bearings, well apart so a swap between
+                // them cannot be mistaken for interpolation.
+                btrd: 40.0,
+                brtd: 220.0,
+                model,
+                ..Default::default()
+            };
+            // Receive first: the order the reference's own list can
+            // hold and the port's area driver never produces.
+            set.install_area(card(2), directional(220)).expect("receive");
+            set.install_area(card(1), directional(40)).expect("transmit");
+            set
+        };
+
+        // Each end's spike sits at its own bearing, so the correct
+        // aiming reads 20 dB and the wrong one reads the floor.
+        let (rx_compatible, _) = build(Model::Compatible).gain(2, 0.0, 11.85);
+        let (rx_corrected, _) = build(Model::Corrected).gain(2, 0.0, 11.85);
+        assert!(
+            (rx_corrected - 20.0).abs() < 1e-4,
+            "the receive card should be cut along its own bearing: {rx_corrected}"
+        );
+        assert!(
+            rx_compatible < 1.0,
+            "the reference cuts the first card along the transmitter's bearing: {rx_compatible}"
+        );
     }
 
     #[test]
