@@ -34,6 +34,8 @@ use hfcast::api::{listing, FoF2Model, Ionosphere, Model, Request, Site, Task};
 use hfcast::json::{self, num, obj, str_of, Json};
 use hfcast::listing::{parse_listing, parse_muf_table, MUF_ROW, MUF_SLOT};
 use hfcast::runner::itshfbc_dir;
+use hfcast::voacap::area::{Grid, Projection};
+use hfcast::voacap::run::{run_area, AreaInputs};
 
 /// The rows the server reads, and the key each becomes in the output.
 ///
@@ -79,12 +81,19 @@ fn fail(message: &str) -> ExitCode {
 
 fn run(input: &str) -> Result<String, String> {
     let req = json::parse(input)?;
-    let (request, freqs) = build_request(&req)?;
     let tree = match req.get("itshfbc").and_then(Json::as_str) {
         Some(path) => PathBuf::from(path),
         None => itshfbc_dir(),
     };
 
+    // Two shapes of answer from one binary. A point-to-point run is the
+    // default and stays the bare object it has always been, so nothing
+    // that already calls this has to learn a new field.
+    if req.get("mode").and_then(Json::as_str) == Some("area") {
+        return Ok(area(&tree, &req)?.write());
+    }
+
+    let (request, freqs) = build_request(&req)?;
     let text = listing(&tree, &request, Task::Systems)?;
     let mut out = prediction(&text, &freqs);
 
@@ -102,6 +111,104 @@ fn run(input: &str) -> Result<String, String> {
         }
     }
     Ok(out.write())
+}
+
+/// `OUTAREA`'s reliability column, in the single-frequency row.
+///
+/// One frequency prints twenty-four fields and several print seven, and
+/// reliability sits at a different index in each. An area run here always
+/// asks for one frequency, because the map colours one band at a time —
+/// several would return the maximum over them, which saturates and says
+/// nothing about the band the user chose.
+const AREA_RELIABILITY_FIELD: usize = 12;
+
+/// Coverage: one band, one hour, every direction.
+///
+/// Answers "where can I be heard", which the point-to-point run cannot —
+/// that one already knows where the other end is. The grid is in degrees
+/// rather than kilometres so the cells tile the whole globe without a
+/// projection choice being baked into the numbers; the app draws them
+/// through whatever projection it likes.
+///
+/// Points sit at cell *centres*, half a step in from each edge, so a cell
+/// drawn around its point covers exactly its share of the sphere. Putting
+/// them on the edges would double-count the poles and leave a seam at the
+/// antimeridian.
+fn area(tree: &std::path::Path, req: &Json) -> Result<Json, String> {
+    let lat_step = req.number("latStep")?;
+    let lon_step = req.number("lonStep")?;
+    if lat_step <= 0.0 || lon_step <= 0.0 {
+        return Err("\"latStep\" and \"lonStep\" must be positive".into());
+    }
+    let ny = (180.0 / lat_step).round() as usize;
+    let nx = (360.0 / lon_step).round() as usize;
+    if ny < 2 || nx < 2 {
+        return Err("the grid needs at least two points on each side".into());
+    }
+
+    let grid = Grid {
+        projection: Projection::LatLon,
+        plat: req.number("fromLat")? as f32,
+        plon: req.number("fromLon")? as f32,
+        xmin: (-180.0 + lon_step / 2.0) as f32,
+        xmax: (180.0 - lon_step / 2.0) as f32,
+        ymin: (-90.0 + lat_step / 2.0) as f32,
+        ymax: (90.0 - lat_step / 2.0) as f32,
+        nx,
+        ny,
+    };
+
+    let inputs = AreaInputs {
+        grid,
+        tx_lat_deg: req.number("fromLat")?,
+        tx_lon_deg: req.number("fromLon")?,
+        month: req.number("month")? as u32,
+        ssn: req.number("ssn")? as f32,
+        // `AreaInputs.hour` is the hour the input file names, 1 to 24,
+        // while every other interface here counts 0 to 23.
+        hour: req.number("hour")? as i32 + 1,
+        freqs_mhz: vec![req.number("freqMhz")? as f32],
+        required_snr_db: req.number("requiredSnrDb")? as f32,
+        noise_dbw: req.number("noiseDbw")? as i32,
+        watts: req.number("watts")? as f32,
+        psc: [1.0, 1.0, 1.0, 0.0],
+        method: 30,
+        fof2: FoF2Model::Ccir,
+        inverse: false,
+        tx_antenna: None,
+        rx_antenna: None,
+        model: Model::Compatible,
+    };
+
+    let points = run_area(tree, &inputs)?;
+    let mut out = Vec::with_capacity(points.len());
+    for p in points {
+        let field = p
+            .fields
+            .get(AREA_RELIABILITY_FIELD)
+            .ok_or("area row is missing its reliability field")?;
+        // The field is the reference's own formatting of the number, and
+        // asterisks are how Fortran reports one too wide for its column.
+        let reliability = field.trim().parse::<f64>().unwrap_or(0.0);
+        // Longitudes come back folded into 0..360; the app works in
+        // -180..180 like every other coordinate it handles.
+        let lon = if p.lon > 180.0 {
+            f64::from(p.lon) - 360.0
+        } else {
+            f64::from(p.lon)
+        };
+        out.push(obj([
+            ("lat", num(f64::from(p.lat))),
+            ("lon", num(lon)),
+            ("reliability", num(reliability.clamp(0.0, 1.0))),
+        ]));
+    }
+
+    Ok(obj([
+        ("latStep", num(lat_step)),
+        ("lonStep", num(lon_step)),
+        ("points", Json::Arr(out)),
+    ]))
 }
 
 /// The frequency window, as three arrays indexed by hour.
