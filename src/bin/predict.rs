@@ -36,11 +36,19 @@ use hfcast::listing::{parse_listing, MUF_ROW, MUF_SLOT};
 use hfcast::runner::itshfbc_dir;
 
 /// The rows the server reads, and the key each becomes in the output.
-const ROWS: [(&str, &str); 4] = [
+///
+/// `TANGLE` is the transmit take-off angle in degrees. It is here because
+/// near-vertical incidence is a property of the angle and nothing else:
+/// on a short path the energy leaves steeply, comes back down without a
+/// skip zone, and a band well below the MUF works for reasons a
+/// reliability figure alone does not explain. Deriving that from distance
+/// instead would be inventing a threshold the engine already computes.
+const ROWS: [(&str, &str); 5] = [
     ("REL", "reliability"),
     ("SNR", "snr"),
     ("SNR LW", "snrLowDecile"),
     ("SNR UP", "snrUpDecile"),
+    ("TANGLE", "takeoffAngleDeg"),
 ];
 
 fn main() -> ExitCode {
