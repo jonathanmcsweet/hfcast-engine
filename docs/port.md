@@ -1161,6 +1161,37 @@ Reaching for them changes the numbers the fitted corrections were
 built on, so it is a deliberate change to measure rather than a side
 effect of moving off Fortran.
 
+### The operating window needs a second run
+
+Method 30 prints neither the LUF nor the FOT. `NUMERIC_ROWS` is the
+complete set of rows it has, and neither is in it, so no amount of
+reading that listing produces them. The LUF search is card method 26
+(`ITRUN = 8`), and `OUTMUF` is what prints FOT, HPF, the sporadic-E
+and circuit MUFs, and the LUF.
+
+So `predict` runs twice and parses the second table with
+`listing::parse_muf_table`. Measured on this host over 25 runs of a
+Seattle–Tokyo request, process spawn included: 14.6 ms for method 30
+alone, 19.4 ms for both, so the window costs about 4.8 ms. The server
+caches per path, month and SSN, so that is once per cache miss.
+
+`parse_muf_table` is deliberately the same function `lufcheck` uses to
+read the reference's table. The reader the server depends on is
+therefore the reader compared against `voacapl` on every case, rather
+than a second one written to the same format description.
+
+Reading `run_luf`'s `MufHourOut` fields directly would skip a
+formatting step and give unrounded values. It is not done, for the
+reason in the previous section: every number the server sees should
+come from a listing that was compared with the reference, and these
+would be the only ones that did not.
+
+A negative LUF means the search found no frequency meeting the
+required reliability. `predict` emits null for it, because zero is a
+frequency and absent is not. Whole hours of null are ordinary — a
+7,700 km path at 100 W has no LUF at any hour, and the same path at
+1500 W has one for seven of them.
+
 ### `paritycheck`
 
 Narrower than `portcheck` on purpose: not every printed cell, but

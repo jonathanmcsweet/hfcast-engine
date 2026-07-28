@@ -17,6 +17,7 @@ use std::process::ExitCode;
 use hfcast::deck::build_deck;
 use hfcast::voacap::run::{run_luf, RunInputs};
 use hfcast::fuzz::fuzz_cases;
+use hfcast::listing::parse_muf_table;
 use hfcast::runner::{map_limit, run_deck, variant_bin, IsolatedRoot};
 
 /// One parsed table row: GMT, LMT, FOT, HPF, ES MUF, MUF, LUF.
@@ -158,36 +159,13 @@ fn main() -> ExitCode {
 
 /// Pulls the 24 data rows out of a method-26 listing.
 ///
-/// `OUTMUF` builds its format as `(1H ,2X,2F6.1,` then one `F7.2` per
-/// tabulated column, so the fields are read by column rather than by
-/// splitting: a MUF of 1000.00 fills its field completely and leaves
-/// no space before the next one.
+/// Thin wrapper over [`parse_muf_table`], which the `predict` binary also
+/// uses to answer the server. Sharing it is deliberate: this harness
+/// compares that parser's output against the reference on every case, so
+/// the reader the server depends on is the reader under test.
 fn parse_outmuf(text: &str) -> Vec<Row> {
-    let field = |line: &str, from: usize, to: usize| -> Option<f64> {
-        if line.len() < to {
-            return None;
-        }
-        line[from..to].trim().parse().ok()
-    };
-    let mut out = Vec::new();
-    for line in text.lines() {
-        let (Some(gmt), Some(lmt)) = (field(line, 3, 9), field(line, 9, 15)) else {
-            continue;
-        };
-        if !(1.0..=24.0).contains(&gmt) {
-            continue;
-        }
-        let mut row: Row = [gmt, lmt, 0.0, 0.0, 0.0, 0.0, 0.0];
-        let mut ok = true;
-        for c in 0..5 {
-            match field(line, 15 + c * 7, 22 + c * 7) {
-                Some(v) => row[2 + c] = v,
-                None => ok = false,
-            }
-        }
-        if ok {
-            out.push(row);
-        }
-    }
-    out
+    parse_muf_table(text)
+        .into_iter()
+        .map(|r| [r.gmt, r.lmt, r.fot, r.hpf, r.esmuf, r.muf, r.luf])
+        .collect()
 }

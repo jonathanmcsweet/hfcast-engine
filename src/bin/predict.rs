@@ -32,7 +32,7 @@ use std::process::ExitCode;
 
 use hfcast::api::{listing, FoF2Model, Ionosphere, Model, Request, Site, Task};
 use hfcast::json::{self, num, obj, str_of, Json};
-use hfcast::listing::{parse_listing, MUF_ROW, MUF_SLOT};
+use hfcast::listing::{parse_listing, parse_muf_table, MUF_ROW, MUF_SLOT};
 use hfcast::runner::itshfbc_dir;
 
 /// The rows the server reads, and the key each becomes in the output.
@@ -86,7 +86,53 @@ fn run(input: &str) -> Result<String, String> {
     };
 
     let text = listing(&tree, &request, Task::Systems)?;
-    Ok(prediction(&text, &freqs).write())
+    let mut out = prediction(&text, &freqs);
+
+    // A second run for the operating window. Method 30 prints neither the
+    // LUF nor the FOT — `NUMERIC_ROWS` is the full set of rows it has —
+    // so there is no way to derive them from the listing above. Method 26
+    // is the one that runs the LUF search.
+    //
+    // It costs a second full pass over the 24 hours, which measures in
+    // milliseconds against a server that caches per path, month and SSN.
+    let window = listing(&tree, &request, Task::Luf)?;
+    if let Json::Obj(fields) = &mut out {
+        for (key, value) in operating_window(&window) {
+            fields.insert(key.to_string(), value);
+        }
+    }
+    Ok(out.write())
+}
+
+/// The frequency window, as three arrays indexed by hour.
+///
+/// Shaped to match `mufByHour`, which the server already reads, rather
+/// than as a list of objects: every consumer wants one curve at a time.
+/// The MUF is not repeated here — method 26 prints it too, and the two
+/// agree, but one name for one number keeps the contract unambiguous.
+///
+/// An hour the table did not print stays null rather than becoming zero,
+/// and so does a negative LUF, which means the search found no frequency
+/// meeting the required reliability rather than a very low one. Zero is a
+/// frequency; absent is not.
+fn operating_window(text: &str) -> [(&'static str, Json); 3] {
+    let mut fot = vec![Json::Null; 24];
+    let mut hpf = vec![Json::Null; 24];
+    let mut luf = vec![Json::Null; 24];
+
+    for row in parse_muf_table(text) {
+        let hour = row.hour() as usize;
+        let positive = |v: f64| if v > 0.0 { num(v) } else { Json::Null };
+        fot[hour] = positive(row.fot);
+        hpf[hour] = positive(row.hpf);
+        luf[hour] = positive(row.luf);
+    }
+
+    [
+        ("fotByHour", Json::Arr(fot)),
+        ("hpfByHour", Json::Arr(hpf)),
+        ("lufByHour", Json::Arr(luf)),
+    ]
 }
 
 /// The request, and the frequencies in the slot order the listing

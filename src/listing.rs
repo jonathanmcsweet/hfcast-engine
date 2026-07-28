@@ -1,4 +1,11 @@
-//! Reads every field of a VOACAP method 30 listing.
+//! Reads printed VOACAP listings back into numbers.
+//!
+//! Two tables, because two card methods print in different shapes:
+//! [`parse_listing`] for a method 30 systems listing, and
+//! [`parse_muf_table`] for the MUF and LUF table of methods 3, 7 and 26.
+//! Both read by column, for the reason under "Two traps" below.
+//!
+//! ## The method 30 listing
 //!
 //! The server's TypeScript parser reads only `REL` and `SNR`, because that is
 //! all the app shows. Setting a port tolerance needs the opposite: every number
@@ -231,6 +238,89 @@ pub fn parse_listing(text: &str) -> ParsedListing {
     out
 }
 
+/// One row of the MUF/LUF table that `OUTMUF` prints.
+///
+/// Frequencies in MHz. `luf` is negative when the LUF search found no
+/// frequency meeting the required reliability, and only card method 26
+/// (`ITRUN = 8`) computes it at all — the other MUF methods leave it at
+/// -1. Callers must treat any negative value as absent rather than as a
+/// frequency.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MufRow {
+    /// Hour as printed, 1..=24. Use [`MufRow::hour`] for a 0-based index.
+    pub gmt: f64,
+    /// Local mean time at the path midpoint.
+    pub lmt: f64,
+    /// Frequency of optimum traffic.
+    pub fot: f64,
+    /// Highest probable frequency.
+    pub hpf: f64,
+    /// Sporadic-E MUF.
+    pub esmuf: f64,
+    /// Circuit MUF.
+    pub muf: f64,
+    /// Lowest usable frequency, negative when none qualified.
+    pub luf: f64,
+}
+
+impl MufRow {
+    /// The hour as a 0-based index, folded the same way as [`parse_listing`].
+    pub fn hour(&self) -> u8 {
+        normalise_hour(self.gmt)
+    }
+}
+
+/// Reads the 24 data rows of a MUF or LUF listing (card methods 3, 7 and 26).
+///
+/// `OUTMUF` builds its format as `(1H ,2X,2F6.1,` then one `F7.2` per
+/// tabulated column, so the fields are read by column rather than by
+/// splitting: a MUF of 1000.00 fills its field completely and leaves no
+/// space before the next one.
+///
+/// Rows whose hour is outside 1..=24 are skipped, which is what keeps
+/// page headers and the echoed input deck out of the table without
+/// modelling the listing's pagination.
+pub fn parse_muf_table(text: &str) -> Vec<MufRow> {
+    let field = |line: &str, from: usize, to: usize| -> Option<f64> {
+        if line.len() < to {
+            return None;
+        }
+        line[from..to].trim().parse().ok()
+    };
+    let mut out = Vec::new();
+    for line in text.lines() {
+        if !line.is_ascii() {
+            continue;
+        }
+        let (Some(gmt), Some(lmt)) = (field(line, 3, 9), field(line, 9, 15)) else {
+            continue;
+        };
+        if !(1.0..=24.0).contains(&gmt) {
+            continue;
+        }
+        let mut cols = [0.0f64; 5];
+        let mut ok = true;
+        for (c, slot) in cols.iter_mut().enumerate() {
+            match field(line, 15 + c * 7, 22 + c * 7) {
+                Some(v) => *slot = v,
+                None => ok = false,
+            }
+        }
+        if ok {
+            out.push(MufRow {
+                gmt,
+                lmt,
+                fot: cols[0],
+                hpf: cols[1],
+                esmuf: cols[2],
+                muf: cols[3],
+                luf: cols[4],
+            });
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -299,6 +389,61 @@ mod tests {
         // and must not be mistaken for a FREQ table row.
         let card = " FREQUENCY  6.07 7.20 9.7011.8513.7015.3517.7321.6525.89 0.00 0.00\n";
         assert!(parse_listing(card).numeric.is_empty());
+    }
+
+    /// Rows laid out by `(1H ,2X,2F6.1,5F7.2)`: a carriage-control space,
+    /// two more, GMT and LMT in six columns each, then five of seven.
+    const MUF_TABLE: &str = concat!(
+        "                    FOT    HPF  ES MUF    MUF    LUF\n",
+        "      1.0  16.3  10.50  18.20   5.00  16.30   4.20\n",
+        "      2.0  17.3   9.80  17.10   0.00  15.20  -1.00\n",
+        "     24.0  15.3  12.00  21.00   4.001000.00   5.50\n",
+    );
+
+    #[test]
+    fn reads_every_column_of_the_muf_table() {
+        let rows = parse_muf_table(MUF_TABLE);
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].gmt, 1.0);
+        assert_eq!(rows[0].lmt, 16.3);
+        assert_eq!(rows[0].fot, 10.5);
+        assert_eq!(rows[0].hpf, 18.2);
+        assert_eq!(rows[0].esmuf, 5.0);
+        assert_eq!(rows[0].muf, 16.3);
+        assert_eq!(rows[0].luf, 4.2);
+    }
+
+    #[test]
+    fn reads_a_muf_that_fills_its_field() {
+        // 1000.00 leaves no space before the LUF field, so splitting on
+        // whitespace would read one number where there are two.
+        let rows = parse_muf_table(MUF_TABLE);
+        assert_eq!(rows[2].muf, 1000.0);
+        assert_eq!(rows[2].luf, 5.5);
+    }
+
+    #[test]
+    fn keeps_a_negative_luf_for_the_caller_to_reject() {
+        // Negative means the search found nothing, which is not the same
+        // as a low LUF. Parsing must not clamp it to zero and hide that.
+        assert_eq!(parse_muf_table(MUF_TABLE)[1].luf, -1.0);
+    }
+
+    #[test]
+    fn folds_the_table_hour_the_same_way_as_the_listing() {
+        let rows = parse_muf_table(MUF_TABLE);
+        assert_eq!(rows[0].hour(), 1);
+        assert_eq!(rows[2].gmt, 24.0);
+        assert_eq!(rows[2].hour(), 0);
+    }
+
+    #[test]
+    fn skips_headings_and_anything_outside_the_hour_range() {
+        // The heading line has no parseable hour, and an echoed card can
+        // carry numbers in those columns without being a data row.
+        assert!(parse_muf_table("                    FOT    HPF\n").is_empty());
+        assert!(parse_muf_table("      0.0  16.3  10.50  18.20   5.00  16.30   4.20\n").is_empty());
+        assert!(parse_muf_table("     25.0  16.3  10.50  18.20   5.00  16.30   4.20\n").is_empty());
     }
 
     #[test]
