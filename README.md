@@ -109,6 +109,7 @@ wrong here before. Read it before trusting a result.
 | [accuracy.md](docs/accuracy.md)                 | Both engines against measured radio              |
 | [engines.md](docs/engines.md)                   | VOACAP against ITU-R P.533                       |
 | [storm.md](docs/storm.md)                       | Geomagnetic storm widening                       |
+| [daily.md](docs/daily.md)                       | Whether a daily forecast is possible             |
 | [irtam.md](docs/irtam.md)                       | Real-time ionospheric maps, measured             |
 | [licence.md](docs/licence.md)                   | Provenance of the code and the data files        |
 | [soak.md](docs/soak.md)                         | The live parity soak and its exit criteria       |
