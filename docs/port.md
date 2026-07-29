@@ -1192,6 +1192,31 @@ frequency and absent is not. Whole hours of null are ordinary — a
 7,700 km path at 100 W has no LUF at any hour, and the same path at
 1500 W has one for seven of them.
 
+### Antennas over the JSON boundary
+
+`txAntenna` and `rxAntenna` are optional objects. Absent, both paths
+predict against the isotrope they always did, so a caller written
+before this existed is unaffected. Present, `file` is a path under
+`<itshfbc>/antennas` and is the only required field; `beamDeg`,
+`designFreq`, `minFreq`, `maxFreq` and `powerField` carry the card's
+own defaults.
+
+Two rules the binary enforces rather than passing on. A `file` longer
+than the card's 21 columns is refused, because truncating it would
+name a file that does not exist and the failure would surface from the
+antenna reader with nothing pointing back at the request. And a
+`minFreq` above its `maxFreq` is refused, because `GAIN` takes the
+first card whose range holds the frequency, so an inverted range
+serves no frequency at all and the end silently loses its antenna.
+
+The card's last field is the trap. A point-to-point deck leaves it
+empty and writes the case's own power, so the binary keeps it `None`.
+An area run has already converted the power into kilowatts and put it
+in that field, so the same absent value has to become the run's
+kilowatts there. Defaulting it to zero in both places would predict a
+transmitter with no power over the whole map, and every grid point
+would still be a plausible-looking number.
+
 ### `paritycheck`
 
 Narrower than `portcheck` on purpose: not every printed cell, but

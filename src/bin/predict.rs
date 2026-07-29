@@ -31,11 +31,13 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use hfcast::api::{listing, FoF2Model, Ionosphere, Model, Request, Site, Task};
+use hfcast::deck::AntennaChoice;
 use hfcast::json::{self, num, obj, str_of, Json};
 use hfcast::listing::{parse_listing, parse_muf_table, MUF_ROW, MUF_SLOT};
 use hfcast::runner::itshfbc_dir;
 use hfcast::voacap::area::{Grid, Projection};
-use hfcast::voacap::run::{run_area, AreaInputs};
+use hfcast::voacap::con::R;
+use hfcast::voacap::run::{run_area, AntennaCardSpec, AreaInputs};
 
 /// The rows the server reads, and the key each becomes in the output.
 ///
@@ -113,6 +115,97 @@ fn run(input: &str) -> Result<String, String> {
     Ok(out.write())
 }
 
+/// One `txAntenna` or `rxAntenna` object as the request states it.
+///
+/// The card's last field is kept optional rather than defaulted here,
+/// because the two paths below disagree about what it means. A
+/// point-to-point deck leaves it empty and writes the case's own power;
+/// an area run has already turned the power into kilowatts and puts it
+/// in this field, so defaulting it to zero there would predict a
+/// transmitter with no power.
+struct AntennaRequest {
+    file: String,
+    design_freq: f64,
+    beam_deg: f64,
+    min_freq: i32,
+    max_freq: i32,
+    last_field: Option<f64>,
+}
+
+/// Reads one antenna object, if the request has it.
+///
+/// Absent, the caller gets the isotrope both paths used before antennas
+/// were wired in, so a request written against the older interface
+/// predicts exactly what it always did.
+///
+/// `file` is a path under `<itshfbc>/antennas` and is the only required
+/// field. The rest carry the card's defaults: the whole 2 to 30 MHz
+/// range, no design frequency, and a beam pointing at 0 degrees, which
+/// only the directional families read.
+fn antenna(req: &Json, key: &str) -> Result<Option<AntennaRequest>, String> {
+    let Some(spec) = req.get(key) else {
+        return Ok(None);
+    };
+    let file = spec
+        .get("file")
+        .and_then(Json::as_str)
+        .ok_or(format!("\"{key}\" must have a \"file\""))?;
+    if file.trim().is_empty() {
+        return Err(format!("\"{key}.file\" must name an antenna"));
+    }
+    // The card holds the path in 21 columns, so a longer one would be
+    // truncated into the name of a file that does not exist.
+    if file.chars().count() > 21 {
+        return Err(format!(
+            "\"{key}.file\" is longer than the card's 21 columns"
+        ));
+    }
+    let number = |field: &str, fallback: f64| -> f64 {
+        spec.get(field).and_then(Json::as_f64).unwrap_or(fallback)
+    };
+    let min_freq = number("minFreq", 2.0) as i32;
+    let max_freq = number("maxFreq", 30.0) as i32;
+    if min_freq > max_freq {
+        return Err(format!("\"{key}.minFreq\" is above its \"maxFreq\""));
+    }
+    Ok(Some(AntennaRequest {
+        file: file.to_string(),
+        design_freq: number("designFreq", 0.0),
+        beam_deg: number("beamDeg", 0.0),
+        min_freq,
+        max_freq,
+        last_field: spec.get("powerField").and_then(Json::as_f64),
+    }))
+}
+
+impl AntennaRequest {
+    /// The point-to-point form. `None` in the last field leaves the deck
+    /// to write the case's own power.
+    fn choice(self) -> AntennaChoice {
+        AntennaChoice {
+            file: self.file,
+            design_freq: self.design_freq,
+            beam_deg: self.beam_deg,
+            min_freq: self.min_freq,
+            max_freq: self.max_freq,
+            last_field: self.last_field,
+        }
+    }
+
+    /// The area form, where the last field is already a number the run
+    /// reads: kilowatts on the transmit card, a gain on the receive one.
+    fn card(self, default_last_field: f64) -> AntennaCardSpec {
+        AntennaCardSpec {
+            file: self.file,
+            design_freq: self.design_freq as R,
+            beam_deg: self.beam_deg as R,
+            min_freq: self.min_freq,
+            max_freq: self.max_freq,
+            power_field: self.last_field.unwrap_or(default_last_field) as R,
+        }
+    }
+}
+
 /// `OUTAREA`'s reliability column, in the single-frequency row.
 ///
 /// One frequency prints twenty-four fields and several print seven, and
@@ -145,6 +238,7 @@ fn area(tree: &std::path::Path, req: &Json) -> Result<Json, String> {
     if ny < 2 || nx < 2 {
         return Err("the grid needs at least two points on each side".into());
     }
+    let watts = req.number("watts")?;
 
     let grid = Grid {
         projection: Projection::LatLon,
@@ -170,13 +264,15 @@ fn area(tree: &std::path::Path, req: &Json) -> Result<Json, String> {
         freqs_mhz: vec![req.number("freqMhz")? as f32],
         required_snr_db: req.number("requiredSnrDb")? as f32,
         noise_dbw: req.number("noiseDbw")? as i32,
-        watts: req.number("watts")? as f32,
+        watts: watts as f32,
         psc: [1.0, 1.0, 1.0, 0.0],
         method: 30,
         fof2: FoF2Model::Ccir,
         inverse: false,
-        tx_antenna: None,
-        rx_antenna: None,
+        // An area transmit card carries the power itself, so the default
+        // is the run's own watts in kilowatts rather than zero.
+        tx_antenna: antenna(req, "txAntenna")?.map(|a| a.card(watts / 1000.0)),
+        rx_antenna: antenna(req, "rxAntenna")?.map(|a| a.card(0.0)),
         model: Model::Compatible,
     };
 
@@ -280,8 +376,15 @@ fn build_request(req: &Json) -> Result<(Request, Vec<f64>), String> {
         // The fourth value enables sporadic E. Eight months of WSPR
         // validation put it on; see docs/accuracy.md.
         layer_multipliers: [1.0, 1.0, 1.0, 1.0],
-        tx_antennas: Vec::new(),
-        rx_antennas: Vec::new(),
+        // One card per end at most. Several would let an operator split
+        // the bands between antennas, which the app has no way to ask
+        // for and the card order would have to be part of the interface.
+        tx_antennas: antenna(req, "txAntenna")?
+            .map(|a| vec![a.choice()])
+            .unwrap_or_default(),
+        rx_antennas: antenna(req, "rxAntenna")?
+            .map(|a| vec![a.choice()])
+            .unwrap_or_default(),
         ionosphere: Ionosphere::default(),
         // `"model": "corrected"` asks for VOACAP with its documented
         // defects fixed. Absent, a request gets the behaviour proven
@@ -353,4 +456,105 @@ fn prediction(text: &str, freqs: &[f64]) -> Json {
         ("mufByHour", Json::Arr(muf.iter().copied().map(num).collect())),
         ("cells", Json::Arr(cells)),
     ])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parsed(text: &str) -> Json {
+        json::parse(text).expect("valid json")
+    }
+
+    #[test]
+    fn a_request_without_an_antenna_asks_for_none() {
+        // The whole compatibility claim: every caller written before
+        // antennas existed keeps predicting against the isotrope.
+        let req = parsed(r#"{"watts":100}"#);
+        assert!(antenna(&req, "txAntenna").expect("parses").is_none());
+    }
+
+    #[test]
+    fn an_antenna_needs_only_its_file() {
+        let req = parsed(r#"{"txAntenna":{"file":"hfcast/a1.voa"}}"#);
+        let a = antenna(&req, "txAntenna")
+            .expect("parses")
+            .expect("an antenna");
+        assert_eq!(a.file, "hfcast/a1.voa");
+        assert_eq!(a.min_freq, 2);
+        assert_eq!(a.max_freq, 30);
+        assert_eq!(a.beam_deg, 0.0);
+        assert_eq!(a.last_field, None);
+    }
+
+    #[test]
+    fn the_two_paths_default_the_last_field_differently() {
+        // An area transmit card carries the power itself, so a missing
+        // last field there must become the run's kilowatts. The
+        // point-to-point deck writes its own power and wants None. Getting
+        // this the same way round in both places would predict a
+        // transmitter running at zero watts over the whole map.
+        let req = parsed(r#"{"txAntenna":{"file":"hfcast/a1.voa"}}"#);
+        let read = || {
+            antenna(&req, "txAntenna")
+                .expect("parses")
+                .expect("antenna")
+        };
+        assert_eq!(read().choice().last_field, None);
+        assert_eq!(read().card(0.1).power_field, 0.1);
+    }
+
+    #[test]
+    fn a_stated_last_field_wins_over_either_default() {
+        let req = parsed(r#"{"txAntenna":{"file":"a.voa","powerField":1.5}}"#);
+        let read = || {
+            antenna(&req, "txAntenna")
+                .expect("parses")
+                .expect("antenna")
+        };
+        assert_eq!(read().choice().last_field, Some(1.5));
+        assert_eq!(read().card(0.1).power_field, 1.5);
+    }
+
+    #[test]
+    fn every_card_field_can_be_stated() {
+        let req = parsed(
+            r#"{"rxAntenna":{"file":"a.voa","beamDeg":135,"designFreq":14.1,
+                "minFreq":7,"maxFreq":21}}"#,
+        );
+        let a = antenna(&req, "rxAntenna")
+            .expect("parses")
+            .expect("an antenna");
+        assert_eq!(a.beam_deg, 135.0);
+        assert_eq!(a.design_freq, 14.1);
+        assert_eq!((a.min_freq, a.max_freq), (7, 21));
+    }
+
+    #[test]
+    fn a_path_too_long_for_the_card_is_refused() {
+        // The card holds 21 columns. Truncating instead would name a file
+        // that does not exist, and the failure would come from the
+        // antenna reader with nothing pointing back at the request.
+        let long = "hfcast/aaaaaaaaaaaaaaaaaa.voa";
+        assert!(long.len() > 21);
+        let req = parsed(&format!(r#"{{"txAntenna":{{"file":"{long}"}}}}"#));
+        assert!(antenna(&req, "txAntenna").is_err());
+    }
+
+    #[test]
+    fn an_antenna_without_a_file_is_refused() {
+        let req = parsed(r#"{"txAntenna":{"beamDeg":90}}"#);
+        assert!(antenna(&req, "txAntenna").is_err());
+        let empty = parsed(r#"{"txAntenna":{"file":"   "}}"#);
+        assert!(antenna(&empty, "txAntenna").is_err());
+    }
+
+    #[test]
+    fn an_inverted_frequency_range_is_refused() {
+        // GAIN takes the first card whose range holds the frequency, so an
+        // inverted range serves nothing and the end silently loses its
+        // antenna rather than reporting anything.
+        let req = parsed(r#"{"txAntenna":{"file":"a.voa","minFreq":21,"maxFreq":7}}"#);
+        assert!(antenna(&req, "txAntenna").is_err());
+    }
 }
