@@ -27,6 +27,7 @@
 use std::process::ExitCode;
 
 use hfcast::sweep::sweep_cases;
+use hfcast::voacap::data::EMBEDDED;
 use hfcast::voacap::run::{body_lines, listing_text, run, RunInputs};
 
 /// A digest small enough to read in a table and wide enough not to collide
@@ -59,17 +60,22 @@ fn main() -> ExitCode {
     let root = std::path::PathBuf::from(
         std::env::var("HFCAST_ITSHFBC").unwrap_or_else(|_| "itshfbc".to_string()),
     );
-    if !root.is_dir() {
+    // `<embedded>` is a root too, and is not a directory. Checking for a
+    // directory first gives a clearer failure than a missing coefficient file
+    // twelve stages later.
+    let embedded = root.to_string_lossy().starts_with(EMBEDDED);
+    if !embedded && !root.is_dir() {
         eprintln!("no itshfbc tree at {}", root.display());
-        eprintln!("set HFCAST_ITSHFBC to one");
+        eprintln!("set HFCAST_ITSHFBC to one, or to {EMBEDDED}");
         return ExitCode::FAILURE;
     }
 
     println!(
-        "# archcheck: {} sweep cases on {} {}",
+        "# archcheck: {} sweep cases on {} {}, data from {}",
         cases.len(),
         std::env::consts::ARCH,
         std::env::consts::OS,
+        root.display(),
     );
 
     // Sequential on purpose: this runs under an emulator, where a thread pool

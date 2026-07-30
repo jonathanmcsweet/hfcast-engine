@@ -324,13 +324,11 @@ pub fn redmap(itshfbc: &Path, model: FoF2Model, month: u32, ssn: R) -> Result<Co
             format!("month {month} out of range"),
         ));
     }
-    let coeffs = itshfbc.join("coeffs");
-    let daw_path = coeffs.join(model.daw_name());
-    let daw = std::fs::read(&daw_path)?;
+    let daw = super::data::read(itshfbc, &format!("coeffs/{}", model.daw_name()))?;
     let xf2cof = f2_planes(&daw, month, model.daw_name())?;
 
     let bin_name = format!("coeff{month:02}w.bin");
-    let bin = std::fs::read(coeffs.join(&bin_name))?;
+    let bin = super::data::read(itshfbc, &format!("coeffs/{bin_name}"))?;
     let raw = parse_month_file(&bin, &bin_name)?;
 
     // The sunspot interpolations, factors exactly as redmap.for computes

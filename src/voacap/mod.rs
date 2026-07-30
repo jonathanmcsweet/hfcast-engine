@@ -55,6 +55,7 @@ pub mod area;
 pub mod ccir;
 pub mod coefficients;
 pub mod con;
+pub mod data;
 pub mod geometry;
 pub mod graphs;
 pub mod hfmufes;

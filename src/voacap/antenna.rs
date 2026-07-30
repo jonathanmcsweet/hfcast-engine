@@ -28,7 +28,6 @@
 //! The unported families return [`Unsupported`] rather than a wrong
 //! number, so `antcheck` reports them as pending instead of passing.
 
-use std::fs;
 use std::path::Path;
 
 use super::con::{R, R2D};
@@ -546,9 +545,13 @@ pub fn read_antenna(itshfbc: &Path, relative: &str) -> Result<AntennaFile, Strin
         });
     }
 
-    let path = itshfbc.join("antennas").join(&name);
-    let text = fs::read_to_string(&path)
-        .map_err(|e| format!("opening antenna file {}: {e}", path.display()))?;
+    let rel = format!("antennas/{name}");
+    let text = super::data::read_to_string(itshfbc, &rel).map_err(|e| {
+        format!(
+            "opening antenna file {}: {e}",
+            super::data::describe(itshfbc, &rel)
+        )
+    })?;
     let lines: Vec<&str> = text.lines().collect();
     let mut next = 0usize;
     let mut take = || -> Result<&str, String> {

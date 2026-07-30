@@ -34,13 +34,13 @@ redistributable, which is evidence but not a guarantee.
 ## The data files
 
 Measured by what the engine opens, not by directory. A prediction
-needs about 760 KB:
+needs 653 KB, measured by copying exactly what is embedded:
 
 | File                                  | Count |   Size | Why                                |
 | ------------------------------------- | ----: | -----: | ---------------------------------- |
 | `coeffs/coeffNNw.bin`                 |    12 | 452 KB | the month's ionospheric maps       |
 | `coeffs/fof2CCIR.daw`, `fof2URSI.daw` |     2 | 185 KB | foF2 maps, one per `COEFFS` card   |
-| `antennas/default/`                   |    12 | 120 KB | the isotrope and the CCIR defaults |
+| `antennas/default/`                   |    30 |  16 KB | the isotrope and the CCIR defaults |
 | `database/version.w32`                |     1 |   17 B | the listing header's version       |
 | `antennas/samples/`                   |    61 | 1.0 MB | only if a caller names one         |
 
@@ -72,12 +72,24 @@ antenna files and `version.w32` are pure NTIA/ITS with no question
 over them, so they can be embedded whatever is decided. The
 coefficients are the 637 KB that the question is about.
 
-- If redistribution is accepted, embed all of it: about 760 KB, and
-  the crate works with no external tree.
-- If not, embed the antennas and the version file (120 KB) and have
-  the caller supply a coefficients directory. Still far less of an
-  imposition than today, where the caller must build the Fortran and
-  run `makeitshfbc` to get a tree at all.
+### Decided, 2026-07-30: embed all of it
+
+All 45 files, 653 KB, are in `embedded/` and compiled in by
+`src/voacap/data.rs`. The engine now runs with no external tree, which is
+what the application on a phone needs — a phone user cannot be asked to
+build the Fortran and run `makeitshfbc`.
+
+The reasoning for going ahead while the licence question is open is that
+**building for one's own devices is not redistribution.** Embedding is a
+technical arrangement; distributing the result to other people is the act
+the question is about. So `Cargo.toml` keeps `publish = false`, and whether
+application builds may be handed out — F-Droid, an app store, a download —
+is a separate decision that has not been made.
+
+If the answer ever turns out to be no, the fallback is unchanged and cheap:
+`embedded/coeffs/` comes out of the repository, `data.rs` keeps the antennas
+and the version file, and the caller supplies a coefficients directory
+through the overlay root the module already supports.
 
 ## Attribution
 
