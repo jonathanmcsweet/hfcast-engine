@@ -115,15 +115,24 @@ Then, from the repository root:
 | `mufcheck`     | methods 1, 3 and 7 tables                             | `--method 1\|3\|7` `--cases N` `--from N` `--jobs J`                                                                                           |
 | `areacheck`    | area coverage rows and antennas against the grid file | `--jobs J`                                                                                                                                     |
 | `paritycheck`  | the fields an application reads, both production paths | `--jobs J` `--paths FILE --month M --year Y --ssn S` `--dump DIR`                                                                              |
-| `archcheck`    | this engine's own listings on another architecture     | `--cases N` `--full`                                                                                                                           |
+| `archcheck`    | this engine's own listings and area grids elsewhere    | `--cases N` `--full`                                                                                                                           |
 | `correctcheck` | what one corrected-tier fix changes                   | `--fix NAME` `--corpus sweep\|luf\|curtain\|area` `--cases N` `--jobs J`                                                                       |
 
 `archcheck` is the only harness that does not involve the reference. It
 renders the listings `portcheck` compares and prints a digest per case, so
 the same binary can be run on two architectures and the outputs diffed.
 That is what makes it runnable under `qemu-aarch64-static`, where spawning
-a Fortran binary per case and copying a tree is impractical. Build it for a
-phone's architecture with the NDK's linker:
+a Fortran binary per case and copying a tree is impractical.
+
+It covers both shapes of run: the 96 point-to-point sweep cases, then three
+whole-sphere area grids. The area cases are there because the app draws its
+coverage map from one, and an area run reaches the same maths from a different
+direction — one hour over hundreds of bearings rather than one bearing over a
+day — so a libm difference in the azimuth path could show in the map and not in
+the forecast. They use a directional card for the same reason. `--cases` limits
+the sweep only.
+
+Build it for a phone's architecture with the NDK's linker:
 
 ```
 export NDKBIN=$ANDROID_HOME/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin
