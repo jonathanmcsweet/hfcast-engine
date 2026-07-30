@@ -37,6 +37,7 @@ pub mod irtam;
 pub mod itu;
 pub mod listing;
 pub mod runner;
+pub mod service;
 pub mod spread;
 pub mod stats;
 pub mod sweep;
