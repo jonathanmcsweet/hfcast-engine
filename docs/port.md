@@ -115,7 +115,28 @@ Then, from the repository root:
 | `mufcheck`     | methods 1, 3 and 7 tables                             | `--method 1\|3\|7` `--cases N` `--from N` `--jobs J`                                                                                           |
 | `areacheck`    | area coverage rows and antennas against the grid file | `--jobs J`                                                                                                                                     |
 | `paritycheck`  | the fields an application reads, both production paths | `--jobs J` `--paths FILE --month M --year Y --ssn S` `--dump DIR`                                                                              |
+| `archcheck`    | this engine's own listings on another architecture     | `--cases N` `--full`                                                                                                                           |
 | `correctcheck` | what one corrected-tier fix changes                   | `--fix NAME` `--corpus sweep\|luf\|curtain\|area` `--cases N` `--jobs J`                                                                       |
+
+`archcheck` is the only harness that does not involve the reference. It
+renders the listings `portcheck` compares and prints a digest per case, so
+the same binary can be run on two architectures and the outputs diffed.
+That is what makes it runnable under `qemu-aarch64-static`, where spawning
+a Fortran binary per case and copying a tree is impractical. Build it for a
+phone's architecture with the NDK's linker:
+
+```
+export NDKBIN=$ANDROID_HOME/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin
+CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$NDKBIN/aarch64-linux-android23-clang \
+RUSTFLAGS='-C target-feature=+crt-static' \
+  cargo build --release --target aarch64-linux-android --bin archcheck
+HFCAST_ITSHFBC=~/itshfbc qemu-aarch64-static \
+  ./target/aarch64-linux-android/release/archcheck > arm.txt
+```
+
+Static linking is what makes it run under the emulator without Android's
+loader, and it also puts bionic's own libm inside the binary — which is the
+libm the app will use, and the thing actually at risk.
 
 `porttest --fuzz` is not currently usable: it reports stage mismatches
 on generated decks where `fuzz` finds the finished listings identical,
