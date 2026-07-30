@@ -72,6 +72,41 @@ antenna files and `version.w32` are pure NTIA/ITS with no question
 over them, so they can be embedded whatever is decided. The
 coefficients are the 637 KB that the question is about.
 
+### Researched, 2026-07-30: the ITU publishes the coefficients itself
+
+The paragraph above says wide redistribution is not a cleared licence. That was
+written without checking what the rights holder does with the files, and the
+answer changes the picture.
+
+**ITU-R Study Group 3 distributes these coefficients publicly**, in the official
+P.533 reference implementation at
+`github.com/ITU-R-Study-Group-3/ITU-R-HF`. `P533/Data/` holds `COEFF01W.BIN`
+through `COEFF12W.BIN` and the same files as text, under this statement:
+
+> The ITURHFProp, P533 and P372 software has been developed collaboratively by
+> participants in ITU-R Study Group 3. It may be used by implementers in their
+> implementation of the Recommendation as well as in revisions of the specific
+> original Recommendation and in other ITU Recommendations, free from any
+> copyright assertions.
+
+Checked against what is embedded here: not byte-identical, because `makeitshfbc`
+packs its own binary format and the ITU's is different — ours is little-endian
+`f32` after an integer header, theirs is not. Comparing the ITU's ASCII form
+against our binary, 57.6% of its values appear in ours at five significant
+figures, and the remainder is layout rather than different numbers. Same
+coefficient set, different container.
+
+Two things this does not settle, stated plainly:
+
+- The grant is worded around implementations of **ITU Recommendations**. This
+  engine implements VOACAP, which is an NTIA/ITS model, not P.533. So the
+  position is "the rights holder publishes this data freely for implementers"
+  rather than "there is a licence written to cover this use".
+- It is still not legal advice, and neither is this file.
+
+What it does settle is the factual question the earlier paragraph left open:
+these are not files whose distribution the ITU restricts.
+
 ### Decided, 2026-07-30: embed all of it
 
 All 45 files, 653 KB, are in `embedded/` and compiled in by
@@ -84,7 +119,13 @@ The reasoning for going ahead while the licence question is open is that
 technical arrangement; distributing the result to other people is the act
 the question is about. So `Cargo.toml` keeps `publish = false`, and whether
 application builds may be handed out — F-Droid, an app store, a download —
-is a separate decision that has not been made.
+is a separate decision.
+
+That decision is now being taken: the user intends to publish to Google Play,
+F-Droid, Accrescent, Obtainium and direct download (2026-07-30). The section
+above is why that is a smaller step than this paragraph assumed when it was
+written. `publish = false` on the crate is unchanged and is a separate question
+from distributing an application binary.
 
 If the answer ever turns out to be no, the fallback is unchanged and cheap:
 `embedded/coeffs/` comes out of the repository, `data.rs` keeps the antennas
