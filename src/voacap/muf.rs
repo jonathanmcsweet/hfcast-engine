@@ -400,6 +400,37 @@ fn profile_interpolate(from: &[R; 50], to: &[R; 50], probe: R) -> R {
     to[49]
 }
 
+/// The segment [`profile_interpolate`] settles on, for a `from` array
+/// that rises the whole way, and the value it reads off it.
+///
+/// When every `d` in the scan above is negative the arithmetic IFs
+/// collapse to one rule: the answer is the first `ih` where
+/// `probe < from[ih + 1]`, and `to[49]` if there is none. The
+/// `from[ih] > probe` branch can only fire at `ih = 0`, and there it
+/// picks the same segment the rule does, because `probe < from[0]`
+/// implies `probe < from[1]`.
+///
+/// That rule is monotone in `probe`, which is what lets a caller with
+/// probes in rising order carry `ih` from one to the next instead of
+/// starting each scan at zero. The arithmetic is the source's,
+/// character for character, so the answer is the same bits.
+fn rising_interpolate(from: &[R; 50], to: &[R; 50], probe: R, ih: &mut usize) -> R {
+    while *ih < 49 && probe >= from[*ih + 1] {
+        *ih += 1;
+    }
+    if *ih >= 49 {
+        return to[49];
+    }
+    let i = *ih;
+    to[i] + (probe - from[i]) * (to[i + 1] - to[i]) / (from[i + 1] - from[i])
+}
+
+/// Whether `a` rises at every step, which is the condition
+/// [`rising_interpolate`] needs.
+fn rises_throughout(a: &[R; 50]) -> bool {
+    (0..49).all(|i| a[i] < a[i + 1])
+}
+
 /// Port of `GETHP`: the true and virtual heights `(hpx, htx)` for a
 /// vertical frequency, from the density profile by Gaussian integration.
 /// `BENDY`: the bending a parabolic layer adds to the virtual height.
@@ -414,6 +445,79 @@ pub fn pen(s: &IonoState, i: usize, k: usize, f: R) -> R {
     s.yi[k][i] * ((1.0 + x) / (x - 1.0)).ln() * x
 }
 
+/// The electron density the Gaussian integration reads at each of its
+/// 40 sample heights, indexed `[ig][ib]` as `GETHP`'s loops are.
+///
+/// Read off the profile in height order rather than in loop order. The
+/// heights are `ht * (1 - TWDIV * zg) + htr[0]` with `zg` one of
+/// `1 - XT[ig]` or `1 + XT[ig]`, so they are an affine image of `XT`,
+/// which rises: the `1 + XT` half read backwards, then the `1 - XT`
+/// half forwards, is the whole set in order, and a negative `ht` turns
+/// that sequence around. Taken in that order the profile is walked once
+/// instead of scanned from the start 40 times, which was 42 percent of
+/// an area run.
+///
+/// The integration still sums in `ig` order, from this array, because
+/// the order floating-point terms are added in decides the last bits of
+/// the sum.
+fn gethp_densities(s: &IonoState, ht: R, fr: R) -> [[R; 2]; 20] {
+    let height = |ig: usize, ib: usize| -> R {
+        let zg = if ib == 0 { 1.0 - XT[ig] } else { 1.0 + XT[ig] };
+        ht * (1.0 - TWDIV * zg.powi(NPL)) + s.htr[0]
+    };
+    let mut ysq = [[0.0 as R; 2]; 20];
+
+    if !rises_throughout(&s.htr) {
+        // Not seen in the corpus, but the profile is not guaranteed to
+        // rise, and a walk over one that does not would read the wrong
+        // segment. Fall back to the scan the source writes.
+        for ig in 0..20 {
+            for ib in 0..2 {
+                let zi = height(ig, ib);
+                let y = if zi - s.htr[0] <= 0.0 {
+                    s.fnsq[0]
+                } else {
+                    profile_interpolate(&s.htr, &s.fnsq, zi)
+                };
+                ysq[ig][ib] = (y / fr).min(0.9999);
+            }
+        }
+        return ysq;
+    }
+
+    let mut order = [(0usize, 0usize); 40];
+    for i in 0..20 {
+        order[i] = (19 - i, 1);
+        order[20 + i] = (i, 0);
+    }
+    let mut ih = 0usize;
+    // Sequencing, not a value being built: the walk's cursor is what
+    // makes it cheap, so the heights have to be read in rising order
+    // and each read has to see what the one before it left behind.
+    let read = |ig: usize, ib: usize, ysq: &mut [[R; 2]; 20], ih: &mut usize| {
+        let zi = height(ig, ib);
+        let y = if zi - s.htr[0] <= 0.0 {
+            // Below the bottom of the profile, where the source takes
+            // the floor rather than extrapolating. These come first in
+            // rising order, so the cursor has not moved yet.
+            s.fnsq[0]
+        } else {
+            rising_interpolate(&s.htr, &s.fnsq, zi, ih)
+        };
+        ysq[ig][ib] = (y / fr).min(0.9999);
+    };
+    if ht >= 0.0 {
+        for &(ig, ib) in order.iter() {
+            read(ig, ib, &mut ysq, &mut ih);
+        }
+    } else {
+        for &(ig, ib) in order.iter().rev() {
+            read(ig, ib, &mut ysq, &mut ih);
+        }
+    }
+    ysq
+}
+
 pub fn gethp(s: &IonoState, fxx: R) -> (R, R) {
     let fr = fxx * fxx;
     if fr - s.fnsq[0] <= 0.0 {
@@ -423,18 +527,12 @@ pub fn gethp(s: &IonoState, fxx: R) -> (R, R) {
     let mut hp: R = 0.0;
     ht -= s.htr[0];
     let hrmz = ht * TWDIV * XNPL;
+    let ysq = gethp_densities(s, ht, fr);
     for ig in 0..20 {
         let mut mup = [0.0 as R; 2];
         for (ib, m) in mup.iter_mut().enumerate() {
             let zg = if ib == 0 { 1.0 - XT[ig] } else { 1.0 + XT[ig] };
-            let zi = ht * (1.0 - TWDIV * zg.powi(NPL)) + s.htr[0];
-            let ysq = if zi - s.htr[0] <= 0.0 {
-                s.fnsq[0]
-            } else {
-                profile_interpolate(&s.htr, &s.fnsq, zi)
-            };
-            let ysq = (ysq / fr).min(0.9999);
-            *m = (1.0 / (1.0 - ysq).sqrt()) * zg.powi(NPL - 1);
+            *m = (1.0 / (1.0 - ysq[ig][ib]).sqrt()) * zg.powi(NPL - 1);
         }
         hp += WT[ig] * (mup[0] + mup[1]);
     }
@@ -961,6 +1059,68 @@ pub fn curmuf(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A rising profile, and a companion array with no shape to it.
+    fn rising_pair() -> ([R; 50], [R; 50]) {
+        let mut from = [0.0 as R; 50];
+        let mut to = [0.0 as R; 50];
+        for i in 0..50 {
+            // Uneven steps, so a probe rarely lands on a sample.
+            from[i] = 70.0 + i as R * 7.3 + (i % 3) as R * 1.7;
+            to[i] = ((i * 37) % 91) as R * 0.4;
+        }
+        // The uneven part can undo a step; make sure it never does.
+        for i in 1..50 {
+            if from[i] <= from[i - 1] {
+                from[i] = from[i - 1] + 0.1;
+            }
+        }
+        (from, to)
+    }
+
+    #[test]
+    fn the_walk_reads_the_same_bits_as_the_scan() {
+        // What the speed-up rests on. The walk keeps its place between
+        // probes instead of scanning from the start, which is only the
+        // same answer if the array rises the whole way — and it has to
+        // be the same to the bit, not close, because a listing prints
+        // these to three figures and a gate compares the characters.
+        let (from, to) = rising_pair();
+        assert!(rises_throughout(&from));
+        let lo = from[0] - 25.0;
+        let hi = from[49] + 25.0;
+        let probes: Vec<R> = (0..4000)
+            .map(|i| lo + (hi - lo) * i as R / 3999.0)
+            // Every sample height exactly, where the comparisons are
+            // decided by equality rather than by order.
+            .chain(from.iter().copied())
+            .collect();
+        let mut ih = 0usize;
+        let mut walked = Vec::with_capacity(probes.len());
+        let mut sorted = probes.clone();
+        sorted.sort_by(|a, b| a.partial_cmp(b).expect("no NaN"));
+        for p in &sorted {
+            walked.push(rising_interpolate(&from, &to, *p, &mut ih));
+        }
+        for (p, w) in sorted.iter().zip(&walked) {
+            let scanned = profile_interpolate(&from, &to, *p);
+            assert_eq!(
+                w.to_bits(),
+                scanned.to_bits(),
+                "probe {p}: walk {w}, scan {scanned}",
+            );
+        }
+    }
+
+    #[test]
+    fn a_profile_that_does_not_rise_is_left_to_the_scan() {
+        // The fallback exists because nothing guarantees the profile
+        // rises. If this ever stops holding, the walk would read the
+        // wrong segment silently.
+        let (mut from, _) = rising_pair();
+        from[20] = from[19] - 1.0;
+        assert!(!rises_throughout(&from));
+    }
 
     fn simple_layers() -> Vec<LayerParams> {
         // A plausible daytime mid-latitude ionosphere at one point.
