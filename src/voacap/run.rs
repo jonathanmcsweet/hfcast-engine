@@ -966,13 +966,21 @@ struct HourSetup<'a> {
 
 /// Builds the per-path half of a run: geometry, magnetic field, ground
 /// constants and the antenna tables, against maps already loaded.
+///
+/// `pole` and `ants` are the two pieces that do not depend on the path.
+/// A caller with one path leaves them `None` and they are read here. An
+/// area run reads them once and passes them in for every grid point,
+/// which is why they are options rather than plain arguments: finding
+/// the pole opens two files, and doing that per grid point cost more
+/// than the propagation physics did.
 fn hour_setup<'a>(
     itshfbc: &Path,
     inp: &RunInputs,
     set: &'a CoefficientSet,
+    pole: Option<MagneticPole>,
     ants: Option<AntennaSet>,
 ) -> Result<HourSetup<'a>, String> {
-    let pole = MagneticPole::for_tree_with(itshfbc, inp.model);
+    let pole = pole.unwrap_or_else(|| MagneticPole::for_tree_with(itshfbc, inp.model));
     let geo = path_geometry(
         inp.from_lat_deg as R,
         inp.from_lon_deg as R,
@@ -1076,7 +1084,7 @@ impl PathReport {
 pub fn path_report(itshfbc: &Path, inp: &RunInputs) -> Result<PathReport, String> {
     let set: CoefficientSet =
         redmap(itshfbc, inp.fof2, inp.month, inp.ssn).map_err(|e| e.to_string())?;
-    let s = hour_setup(itshfbc, inp, &set, None)?;
+    let s = hour_setup(itshfbc, inp, &set, None, None)?;
     Ok(PathReport::from_setup(&s))
 }
 
@@ -1092,7 +1100,7 @@ pub struct Prediction {
 pub fn run_listing(itshfbc: &Path, inp: &RunInputs) -> Result<Prediction, String> {
     let set: CoefficientSet =
         redmap(itshfbc, inp.fof2, inp.month, inp.ssn).map_err(|e| e.to_string())?;
-    let s = hour_setup(itshfbc, inp, &set, None)?;
+    let s = hour_setup(itshfbc, inp, &set, None, None)?;
     let path = PathReport::from_setup(&s);
     let mut lp = ModeLoopState::default();
     let mut fsecv_carry = [0.0 as R; 3];
@@ -1119,7 +1127,7 @@ pub fn run(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<HourPrediction>, Strin
 pub fn run_hour(itshfbc: &Path, inp: &RunInputs, jt: i32) -> Result<HourPrediction, String> {
     let set: CoefficientSet =
         redmap(itshfbc, inp.fof2, inp.month, inp.ssn).map_err(|e| e.to_string())?;
-    let s = hour_setup(itshfbc, inp, &set, None)?;
+    let s = hour_setup(itshfbc, inp, &set, None, None)?;
     let mut lp = ModeLoopState::default();
     let mut fsecv = [0.0 as R; 3];
     let mut iono = IonoCarry::new(inp, s.geo.points.len());
@@ -1530,6 +1538,9 @@ pub fn run_area(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<AreaPoint>, Str
         .count()
         .max(1);
     let ants = build_area_antennas(itshfbc, area, nf)?;
+    // Where the magnetic pole is does not depend on the grid point, and
+    // finding it opens two files. Read once for the whole grid.
+    let pole = MagneticPole::for_tree_with(itshfbc, area.model);
     let mut lp = ModeLoopState::default();
     let mut fsecv = [0.0 as R; 3];
     let mut out = Vec::with_capacity(area.grid.nx * area.grid.ny);
@@ -1575,7 +1586,7 @@ pub fn run_area(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<AreaPoint>, Str
                 edp: None,
                 model: area.model,
             };
-            let mut s = hour_setup(itshfbc, &inp, &set, Some(ants.clone()))?;
+            let mut s = hour_setup(itshfbc, &inp, &set, Some(pole), Some(ants.clone()))?;
             // `HFAREA` compares against `GCDLNG` with `.GT.` where the
             // point-to-point driver uses `.GE.`. It matters only at
             // exactly 10000 km, but it is a real difference.
