@@ -189,6 +189,148 @@ impl AntennaRequest {
 /// nothing about the band the user chose.
 const AREA_RELIABILITY_FIELD: usize = 12;
 
+/// `OUTAREA`'s take-off angle column, in the same row.
+///
+/// The same quantity the point-to-point listing prints as `TANGLE`, and
+/// the reason it is worth carrying: near-vertical incidence is a property
+/// of the angle alone. A short path leaves steeply and comes back down
+/// without a skip zone, which is why a low band works at midday over a few
+/// hundred kilometres, and a reliability figure on its own does not say
+/// so. Reading it here means a map can tell that region from a long
+/// low-angle hop instead of inferring one from distance.
+const AREA_TAKEOFF_FIELD: usize = 2;
+
+/// The rectangle a grid covers, in degrees.
+///
+/// The whole world unless the request names all four edges. The default is
+/// what every caller written before this asks for, so it is the value the
+/// reader of this file should assume.
+#[derive(Debug)]
+struct Bounds {
+    lat_min: f64,
+    lat_max: f64,
+    lon_min: f64,
+    lon_max: f64,
+}
+
+/// The rectangle the request asks for, or `None` for the whole world.
+///
+/// All four edges together or none of them. A request naming only
+/// `latMin` would otherwise be answered over every longitude, which is a
+/// far larger and slower answer than it asked for and arrives looking like
+/// a correct one.
+fn bounds(req: &Json) -> Result<Option<Bounds>, String> {
+    const KEYS: [&str; 4] = ["latMin", "latMax", "lonMin", "lonMax"];
+    let stated = KEYS.iter().filter(|key| req.get(key).is_some()).count();
+    if stated == 0 {
+        return Ok(None);
+    }
+    if stated < KEYS.len() {
+        return Err(format!(
+            "an area request states all of {} or none of them",
+            KEYS.join(", ")
+        ));
+    }
+    let box_ = Bounds {
+        lat_min: req.number("latMin")?,
+        lat_max: req.number("latMax")?,
+        lon_min: req.number("lonMin")?,
+        lon_max: req.number("lonMax")?,
+    };
+    if box_.lat_min < -90.0 || box_.lat_max > 90.0 {
+        return Err("\"latMin\" and \"latMax\" are degrees, -90 to 90".into());
+    }
+    if box_.lon_min < -180.0 || box_.lon_max > 180.0 {
+        return Err("\"lonMin\" and \"lonMax\" are degrees, -180 to 180".into());
+    }
+    if box_.lat_min >= box_.lat_max {
+        return Err("\"latMin\" must be below \"latMax\"".into());
+    }
+    if box_.lon_min >= box_.lon_max {
+        // A rectangle across the antimeridian is written this way round —
+        // 170 to -170 — and is refused rather than guessed at. The grid
+        // counts its points eastward from `lonMin`, so reading it as a
+        // crossing would need the counting to change; asking for the two
+        // halves separately gives the same cells with nothing implied.
+        return Err(
+            "\"lonMin\" must be below \"lonMax\": a rectangle crossing the \
+             antimeridian has to be asked for as two"
+                .into(),
+        );
+    }
+    Ok(Some(box_))
+}
+
+/// One axis of the grid: its first point, its last, and how many.
+#[derive(Debug)]
+struct Axis {
+    min: R,
+    max: R,
+    n: usize,
+}
+
+/// One axis of the whole-world grid, written as it has always been
+/// written.
+///
+/// `edge` is where the world starts on this axis and `span` how far it
+/// runs: -90 and 180 for latitude, -180 and 360 for longitude.
+///
+/// Kept as its own two expressions rather than as the bounded form below
+/// with the world for a rectangle, because the two agree only where the
+/// step divides the world evenly. At a step of 7 degrees this puts 26
+/// points between -86.5 and 86.5, which are 6.92 degrees apart — the
+/// inset is half of the step asked for and the spacing is not, so it is
+/// not a lattice of that step at all. Every step the callers use does
+/// divide evenly, so nothing meets the difference; reproducing it exactly
+/// costs four lines and removes the question.
+fn world_axis(step: f64, edge: f64, span: f64) -> Result<Axis, String> {
+    let n = (span / step).round() as usize;
+    if n < 2 {
+        return Err("the grid needs at least two points on each side".into());
+    }
+    Ok(Axis {
+        min: (edge + step / 2.0) as R,
+        max: (edge + span - step / 2.0) as R,
+        n,
+    })
+}
+
+/// The cell centres on one axis that fall inside `lo` to `hi`.
+///
+/// The world is divided into bands of the step asked for — or of the
+/// nearest width that divides it evenly, so the bands tile — and the
+/// points are the centres of the bands inside the rectangle. A bounded
+/// grid is therefore a window on the same lattice the whole-world run
+/// uses rather than a second grid beside it: its cells line up with the
+/// coarse ones under them, and two rectangles side by side join with no
+/// seam and no overlap.
+fn part_axis(
+    lo: f64,
+    hi: f64,
+    step: f64,
+    edge: f64,
+    span: f64,
+    name: &str,
+) -> Result<Axis, String> {
+    let bands = (span / step).round().max(1.0);
+    let width = span / bands;
+    let index = |degrees: f64| (degrees - edge) / width - 0.5;
+    let first = index(lo).ceil().max(0.0);
+    let last = index(hi).floor().min(bands - 1.0);
+    let n = (last - first + 1.0).max(0.0) as usize;
+    if n < 2 {
+        return Err(format!(
+            "the {name} range holds {n} grid point(s) at a step of {step}, \
+             and a grid needs at least two on each side"
+        ));
+    }
+    Ok(Axis {
+        min: (edge + (first + 0.5) * width) as R,
+        max: (edge + (last + 0.5) * width) as R,
+        n,
+    })
+}
+
 /// Coverage: one band, one hour, every direction.
 ///
 /// Answers "where can I be heard", which the point-to-point run cannot —
@@ -201,29 +343,47 @@ const AREA_RELIABILITY_FIELD: usize = 12;
 /// drawn around its point covers exactly its share of the sphere. Putting
 /// them on the edges would double-count the poles and leave a seam at the
 /// antimeridian.
+///
+/// The rectangle is the whole world unless the request names one. A
+/// smaller one costs what its own points cost, which is what makes a fine
+/// grid near the station affordable: the same step over the whole globe
+/// would be a hundred times the work to answer a question about one
+/// region.
 fn area(tree: &std::path::Path, req: &Json) -> Result<Json, String> {
     let lat_step = req.number("latStep")?;
     let lon_step = req.number("lonStep")?;
     if lat_step <= 0.0 || lon_step <= 0.0 {
         return Err("\"latStep\" and \"lonStep\" must be positive".into());
     }
-    let ny = (180.0 / lat_step).round() as usize;
-    let nx = (360.0 / lon_step).round() as usize;
-    if ny < 2 || nx < 2 {
-        return Err("the grid needs at least two points on each side".into());
-    }
+    let (rows, columns) = match bounds(req)? {
+        None => (
+            world_axis(lat_step, -90.0, 180.0)?,
+            world_axis(lon_step, -180.0, 360.0)?,
+        ),
+        Some(box_) => (
+            part_axis(box_.lat_min, box_.lat_max, lat_step, -90.0, 180.0, "latitude")?,
+            part_axis(
+                box_.lon_min,
+                box_.lon_max,
+                lon_step,
+                -180.0,
+                360.0,
+                "longitude",
+            )?,
+        ),
+    };
     let watts = req.number("watts")?;
 
     let grid = Grid {
         projection: Projection::LatLon,
         plat: req.number("fromLat")? as f32,
         plon: req.number("fromLon")? as f32,
-        xmin: (-180.0 + lon_step / 2.0) as f32,
-        xmax: (180.0 - lon_step / 2.0) as f32,
-        ymin: (-90.0 + lat_step / 2.0) as f32,
-        ymax: (90.0 - lat_step / 2.0) as f32,
-        nx,
-        ny,
+        xmin: columns.min,
+        xmax: columns.max,
+        ymin: rows.min,
+        ymax: rows.max,
+        nx: columns.n,
+        ny: rows.n,
     };
 
     let inputs = AreaInputs {
@@ -260,6 +420,14 @@ fn area(tree: &std::path::Path, req: &Json) -> Result<Json, String> {
         // The field is the reference's own formatting of the number, and
         // asterisks are how Fortran reports one too wide for its column.
         let reliability = field.trim().parse::<f64>().unwrap_or(0.0);
+        // Absent rather than zero when the column did not print a number.
+        // Zero is an angle — a signal leaving along the horizon — so
+        // reporting one where none was computed would be a measurement
+        // rather than a gap, and a map would draw it as a real answer.
+        let takeoff = p
+            .fields
+            .get(AREA_TAKEOFF_FIELD)
+            .and_then(|f| f.trim().parse::<f64>().ok());
         // Longitudes come back folded into 0..360; the app works in
         // -180..180 like every other coordinate it handles.
         let lon = if p.lon > 180.0 {
@@ -271,12 +439,21 @@ fn area(tree: &std::path::Path, req: &Json) -> Result<Json, String> {
             ("lat", num(f64::from(p.lat))),
             ("lon", num(lon)),
             ("reliability", num(reliability.clamp(0.0, 1.0))),
+            ("takeoffAngleDeg", takeoff.map_or(Json::Null, num)),
         ]));
     }
 
+    // The rectangle echoed back is the grid that ran, not the one asked
+    // for: the request states any rectangle it likes and the points are
+    // the lattice centres inside it, so these are the first and last
+    // point on each axis. A caller drawing cells adds half a step.
     Ok(obj([
         ("latStep", num(lat_step)),
         ("lonStep", num(lon_step)),
+        ("latMin", num(f64::from(grid.ymin))),
+        ("latMax", num(f64::from(grid.ymax))),
+        ("lonMin", num(f64::from(grid.xmin))),
+        ("lonMax", num(f64::from(grid.xmax))),
         ("points", Json::Arr(out)),
     ]))
 }
@@ -530,5 +707,116 @@ mod tests {
         // antenna rather than reporting anything.
         let req = parsed(r#"{"txAntenna":{"file":"a.voa","minFreq":21,"maxFreq":7}}"#);
         assert!(antenna(&req, "txAntenna").is_err());
+    }
+
+    #[test]
+    fn the_whole_world_is_still_the_grid_it_always_was() {
+        // The compatibility claim, checked rather than argued. A grid a
+        // thousandth of a degree off would move every point of every map
+        // and nothing on screen would say so.
+        for (step, edge, span) in [(15.0, -90.0, 180.0), (22.5, -180.0, 360.0)] {
+            let a = world_axis(step, edge, span).expect("a grid");
+            assert_eq!(a.min, (edge + step / 2.0) as R);
+            assert_eq!(a.max, (edge + span - step / 2.0) as R);
+            assert_eq!(a.n, (span / step).round() as usize);
+        }
+        let rows = world_axis(15.0, -90.0, 180.0).expect("a grid");
+        assert_eq!((rows.min, rows.max, rows.n), (-82.5, 82.5, 12));
+        let columns = world_axis(22.5, -180.0, 360.0).expect("a grid");
+        assert_eq!((columns.min, columns.max, columns.n), (-168.75, 168.75, 16));
+    }
+
+    #[test]
+    fn a_rectangle_over_the_whole_world_is_the_whole_world() {
+        // Only where the step divides the world evenly, which is every
+        // step the callers use. `world_axis` says why it is kept separate.
+        for (step, edge, span) in [
+            (15.0, -90.0, 180.0),
+            (22.5, -180.0, 360.0),
+            (1.25, -90.0, 180.0),
+            (1.5, -180.0, 360.0),
+        ] {
+            let whole = world_axis(step, edge, span).expect("a grid");
+            let asked =
+                part_axis(edge, edge + span, step, edge, span, "axis").expect("a grid");
+            assert_eq!(
+                (whole.min, whole.max, whole.n),
+                (asked.min, asked.max, asked.n),
+                "at a step of {step}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_rectangle_holds_the_lattice_centres_inside_it() {
+        // Denver, plus and minus ten degrees, at the patch's own step.
+        let rows = part_axis(29.74, 49.74, 1.25, -90.0, 180.0, "latitude").expect("a grid");
+        assert_eq!(rows.n, 16);
+        assert_eq!((rows.min, rows.max), (30.625, 49.375));
+        // Every point is inside what was asked for, and one more step
+        // either way would leave it.
+        assert!(rows.min >= 29.74 && rows.max <= 49.74);
+        assert!(rows.min - 1.25 < 29.74 && rows.max + 1.25 > 49.74);
+    }
+
+    #[test]
+    fn a_rectangle_lands_on_the_same_lattice_as_the_whole_world() {
+        // What makes a patch a window on the coarse grid rather than a
+        // second grid beside it. Without this the fine cells would sit
+        // half over one coarse cell and half over its neighbour, and the
+        // map would show a seam that means nothing.
+        let part = part_axis(-40.0, 40.0, 15.0, -90.0, 180.0, "latitude").expect("a grid");
+        assert_eq!((part.min, part.max, part.n), (-37.5, 37.5, 6));
+    }
+
+    #[test]
+    fn a_rectangle_never_reaches_past_the_pole() {
+        // A patch around a station at 85 degrees north asks for ten
+        // degrees of latitude that do not exist. The lattice is clamped to
+        // the world rather than continued past it, so the grid stops at
+        // the last real band instead of running a prediction to a
+        // latitude of 95.
+        let rows = part_axis(75.0, 95.0, 1.25, -90.0, 180.0, "latitude").expect("a grid");
+        assert!(rows.max <= 90.0, "{} is past the pole", rows.max);
+        assert_eq!(rows.max, 89.375);
+        assert_eq!(rows.n, 12);
+    }
+
+    #[test]
+    fn a_rectangle_stated_in_part_is_refused() {
+        // The dangerous case: answered over every longitude, which is a
+        // hundred times the work and arrives looking correct.
+        let req = parsed(r#"{"latMin":30,"latMax":50}"#);
+        assert!(bounds(&req).is_err());
+        assert!(bounds(&parsed("{}")).is_ok());
+    }
+
+    #[test]
+    fn an_empty_or_inverted_rectangle_is_refused() {
+        let refused = |text: &str| bounds(&parsed(text)).is_err();
+        assert!(refused(r#"{"latMin":50,"latMax":30,"lonMin":-10,"lonMax":10}"#));
+        assert!(refused(r#"{"latMin":30,"latMax":30,"lonMin":-10,"lonMax":10}"#));
+        assert!(refused(r#"{"latMin":30,"latMax":50,"lonMin":10,"lonMax":10}"#));
+        assert!(refused(r#"{"latMin":-91,"latMax":50,"lonMin":-10,"lonMax":10}"#));
+    }
+
+    #[test]
+    fn a_rectangle_across_the_antimeridian_says_so() {
+        // Refused rather than guessed at, and the message has to name the
+        // reason: 170 to -170 is how somebody writes a real rectangle,
+        // not a typing mistake.
+        let req = parsed(r#"{"latMin":-10,"latMax":10,"lonMin":170,"lonMax":-170}"#);
+        let message = bounds(&req).expect_err("refused");
+        assert!(message.contains("antimeridian"), "{message}");
+    }
+
+    #[test]
+    fn a_rectangle_smaller_than_its_own_step_is_refused() {
+        // `Grid::point` divides by the number of points less one, so a
+        // single-point axis is a division by zero rather than a small
+        // answer.
+        let message =
+            part_axis(30.0, 31.0, 15.0, -90.0, 180.0, "latitude").expect_err("refused");
+        assert!(message.contains("latitude"), "{message}");
     }
 }

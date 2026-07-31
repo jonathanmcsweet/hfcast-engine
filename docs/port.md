@@ -1247,6 +1247,54 @@ kilowatts there. Defaulting it to zero in both places would predict a
 transmitter with no power over the whole map, and every grid point
 would still be a plausible-looking number.
 
+### The area rectangle over the JSON boundary
+
+`"mode":"area"` covers the whole world unless the request names
+`latMin`, `latMax`, `lonMin` and `lonMax`. All four together or none:
+a request naming only `latMin` would otherwise be answered over every
+longitude, which is a far larger and slower answer than it asked for
+and arrives looking correct.
+
+A rectangle is a **window on the same lattice** the whole-world run
+uses, not a second grid beside it. The world is divided into bands of
+the step asked for — or of the nearest width that divides it evenly —
+and the points are the centres of the bands inside the rectangle. So
+the fine cells line up with the coarse ones under them, and two
+rectangles side by side join with no seam and no overlap. The
+response echoes `latMin`, `latMax`, `lonMin` and `lonMax` as the grid
+that ran: the first and last **point** on each axis, not the cell
+edges, which are half a step further out.
+
+The whole-world case is kept as its own two expressions rather than
+reached through the bounded form with the world for a rectangle. The
+two agree only where the step divides the world evenly. At a step of 7
+degrees the old form puts 26 points between -86.5 and 86.5, which are
+6.92 degrees apart: the inset is half of the step asked for and the
+spacing is not, so it is not a lattice of that step at all. Every step
+a caller uses does divide evenly, so nothing meets the difference —
+reproducing it exactly costs four lines and removes the question.
+
+Refused rather than guessed at: an inverted or empty rectangle, one
+outside -90..90 or -180..180, one holding fewer than two points on an
+axis (`Grid::point` divides by the number of points less one), and one
+crossing the antimeridian. That last is written `lonMin` 170 to
+`lonMax` -170, which is a real rectangle and not a typing mistake, so
+the message names the antimeridian and says to ask for the two halves
+separately. The grid counts its points eastward from `lonMin`; reading
+a crossing would mean changing how it counts, where the great-circle
+projection — a rectangle in kilometres, which has no meridian in it —
+is the answer that already exists in `area.rs` and is not yet reachable
+from here.
+
+Every area point also carries `takeoffAngleDeg`, which is
+`OUTAREA`'s column 2 and the same quantity the point-to-point listing
+prints as `TANGLE`. Near-vertical incidence is a property of that angle
+alone, so a map can tell a short steep path from a long low-angle hop
+instead of inferring one from distance. It is `null` where the column
+printed no number: zero is an angle — a signal leaving along the
+horizon — so reporting one where none was computed would be a
+measurement rather than a gap.
+
 ### `paritycheck`
 
 Narrower than `portcheck` on purpose: not every printed cell, but
