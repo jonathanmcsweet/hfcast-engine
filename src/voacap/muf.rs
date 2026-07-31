@@ -1122,6 +1122,104 @@ mod tests {
         assert!(!rises_throughout(&from));
     }
 
+    /// The loop `GETHP` ran before the walk, kept as the reference the
+    /// walk is judged against. Character for character the arithmetic in
+    /// `gethp_densities`'s own fallback branch — which is the point:
+    /// the branch is a copy, and a copy can drift under a future edit
+    /// without any behaviour of the corpus changing, because the corpus
+    /// never reaches it. This test module is what would notice.
+    fn scan_densities(s: &IonoState, ht: R, fr: R) -> [[R; 2]; 20] {
+        let mut ysq = [[0.0 as R; 2]; 20];
+        for ig in 0..20 {
+            for (ib, slot) in ysq[ig].iter_mut().enumerate() {
+                let zg = if ib == 0 { 1.0 - XT[ig] } else { 1.0 + XT[ig] };
+                let zi = ht * (1.0 - TWDIV * zg.powi(NPL)) + s.htr[0];
+                let y = if zi - s.htr[0] <= 0.0 {
+                    s.fnsq[0]
+                } else {
+                    profile_interpolate(&s.htr, &s.fnsq, zi)
+                };
+                *slot = (y / fr).min(0.9999);
+            }
+        }
+        ysq
+    }
+
+    /// A state whose profile arrays are set directly, for driving
+    /// `gethp_densities` without a full `lecden` pass.
+    fn profile_state(htr: [R; 50], fnsq: [R; 50]) -> IonoState {
+        let mut s = IonoState::from_layers(&simple_layers());
+        s.htr = htr;
+        s.fnsq = fnsq;
+        s
+    }
+
+    /// A profile like the ones `lecden` builds: heights rising, density
+    /// wandering. Uneven steps so probes rarely land on a sample.
+    fn rising_profile() -> ([R; 50], [R; 50]) {
+        let mut htr = [0.0 as R; 50];
+        let mut fnsq = [0.0 as R; 50];
+        for i in 0..50 {
+            htr[i] = 90.0 + i as R * 4.3 + (i % 3) as R * 1.1;
+            fnsq[i] = 1.0 + ((i * 29) % 53) as R * 0.7;
+        }
+        (htr, fnsq)
+    }
+
+    #[test]
+    fn the_walk_matches_the_scan_over_whole_integrations() {
+        // Stronger than the probe-by-probe test above: this drives the
+        // reordering itself — the claim that the `1 + XT` half read
+        // backwards, then the `1 - XT` half forwards, is the 40 samples
+        // in rising order, and that the cursor lands each one on the
+        // segment the scan would have chosen. The `ht` values are picked
+        // so the samples span below the profile's bottom, across it, and
+        // past its top, and one is negative to drive the reversed order.
+        let (htr, fnsq) = rising_profile();
+        let s = profile_state(htr, fnsq);
+        assert!(rises_throughout(&s.htr));
+        for ht in [0.0 as R, 0.004, 10.0, 137.5, 300.0, 1000.0, -25.0] {
+            for fr in [4.0 as R, 36.0] {
+                let walked = gethp_densities(&s, ht, fr);
+                let scanned = scan_densities(&s, ht, fr);
+                for ig in 0..20 {
+                    for ib in 0..2 {
+                        assert_eq!(
+                            walked[ig][ib].to_bits(),
+                            scanned[ig][ib].to_bits(),
+                            "ht {ht}, fr {fr}, sample ({ig}, {ib})",
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_profile_that_does_not_rise_takes_the_scan_and_matches_it() {
+        // Nothing in the corpus produces one — measured: the profile
+        // rose in all 14.2 million walked calls — but nothing forbids
+        // one either, so the fallback has to answer, and it has to
+        // answer what the source's scan answers.
+        let (mut htr, fnsq) = rising_profile();
+        htr[20] = htr[19] - 3.0;
+        let s = profile_state(htr, fnsq);
+        assert!(!rises_throughout(&s.htr));
+        for ht in [0.0 as R, 25.0, 137.5] {
+            let walked = gethp_densities(&s, ht, 9.0);
+            let scanned = scan_densities(&s, ht, 9.0);
+            for ig in 0..20 {
+                for ib in 0..2 {
+                    assert_eq!(
+                        walked[ig][ib].to_bits(),
+                        scanned[ig][ib].to_bits(),
+                        "ht {ht}, sample ({ig}, {ib})",
+                    );
+                }
+            }
+        }
+    }
+
     fn simple_layers() -> Vec<LayerParams> {
         // A plausible daytime mid-latitude ionosphere at one point.
         let p = LayerParams {
