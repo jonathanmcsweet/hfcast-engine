@@ -98,6 +98,14 @@ pub struct IonoState {
     pub htr: [R; 50],
     /// Plasma frequency squared `FNSQ(·,1)`, MHz².
     pub fnsq: [R; 50],
+    /// Whether `htr` rises at every step, decided once by [`lecden`].
+    ///
+    /// Answered here rather than in `gethp_densities` because it is a
+    /// fact about the profile, and the profile does not change while an
+    /// ionogram is built. Asked there, it re-scanned all 50 heights on
+    /// each of the 30 `gethp` calls `genion` makes — 29 of them
+    /// answering a question already answered.
+    pub htr_rises: bool,
     /// `FSECV(k)` per slot — only written on some `lecden` paths. The
     /// Fortran keeps it in a COMMON block, so an hour whose `lecden`
     /// takes the no-F1 path sees the previous hour's value: a caller
@@ -132,6 +140,9 @@ impl IonoState {
             km: params.len(),
             kfx: 0,
             htr: [0.0; 50],
+            // An all-zero profile does not rise, and nothing reads this
+            // before `lecden` writes it.
+            htr_rises: false,
             fnsq: [0.0; 50],
             fsecv: [0.0; 3],
             iedp: -1,
@@ -373,6 +384,7 @@ pub fn lecden(s: &mut IonoState, k: usize) {
         }
         s.fnsq[ih] = fnd.max(fne).max(fnval).max(fn1).max(fn2);
     }
+    s.htr_rises = rises_throughout(&s.htr);
 }
 
 /// The Fortran's shared interpolation shape: given parallel arrays and a
@@ -467,7 +479,7 @@ fn gethp_densities(s: &IonoState, ht: R, fr: R) -> [[R; 2]; 20] {
     };
     let mut ysq = [[0.0 as R; 2]; 20];
 
-    if !rises_throughout(&s.htr) {
+    if !s.htr_rises {
         // Not seen in the corpus, but the profile is not guaranteed to
         // rise, and a walk over one that does not would read the wrong
         // segment. Fall back to the scan the source writes.
