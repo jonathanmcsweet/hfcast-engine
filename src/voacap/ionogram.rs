@@ -111,6 +111,7 @@ const HPE: [R; 10] = [
 /// shapes for the closed form, and where the source falls back to
 /// `gethp`.
 pub fn genion(s: &IonoState, k: usize) -> Ionogram {
+    let _perf = crate::perf::Step::new(crate::perf::GENION);
     let fi0 = s.fi[k][0];
     let fi1 = s.fi[k][1];
     let fi2 = s.fi[k][2];

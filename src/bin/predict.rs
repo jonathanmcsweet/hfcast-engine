@@ -21,7 +21,17 @@ fn main() -> ExitCode {
     if let Err(e) = io::stdin().read_to_string(&mut input) {
         return fail(&format!("could not read stdin: {e}"));
     }
-    match hfcast::service::run(&input) {
+    // Temporary: step timers, off unless asked for. See `src/perf.rs`.
+    let timing = std::env::var_os("HFCAST_PERF").is_some();
+    if timing {
+        hfcast::perf::enable();
+    }
+    let started = std::time::Instant::now();
+    let answer = hfcast::service::run(&input);
+    if timing {
+        eprint!("{}", hfcast::perf::report(started.elapsed()));
+    }
+    match answer {
         Ok(text) => {
             let mut out = io::stdout().lock();
             if writeln!(out, "{text}").is_err() {

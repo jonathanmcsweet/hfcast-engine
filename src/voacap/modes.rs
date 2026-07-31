@@ -670,6 +670,7 @@ pub fn findf(
     amind: R,
     nang: usize,
 ) {
+    let _perf = crate::perf::Step::new(crate::perf::FINDF);
     let jfhz = (1000.0 * freq) as i32;
     rfx.dmaxkm = 0.0;
     rfx.dskpkm = 10000.0;
@@ -2485,6 +2486,7 @@ pub fn luffy_freq_loop(
     frel: &[R; 12],
     saves: &mut HourSaves,
 ) -> Vec<Option<FreqDebug>> {
+    let _perf = crate::perf::Step::new(crate::perf::LUFFY);
     let idx = usize::from(ctx.long);
     let mut ihmin = muf.layers[0].nhopmf;
     if muf.layers[1].nhopmf > 0 && muf.layers[1].nhopmf < ihmin {

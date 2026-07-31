@@ -29,6 +29,8 @@
 pub mod api;
 pub mod compare;
 pub mod json;
+/// Temporary step timers; see `src/perf.rs`.
+pub mod perf;
 pub mod deck;
 pub mod voacap;
 pub mod fuzz;

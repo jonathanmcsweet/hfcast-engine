@@ -70,6 +70,23 @@ const WT: [R; 20] = [
     0.0045212771,
 ];
 /// `voacapw.for` integration setup: NT=20 points, linear transformation.
+/// The 40 sample points in rising height order.
+///
+/// `(ig, ib)` pairs: the `1 + XT` half read backwards, then the
+/// `1 - XT` half forwards, which is all 40 rising because `XT` rises.
+/// A constant because it is one — it was being rebuilt on each of the
+/// 163,830 `gethp` calls an area run makes.
+const RISING_ORDER: [(usize, usize); 40] = {
+    let mut order = [(0usize, 0usize); 40];
+    let mut i = 0;
+    while i < 20 {
+        order[i] = (19 - i, 1);
+        order[20 + i] = (i, 0);
+        i += 1;
+    }
+    order
+};
+
 const NPL: i32 = 1;
 const XNPL: R = 1.0;
 const TWDIV: R = 0.5;
@@ -497,11 +514,6 @@ fn gethp_densities(s: &IonoState, ht: R, fr: R) -> [[R; 2]; 20] {
         return ysq;
     }
 
-    let mut order = [(0usize, 0usize); 40];
-    for i in 0..20 {
-        order[i] = (19 - i, 1);
-        order[20 + i] = (i, 0);
-    }
     let mut ih = 0usize;
     // Sequencing, not a value being built: the walk's cursor is what
     // makes it cheap, so the heights have to be read in rising order
@@ -519,11 +531,11 @@ fn gethp_densities(s: &IonoState, ht: R, fr: R) -> [[R; 2]; 20] {
         ysq[ig][ib] = (y / fr).min(0.9999);
     };
     if ht >= 0.0 {
-        for &(ig, ib) in order.iter() {
+        for &(ig, ib) in RISING_ORDER.iter() {
             read(ig, ib, &mut ysq, &mut ih);
         }
     } else {
-        for &(ig, ib) in order.iter().rev() {
+        for &(ig, ib) in RISING_ORDER.iter().rev() {
             read(ig, ib, &mut ysq, &mut ih);
         }
     }
@@ -531,6 +543,7 @@ fn gethp_densities(s: &IonoState, ht: R, fr: R) -> [[R; 2]; 20] {
 }
 
 pub fn gethp(s: &IonoState, fxx: R) -> (R, R) {
+    let _perf = crate::perf::Step::new(crate::perf::GETHP);
     let fr = fxx * fxx;
     if fr - s.fnsq[0] <= 0.0 {
         return (s.htr[0], s.htr[0]);

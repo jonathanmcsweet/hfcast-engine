@@ -249,6 +249,7 @@ impl IonoCarry {
         krun: i32,
         gmt: R,
     ) {
+    let _perf = crate::perf::Step::new(crate::perf::IONO_HOUR);
         // `GEOTIM` always runs, and writes every point's local mean
         // time by its own arithmetic. `TIMVAR` writes it again from a
         // different expression, so this value only survives a run that
