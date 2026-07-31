@@ -61,6 +61,27 @@ A Rust toolchain, `gfortran` to build the reference, and a checkout of
 `voacapl`. Every harness is a binary in this crate and is run from the
 repository root.
 
+The reference is not vendored. Fetch and build it with:
+
+```
+git clone --depth 1 https://github.com/jawatson/voacapl vendor/voacapl
+tools/build-variants.sh          # VARIANTS=O2 for the harnesses alone
+```
+
+**A fresh clone needs its timestamps settled first.** git gives every
+file the same time, so make decides the generated autotools files are
+out of date and tries to rebuild them with `aclocal-1.15`, which no
+current distribution carries. The failure reads as a missing package
+and is not one. Touch them in dependency order before building:
+
+```
+cd vendor/voacapl
+touch configure.ac; sleep 1
+touch aclocal.m4;   sleep 1
+touch configure $(find . -name config.h.in); sleep 1
+touch $(find . -name Makefile.in)
+```
+
 Each concurrent harness job runs a Fortran binary and copies a private
 `itshfbc` tree, so the harnesses are heavier than their CPU use
 suggests. Sizing a pool from core count alone has repeatedly been the

@@ -14,11 +14,21 @@
 set -euo pipefail
 
 SRC="${SRC:-vendor/voacapl}"
-OUT="${OUT:-vendor/voacapl-variants}"
+# Absolute, because it becomes `--prefix`, and configure refuses a
+# relative one: "expected an absolute directory name for --prefix".
+OUT="$(cd "$(dirname "${OUT:-vendor/voacapl-variants}")" 2>/dev/null && pwd || echo "$PWD")/$(basename "${OUT:-vendor/voacapl-variants}")"
 
-# The host has 16 cores but under 3 GB of usable RAM. Sizing the job count from
-# core count gets the compiler OOM-killed, which surfaces as a bare "Killed".
-JOBS="${JOBS:-4}"
+# One, and not for memory. `voacapl/itshfbc/bin/anttyp99` compiles
+# `cant99.f90` into a module that `ant99.f90` and `anttyp99.f90` both
+# read, and the generated Makefile does not declare that dependency — so
+# any parallel make can start the readers first and fail with "Cannot
+# open module file 'cant99.mod'". The race is in the reference's build,
+# not here, so it is avoided rather than fixed.
+#
+# Memory is the other reason to keep this small: the host has 16 cores
+# and under 3 GB of usable RAM, and sizing from core count gets the
+# compiler OOM-killed, which surfaces as a bare "Killed".
+JOBS="${JOBS:-1}"
 
 # -O2 matches how the vendored binary is built and is the reference.
 # -ffast-math is included deliberately as an out-of-contract case: it permits
