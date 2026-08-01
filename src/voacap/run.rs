@@ -1119,23 +1119,6 @@ pub fn run(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<HourPrediction>, Strin
     run_listing(itshfbc, inp).map(|p| p.hours)
 }
 
-/// Runs one hour on its own, from the program-start state.
-///
-/// This is what an area run needs: it computes only the hour its input
-/// file names. Taking one hour out of [`run`]'s output would be a
-/// different computation, because `FSECV` carries from each hour into the
-/// next — hour 18 of a 24-hour run starts from hour 17's value where a
-/// single-hour run starts from zero.
-pub fn run_hour(itshfbc: &Path, inp: &RunInputs, jt: i32) -> Result<HourPrediction, String> {
-    let set: CoefficientSet =
-        redmap(itshfbc, inp.fof2, inp.month, inp.ssn).map_err(|e| e.to_string())?;
-    let s = hour_setup(itshfbc, inp, &set, None, None)?;
-    let mut lp = ModeLoopState::default();
-    let mut fsecv = [0.0 as R; 3];
-    let mut iono = IonoCarry::new(inp, s.geo.points.len());
-    Ok(hour_body(&s, jt, &mut lp, &mut fsecv, &mut iono))
-}
-
 /// One hour of `HFMUFS`: the MUF, the LUFFY passes with the smoothing
 /// blend, `SETLUF` and `OUTBOD`'s sentinels.
 ///
