@@ -500,6 +500,12 @@ fn gethp_densities(s: &IonoState, ht: R, fr: R) -> [[R; 2]; 20] {
         // Not seen in the corpus, but the profile is not guaranteed to
         // rise, and a walk over one that does not would read the wrong
         // segment. Fall back to the scan the source writes.
+        //
+        // The index is the loop's subject, not an artefact: `height` takes
+        // the same pair, so iterating `ysq` would replace one index with an
+        // enumerate and keep the other. The Fortran writes two nested `DO`
+        // loops and this reads as those two loops.
+        #[allow(clippy::needless_range_loop)]
         for ig in 0..20 {
             for ib in 0..2 {
                 let zi = height(ig, ib);
