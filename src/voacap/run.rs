@@ -1852,6 +1852,7 @@ fn area_point(
             per_freq,
         };
     }
+    let _perf = crate::perf::Step::new(crate::perf::FIELDS);
     let mode = if h.long_model {
         format!("  {}{}", laytyp(s0.mode_layer), laytyp(s0.moder_layer))
     } else {

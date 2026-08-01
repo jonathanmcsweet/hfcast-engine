@@ -43,7 +43,7 @@ src/deck.rs	override_cards	18	38
 src/fuzz.rs	pick_antennas	18	47
 src/json.rs	string	19	24
 src/listing.rs	parse_listing	14	86
-src/service.rs	area	30	164
+src/service.rs	area	30	168
 src/service.rs	build_request	19	57
 src/spread.rs	gather	22	110
 src/spread.rs	load_month	23	39
@@ -84,5 +84,5 @@ src/voacap/output.rs	render	27	102
 src/voacap/run.rs	hour	7	26
 src/voacap/run.rs	hour_block	14	104
 src/voacap/run.rs	hour_body	20	210
-src/voacap/run.rs	run_luf	8	146
+src/voacap/run.rs	run_luf	8	138
 src/voacap/sigdis.rs	sigdis	10	130

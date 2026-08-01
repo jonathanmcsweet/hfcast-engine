@@ -20,10 +20,14 @@ pub const GETHP: usize = 1;
 pub const LUFFY: usize = 2;
 pub const IONO_HOUR: usize = 3;
 pub const FINDF: usize = 4;
-const STEPS: usize = 5;
+pub const AREA_POINTS: usize = 5;
+pub const ANSWER: usize = 6;
+pub const WRITE: usize = 7;
+pub const FIELDS: usize = 8;
+const STEPS: usize = 9;
 
 const NAMES: [&str; STEPS] =
-    ["genion", "gethp", "luffy_freq_loop", "iono.hour", "findf"];
+    ["genion", "gethp", "luffy_freq_loop", "iono.hour", "findf", "area points", "answer json", "write", "area fields"];
 
 static ON: AtomicBool = AtomicBool::new(false);
 static NS: [AtomicU64; STEPS] = [
@@ -32,8 +36,16 @@ static NS: [AtomicU64; STEPS] = [
     AtomicU64::new(0),
     AtomicU64::new(0),
     AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
 ];
 static CALLS: [AtomicU64; STEPS] = [
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
     AtomicU64::new(0),
     AtomicU64::new(0),
     AtomicU64::new(0),

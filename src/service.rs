@@ -66,7 +66,9 @@ pub fn run(input: &str) -> Result<String, String> {
     // default and stays the bare object it has always been, so nothing
     // that already calls this has to learn a new field.
     if req.get("mode").and_then(Json::as_str) == Some("area") {
-        return Ok(area(&tree, &req)?.write());
+        let tree_json = area(&tree, &req)?;
+        let _perf = crate::perf::Step::new(crate::perf::WRITE);
+        return Ok(tree_json.write());
     }
 
     let (request, freqs) = build_request(&req)?;
@@ -466,7 +468,11 @@ fn area(tree: &std::path::Path, req: &Json) -> Result<Json, String> {
         model: Model::Compatible,
     };
 
-    let points = run_area(tree, &inputs)?;
+    let points = {
+        let _perf = crate::perf::Step::new(crate::perf::AREA_POINTS);
+        run_area(tree, &inputs)?
+    };
+    let _answer = crate::perf::Step::new(crate::perf::ANSWER);
 
     // Several bands asked for together are answered together: one row
     // per grid point carrying every band, rather than one row per point
