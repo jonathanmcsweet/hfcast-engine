@@ -222,6 +222,19 @@ pub struct InstalledAntenna {
     /// The reference's flag for this is the header's off-azimuth field
     /// reading -999.
     pub area: Option<AreaGainTable>,
+    /// Which of the pair this area antenna is: 0 first, 1 second.
+    ///
+    /// The reference picks an area antenna's bearing from its position
+    /// in the list rather than from the end it serves, and its list only
+    /// ever holds two. A run covering several bands installs a pair per
+    /// band, so "position in the list" stops meaning what it meant —
+    /// the third entry is the second band's *first* antenna, not a
+    /// receive one.
+    ///
+    /// This is that position within the antenna's own band, which is the
+    /// same number for a single-band run and is therefore not a change
+    /// in behaviour where the reference has any.
+    pub area_slot: usize,
     /// `pwrdba`: 30 + 10 log10(kW), transmit cards only.
     pub pwrdba: R,
     /// `pwrkw`: the card's power column, after `DECRED` turns a
@@ -256,6 +269,18 @@ pub struct Installation {
     pub file: String,
     /// The card's design-frequency field.
     pub design_freq: R,
+    /// Narrower frequency bounds than the card's, in MHz.
+    ///
+    /// For an area run covering several bands in one pass. An area gain
+    /// table is built at one frequency — that is the axis it trades away
+    /// to hold all 360 azimuths — so several bands need one table each,
+    /// and [`AntennaSet::gain`] already picks between installed antennas
+    /// by frequency range. Giving each table a window that brackets only
+    /// its own band is what makes that selection land on the right one.
+    ///
+    /// `None` uses the card's whole range, which is what a single-band
+    /// run and every point-to-point run want.
+    pub window: Option<(R, R)>,
 }
 
 /// The installed antennas of one run: what `/cantenna/` holds while
@@ -325,7 +350,9 @@ impl AntennaSet {
             power_kw,
             file,
             design_freq,
+            window,
         } = ins;
+        let (xfqs, xfqe) = window.unwrap_or((min_freq as R, max_freq as R));
         for row in table.gains.iter_mut() {
             for slot in row.iter_mut() {
                 *slot = through_f7_3(*slot);
@@ -336,10 +363,11 @@ impl AntennaSet {
         }
         self.ants.push(InstalledAntenna {
             iat,
-            xfqs: min_freq as R,
-            xfqe: max_freq as R,
+            xfqs,
+            xfqe,
             table,
             area: None,
+            area_slot: 0,
             pwrdba: pwrdba_of(iat, power_kw),
             pwrkw: pwrkw_of(iat, power_kw),
             file,
@@ -352,11 +380,13 @@ impl AntennaSet {
     ///
     /// The reference's area lookup picks the bearing from the antenna's
     /// position in the list rather than from the end it serves, and its
-    /// table only has room for two, so this refuses a third.
+    /// table only has room for two — so two per frequency window is the
+    /// limit, and a third for the same window is refused.
+    ///
+    /// Several windows are how one run covers several bands: an area
+    /// table is built at one frequency, so each band needs its own pair,
+    /// and [`AntennaSet::gain`] selects between them by frequency.
     pub fn install_area(&mut self, ins: Installation, area: AreaGainTable) -> Result<(), String> {
-        if self.ants.len() >= 2 {
-            return Err("an area run holds at most two antennas".to_string());
-        }
         let Installation {
             iat,
             min_freq,
@@ -365,13 +395,27 @@ impl AntennaSet {
             power_kw,
             file,
             design_freq,
+            window,
         } = ins;
+        let (xfqs, xfqe) = window.unwrap_or((min_freq as R, max_freq as R));
+        // Counted within the band rather than over the whole list, which
+        // is what lets a second band's transmit antenna still be the
+        // first of its own pair.
+        let area_slot = self
+            .ants
+            .iter()
+            .filter(|a| a.area.is_some() && a.xfqs == xfqs && a.xfqe == xfqe)
+            .count();
+        if area_slot >= 2 {
+            return Err("an area run holds at most two antennas a band".to_string());
+        }
         self.ants.push(InstalledAntenna {
             iat,
-            xfqs: min_freq as R,
-            xfqe: max_freq as R,
+            xfqs,
+            xfqe,
             table,
             area: Some(area),
+            area_slot,
             pwrdba: pwrdba_of(iat, power_kw),
             pwrkw: pwrkw_of(iat, power_kw),
             file,
@@ -397,6 +441,7 @@ impl AntennaSet {
             max_freq: 30,
             table,
             power_kw,
+            window: None,
             file: crate::deck::ANTENNA_FILE.to_string(),
             design_freq: 0.0,
         };
@@ -426,15 +471,20 @@ impl AntennaSet {
     /// `build_area_antennas` always installs the transmit card first —
     /// see `docs/corrected.md` for what that means for measuring it.
     pub fn gain(&self, itr: i32, delta_rad: R, fmc: R) -> (R, R) {
-        for (slot, a) in self.ants.iter().enumerate() {
+        for a in self.ants.iter() {
             if a.iat == itr && a.xfqs <= fmc && fmc <= a.xfqe {
                 let Some(area) = &a.area else {
                     return gain_lookup(&a.table, fmc, delta_rad);
                 };
+                // `area_slot` rather than the position in the list, so a
+                // run covering several bands does not read the second
+                // band's transmit antenna as a receive one. They are the
+                // same number when there is one band, which is every
+                // case the reference has.
                 let transmit = if self.model.area_antenna_by_end() {
                     a.iat == 1
                 } else {
-                    slot == 0
+                    a.area_slot == 0
                 };
                 // A negative main beam marks a non-terminated rhombic,
                 // whose table was built over the folded azimuths; the
@@ -1658,6 +1708,7 @@ mod tests {
             max_freq: 30,
             table: GainTable::default(),
             power_kw: 0.1,
+            window: None,
             file: "test".to_string(),
             design_freq: 0.0,
         };

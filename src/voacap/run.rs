@@ -383,6 +383,7 @@ fn build_antennas(itshfbc: &Path, inp: &RunInputs) -> Result<AntennaSet, String>
                 max_freq: card.max_freq,
                 table,
                 power_kw: kw,
+                window: None,
                 file: card.file.clone(),
                 design_freq: card.design_freq,
             });
@@ -1440,6 +1441,34 @@ pub struct AreaInputs {
     pub model: Model,
 }
 
+/// One frequency's answer at one grid point, before `OUTAREA` collapses
+/// them.
+///
+/// A multi-frequency area run prints seven columns holding the maximum
+/// over the frequencies, which is the reference's behaviour and is what
+/// `row()` has to keep printing. These are the same numbers before that
+/// collapse, carried beside the fields rather than through them, so a
+/// caller can have every band from one run without changing a single
+/// character of what the parity harnesses compare.
+///
+/// Rounded exactly as the printed columns are — three decimals for
+/// reliability, two for the angle — so one band read from a run of eight
+/// is the same number as that band read from a run of one.
+/// `f64`, not the engine's `R`.
+///
+/// These are values already read back out of a printed column, so they
+/// carry only the decimals that column holds. Storing them as `f32`
+/// would round a number that is exact in `f64` and put a difference of
+/// about 3e-8 between a band read here and the same band read from a
+/// one-frequency run — small, but the point of this type is that there
+/// is no difference at all.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct AreaFreq {
+    pub reliability: f64,
+    /// Absent where the run produced no angle to report.
+    pub takeoff_angle_deg: Option<f64>,
+}
+
 /// One grid point's output row: the indices, the coordinates and
 /// `OUTAREA`'s value columns already rendered in its formats.
 #[derive(Debug, Clone)]
@@ -1455,6 +1484,11 @@ pub struct AreaPoint {
     pub print_lon: R,
     /// The 24 six-character fields, in `OUTAREA`'s order.
     pub fields: Vec<String>,
+    /// One entry per frequency asked for, in the order asked.
+    ///
+    /// Never read by `row()`, so adding it cannot move a printed
+    /// character.
+    pub per_freq: Vec<AreaFreq>,
 }
 
 impl AreaPoint {
@@ -1620,6 +1654,25 @@ pub fn run_area(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<AreaPoint>, Str
     Ok(out)
 }
 
+/// The frequency window one band's area antenna answers for.
+///
+/// Halfway to each neighbour, so the windows meet without overlapping
+/// and every frequency in the run falls in exactly one. The ends reach
+/// past the outermost bands so a lookup at or beyond them still lands.
+///
+/// The frequencies are the caller's own list, so they are already
+/// distinct and in order; the midpoints are therefore strictly between
+/// them and no two windows can claim the same frequency.
+fn band_window(freqs: &[R], index: usize) -> (R, R) {
+    let below = index
+        .checked_sub(1)
+        .map_or(0.0, |i| (freqs[i] + freqs[index]) / 2.0);
+    let above = freqs
+        .get(index + 1)
+        .map_or(R::INFINITY, |next| (freqs[index] + next) / 2.0);
+    (below, above)
+}
+
 /// `ANTCALC` for an area run: which of its two branches the run takes,
 /// and both ends' tables.
 ///
@@ -1672,22 +1725,41 @@ fn build_area_antennas(itshfbc: &Path, area: &AreaInputs, nf: usize) -> Result<A
             model: area.model,
         };
         let kw = if iat == 1 { pwrkw } else { 0.0 };
-        let installed = |table| Installation {
+        let installed = |table, window| Installation {
             iat,
             min_freq: card.min_freq,
             max_freq: card.max_freq,
             table,
             power_kw: kw,
+            window,
             file: card.file.clone(),
             design_freq: card.design_freq,
         };
-        if nf > 1 {
-            let table = point_to_point_table(&setup).map_err(|e| e.to_string())?;
-            ants.install(installed(table));
-        } else {
-            let (header, table) =
-                area_table(&setup, area.freqs_mhz[0]).map_err(|e| e.to_string())?;
-            ants.install_area(installed(header), table)?;
+        // One area table per frequency, each in a window that brackets
+        // only its own band.
+        //
+        // `ANTCALC` falls back to the point-to-point table when a run
+        // names several frequencies, because an area table is built at
+        // one frequency and the reference holds only one of them. That
+        // fallback is cut along a single bearing for the whole grid,
+        // where an area table is re-cut at every grid point — and the
+        // difference is not small. Measured over a 3,072-point grid, it
+        // moved the take-off angle at every reachable point, by up to 44
+        // degrees, which is the number the no-skip-zone shading is drawn
+        // from.
+        //
+        // So this builds the table the reference would have built for
+        // each band alone. Several bands in one pass then answer exactly
+        // as several runs would, which is what `run_area_matches_single`
+        // holds it to.
+        for (index, &freq) in area.freqs_mhz.iter().take(nf).enumerate() {
+            let (header, table) = area_table(&setup, freq).map_err(|e| e.to_string())?;
+            let window = if nf == 1 {
+                None
+            } else {
+                Some(band_window(&area.freqs_mhz[..nf], index))
+            };
+            ants.install_area(installed(header, window), table)?;
         }
     }
     Ok(ants)
@@ -1700,6 +1772,32 @@ fn build_area_antennas(itshfbc: &Path, area: &AreaInputs, nf: usize) -> Result<A
 /// overwriting slot 1, so slot 1 holds the maximum by the time it is
 /// printed — and the power cut, which reads the same slot, sees the
 /// maximised median against unmaximised decile deviations.
+/// One frequency slot, read exactly as the single-frequency row is read.
+///
+/// Rendered through the same `f6` the columns are printed with and
+/// parsed straight back, rather than rounded by a rule written here that
+/// looks equivalent. Two attempts at "equivalent" were already wrong:
+/// rounding reliability arithmetically disagreed with `F6.3` on 46
+/// percent of points by one unit in the last place, and the angle was
+/// taken from `ANGLER` when the column an area run reports is `ANGLE` —
+/// the transmit angle in field 2, not the receive angle in field 23.
+/// That second mistake moved the value by up to 64 degrees and was
+/// mistaken for an antenna fault.
+///
+/// The columns are the contract. Going through them costs a format and a
+/// parse per value and cannot disagree with itself.
+fn freq_answer(s: &Son) -> AreaFreq {
+    let through = |text: String| text.trim().parse::<f64>().ok();
+    AreaFreq {
+        reliability: through(f6(s.reliab, 3)).unwrap_or(0.0),
+        // Absent rather than zero where the column printed no number.
+        // Zero is an angle — a signal leaving along the horizon — so
+        // reporting one where none was computed would be a measurement
+        // rather than a gap.
+        takeoff_angle_deg: through(f6(s.angle, 2)),
+    }
+}
+
 fn area_point(
     grid: &Grid,
     ix: usize,
@@ -1710,6 +1808,8 @@ fn area_point(
     nf: usize,
 ) -> AreaPoint {
     let print_lon = print_longitude(grid, ix, lon);
+    // Taken before the maxima below, which is the whole point of it.
+    let per_freq: Vec<AreaFreq> = h.son.iter().take(nf).map(freq_answer).collect();
     let s0 = &h.son[0];
     let (mut dbu, mut dbw, mut sndb) = (s0.dbu, s0.dbw, s0.sndb);
     let (mut reliab, mut sprob, mut snxx) = (s0.reliab, s0.sprob, s0.snxx);
@@ -1758,6 +1858,7 @@ fn area_point(
                 f6(sprob, 3),
                 f6(snxx, 1),
             ],
+            per_freq,
         };
     }
     let mode = if h.long_model {
@@ -1798,6 +1899,7 @@ fn area_point(
         lon,
         print_lon,
         fields,
+        per_freq,
     }
 }
 
