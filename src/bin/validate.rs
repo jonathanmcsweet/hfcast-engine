@@ -54,7 +54,9 @@ use hfcast::itu::{parse_report, run_case, ItuPaths};
 use hfcast::listing::parse_listing;
 use hfcast::runner::{itshfbc_dir, map_limit, run_deck, variant_bin, IsolatedRoot};
 use hfcast::stats::{correlation, fit_line, median, rms};
-use hfcast::wspr::{self, smoothed_ssn, WsprPath, WSPR_BANDWIDTH_HZ, WSPR_BANDWIDTH_OFFSET_DB};
+use hfcast::wspr::{
+    self, smoothed_ssn, WsprPath, DECODE_FLOOR_DB, WSPR_BANDWIDTH_HZ, WSPR_BANDWIDTH_OFFSET_DB,
+};
 
 const VOACAP_VARIANT: &str = "O2";
 const CONCURRENCY: usize = 4;
@@ -80,7 +82,12 @@ const REFERENCE_WATTS: f64 = 1.0;
 
 /// Observed medians this close to the decoder's floor are truncated rather than
 /// measured, so they are left out.
-const OBSERVED_FLOOR_DB: f64 = -25.0;
+///
+/// Four decibels above the floor itself. Derived from `DECODE_FLOOR_DB`
+/// rather than written out, because the two have to move together: a
+/// margin that no longer sits above the floor drops nothing, and says
+/// nothing about that in its output.
+const OBSERVED_FLOOR_DB: f64 = DECODE_FLOOR_DB + 4.0;
 
 /// Below this a predicted ratio is a dead-path sentinel, not a prediction.
 const IMPLAUSIBLE_SNR_DB: f64 = -200.0;
@@ -701,7 +708,7 @@ fn report(month: &str, ssn: f64, sporadic_e: bool, outcomes: &[PathOutcome], dat
     println!(
         "- {skipped_short} paths had fewer than {MIN_HOURS} usable hours after \
          dropping observations within {:.0} dB of the decoder's floor.",
-        OBSERVED_FLOOR_DB.abs() - 29.0_f64.abs()
+        DECODE_FLOOR_DB.abs() - OBSERVED_FLOOR_DB.abs()
     );
     println!("- {} paths failed to run.", failures.len());
     for f in failures.iter().take(5) {

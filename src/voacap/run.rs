@@ -440,10 +440,21 @@ pub struct ParRow {
     pub hs: R,
 }
 
-/// Runs the ionospheric parameters alone for all 24 hours: `ITRUN = 1`,
-/// card method 1. Returns one row per control point per hour, in the
-/// order `OUTPAR` prints them.
-pub fn run_par(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<ParRow>, String> {
+/// What every point-to-point entry needs before it can start on hours.
+///
+/// The path, the field along it, and the coefficient set for the month.
+/// None of it depends on the hour or on the frequency, and all four
+/// entries below built it with the same fifteen lines until they were
+/// brought here — which is a thing to keep an eye on, because a fix to
+/// one copy and not the other three is silent.
+struct PathSetup {
+    geo: PathGeometry,
+    mags: Vec<MagneticVars>,
+    set: CoefficientSet,
+    cof: Vec<R>,
+}
+
+fn path_setup(itshfbc: &Path, inp: &RunInputs) -> Result<PathSetup, String> {
     let pole = MagneticPole::for_tree_with(itshfbc, inp.model);
     let geo = path_geometry(
         inp.from_lat_deg as R,
@@ -457,8 +468,29 @@ pub fn run_par(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<ParRow>, String> {
     let set: CoefficientSet =
         redmap(itshfbc, inp.fof2, inp.month, inp.ssn).map_err(|e| e.to_string())?;
     let cof = cofion(&set);
-    let grounds = ground_constants(&set, &geo.points, &mags);
+    // `ALATD` returns the mean latitude, which none of these entries
+    // reads. The reference calls it here and the call is kept so the
+    // sequence matches, not for the value.
     let _ = alatd(&geo.points);
+    Ok(PathSetup {
+        geo,
+        mags,
+        set,
+        cof,
+    })
+}
+
+/// Runs the ionospheric parameters alone for all 24 hours: `ITRUN = 1`,
+/// card method 1. Returns one row per control point per hour, in the
+/// order `OUTPAR` prints them.
+pub fn run_par(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<ParRow>, String> {
+    let PathSetup {
+        geo,
+        mags,
+        set,
+        cof,
+    } = path_setup(itshfbc, inp)?;
+    let grounds = ground_constants(&set, &geo.points, &mags);
     let psc = inp.psc;
 
     let mut iono = IonoCarry::new(inp, geo.points.len());
@@ -562,20 +594,12 @@ pub struct IonPlot {
 /// `IONSET` left them and the sporadic-E deciles are untouched by
 /// `CURMUF`.
 pub fn run_ion(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<Vec<IonPlot>>, String> {
-    let pole = MagneticPole::for_tree_with(itshfbc, inp.model);
-    let geo = path_geometry(
-        inp.from_lat_deg as R,
-        inp.from_lon_deg as R,
-        inp.to_lat_deg as R,
-        inp.to_lon_deg as R,
-        false,
-        pole,
-    );
-    let mags: Vec<_> = geo.points.iter().map(|p| magvar(p.lat, p.lon)).collect();
-    let set: CoefficientSet =
-        redmap(itshfbc, inp.fof2, inp.month, inp.ssn).map_err(|e| e.to_string())?;
-    let cof = cofion(&set);
-    let _ = alatd(&geo.points);
+    let PathSetup {
+        geo,
+        mags,
+        set,
+        cof,
+    } = path_setup(itshfbc, inp)?;
     let psc = inp.psc;
 
     let mut fsecv_carry = [0.0 as R; 3];
@@ -653,20 +677,12 @@ pub struct MufHourOut {
 /// 3 to 6 (`ITRUN = 3`) take them from the manual nomogram method with
 /// `NOMMUF`, which fills no per-layer detail.
 pub fn run_muf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<MufHourOut>, String> {
-    let pole = MagneticPole::for_tree_with(itshfbc, inp.model);
-    let geo = path_geometry(
-        inp.from_lat_deg as R,
-        inp.from_lon_deg as R,
-        inp.to_lat_deg as R,
-        inp.to_lon_deg as R,
-        false,
-        pole,
-    );
-    let mags: Vec<_> = geo.points.iter().map(|p| magvar(p.lat, p.lon)).collect();
-    let set: CoefficientSet =
-        redmap(itshfbc, inp.fof2, inp.month, inp.ssn).map_err(|e| e.to_string())?;
-    let cof = cofion(&set);
-    let _ = alatd(&geo.points);
+    let PathSetup {
+        geo,
+        mags,
+        set,
+        cof,
+    } = path_setup(itshfbc, inp)?;
     let clats: Vec<R> = geo.points.iter().map(|p| p.lat).collect();
     let psc = inp.psc;
     let from_lon_rad = inp.from_lon_deg as R * D2R;
@@ -737,21 +753,13 @@ pub fn run_muf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<MufHourOut>, Strin
 /// LUF means no frequency met the required reliability, and its
 /// magnitude is the most reliable frequency of the sweep.
 pub fn run_luf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<MufHourOut>, String> {
-    let pole = MagneticPole::for_tree_with(itshfbc, inp.model);
-    let geo = path_geometry(
-        inp.from_lat_deg as R,
-        inp.from_lon_deg as R,
-        inp.to_lat_deg as R,
-        inp.to_lon_deg as R,
-        false,
-        pole,
-    );
-    let mags: Vec<_> = geo.points.iter().map(|p| magvar(p.lat, p.lon)).collect();
-    let set: CoefficientSet =
-        redmap(itshfbc, inp.fof2, inp.month, inp.ssn).map_err(|e| e.to_string())?;
-    let cof = cofion(&set);
+    let PathSetup {
+        geo,
+        mags,
+        set,
+        cof,
+    } = path_setup(itshfbc, inp)?;
     let grounds = ground_constants(&set, &geo.points, &mags);
-    let _ = alatd(&geo.points);
     let clats: Vec<R> = geo.points.iter().map(|p| p.lat).collect();
     let glats: Vec<R> = geo.points.iter().map(|p| p.gmlat).collect();
     let psc = inp.psc;
