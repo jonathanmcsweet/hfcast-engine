@@ -9,9 +9,16 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+  # The reference the port is judged against. It is pinned because the
+  # tolerance envelope in `docs/sensitivity.md` was measured against this
+  # build: if the reference moves, "equivalent to the reference" means
+  # something different and nothing says so.
+  VOACAPL_COMMIT: c12a98b
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -33,6 +40,96 @@ jobs:
       - run: cargo test
       - run: cargo clippy --all-targets -- -D warnings
 
+      # Two gates: clippy again with the default lints, and the
+      # complexity measure against `tools/complexity-baseline.tsv`. The
+      # complexity one fires on change, not on size, because most of
+      # `src/voacap/` is one function per Fortran subroutine and an
+      # absolute threshold would fire on the whole port.
+      #
+      # The rest of what this script runs is reports, and jscpd,
+      # cargo-llvm-cov and tokei are absent on the runner. It names the
+      # ones it skipped and does not fail for them. See docs/analysis.md.
+      - name: Static analysis gates
+        run: tools/analyze.sh --gate
+
       # No `cargo fmt --check`. The engine is laid out to match the
       # Fortran it was translated from, table by table, and rustfmt
       # would reflow that. See docs/roadmap.md.
+
+  # The claim this crate is built on: that the Rust engine and the Fortran
+  # it was translated from give the same answer. `portcheck` runs both over
+  # 23,040 cells and compares them field by field against the tolerance
+  # envelope.
+  #
+  # It is a separate job because it needs a Fortran compiler and two builds
+  # of the reference, which the fast job should not wait for.
+  portcheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: portcheck-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Install gfortran
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran
+
+      # Two things come out of this: `makeitshfbc`, which writes the data
+      # tree the runs read, and a configured source tree for the step
+      # below. `vendor/` is ignored by git, so this cannot dirty the
+      # checkout.
+      #
+      # Serial. `itshfbc/bin/anttyp99` compiles a module that two other
+      # files read, and the generated Makefile does not declare that
+      # dependency, so a parallel make can start a reader first and fail
+      # on a missing `cant99.mod`. The race is in the reference's build.
+      - name: Build the reference and its data tree
+        run: |
+          git clone --quiet https://github.com/jawatson/voacapl.git vendor/voacapl
+          git -C vendor/voacapl checkout --quiet "$VOACAPL_COMMIT"
+          cd vendor/voacapl
+
+          # git does not record modification times, so a fresh clone can
+          # leave `aclocal.m4` looking older than `configure.ac`. make
+          # then tries to run aclocal-1.15 to make it again, which is not
+          # installed and is not needed: the generated files are in the
+          # repository. Setting the inputs old and the outputs new stops
+          # make trying. Without this the build stops at
+          # "aclocal-1.15: command not found".
+          find . \( -name 'configure.ac' -o -name 'configure.in' \
+            -o -name 'Makefile.am' -o -name 'acinclude.m4' \) \
+            -exec touch -d '2000-01-01' {} +
+          find . \( -name 'aclocal.m4' -o -name 'configure' \
+            -o -name 'Makefile.in' -o -name 'config.h.in' \) -exec touch {} +
+
+          ./configure --prefix="$HOME/.local"
+          make
+          make install
+          "$HOME/.local/bin/makeitshfbc"
+
+      # Only the -O2 variant. It is the one `portcheck` compares against,
+      # and building the other four would be four times the work for
+      # nothing. `tools/build-variants.sh` explains what the others are
+      # for.
+      - name: Build the -O2 reference variant
+        run: VARIANTS=O2 tools/build-variants.sh
+
+      - name: Compare the port against the reference
+        run: |
+          # `makeitshfbc` writes the tree to $HOME, which is where the
+          # engine looks by default. State it rather than depend on it.
+          export HFCAST_ITSHFBC="$HOME/itshfbc"
+          test -d "$HFCAST_ITSHFBC" || {
+            echo "::error::no itshfbc tree at $HFCAST_ITSHFBC"
+            exit 1
+          }
+          cargo run --release --bin portcheck
