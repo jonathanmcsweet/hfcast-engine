@@ -1,0 +1,123 @@
+name: Architectures
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+# One job per architecture, so a badge that goes red names the
+# architecture that broke and not the whole workflow. Every job writes its
+# own badge whatever happens to it, and the last job publishes them to the
+# `badges` branch that the README reads.
+#
+# The crate has no dependencies and no build script, so the four Android
+# targets need no NDK: `cargo build --lib` makes an rlib and never links.
+# That was measured here — about 7.5 seconds each.
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # `ubuntu-24.04-arm` is free for public repositories. This is the
+          # only place the engine's own tests run on ARM.
+          - slug: linux-x86-64
+            label: linux x86_64
+            target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            tests: true
+          - slug: linux-aarch64
+            label: linux aarch64
+            target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+            tests: true
+          - slug: android-arm64-v8a
+            label: android arm64-v8a
+            target: aarch64-linux-android
+            runner: ubuntu-latest
+            tests: false
+          - slug: android-armeabi-v7a
+            label: android armeabi-v7a
+            target: armv7-linux-androideabi
+            runner: ubuntu-latest
+            tests: false
+          - slug: android-x86-64
+            label: android x86_64
+            target: x86_64-linux-android
+            runner: ubuntu-latest
+            tests: false
+          - slug: android-x86
+            label: android x86
+            target: i686-linux-android
+            runner: ubuntu-latest
+            tests: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: rustup target add ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: arch-${{ matrix.slug }}-${{ hashFiles('Cargo.lock') }}
+
+      # `--all-features` turns on `embedded-coefficients`, which a source
+      # checkout has the files for.
+      - name: Build the library
+        run: cargo build --release --lib --all-features --target ${{ matrix.target }}
+
+      # A runner can execute only the two Linux targets, so they are the
+      # only ones that can prove the numbers as well as the build.
+      - name: Build everything
+        if: matrix.tests
+        run: cargo build --all-targets --all-features --target ${{ matrix.target }}
+
+      - name: Test
+        if: matrix.tests
+        run: |
+          cargo test --all-features --target ${{ matrix.target }}
+          cargo test --target ${{ matrix.target }}
+
+      # `job.status` is "failure" here if any step above failed, so the
+      # badge is written from what happened rather than from success only.
+      - name: Write the badge
+        if: always()
+        run: tools/write-badge.sh "${{ matrix.label }}" "${{ job.status }}" "badges/${{ matrix.slug }}.json"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: badge-${{ matrix.slug }}
+          path: badges/
+          retention-days: 1
+
+  # Only from `main`. A pull request builds every architecture and reports
+  # in its own checks, but it must not move the badges the README shows.
+  publish-badges:
+    needs: build
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: badges
+          pattern: badge-*
+          merge-multiple: true
+
+      - run: tools/publish-badges.sh badges

@@ -16,6 +16,22 @@ env:
   VOACAPL_COMMIT: c12a98b
 
 jobs:
+  # A change that does not move the crate version fails here. Pull
+  # requests only: it compares against the base branch, and a push to
+  # `main` has no base branch to compare against.
+  version:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The merge base has to be reachable, so the whole history.
+          fetch-depth: 0
+
+      - name: The version must move
+        run: tools/check-version-bump.sh "origin/${{ github.base_ref }}"
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 30

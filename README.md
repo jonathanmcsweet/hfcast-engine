@@ -5,6 +5,18 @@
 [![Licence](https://img.shields.io/badge/licence-Apache--2.0-blue)](LICENSE)
 [![No dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)](Cargo.toml)
 
+Built for, each checked on its own:
+
+[![linux x86_64](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/jonathanmcsweet/hfcast-engine/badges/linux-x86-64.json)](https://github.com/jonathanmcsweet/hfcast-engine/actions/workflows/arch.yml)
+[![linux aarch64](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/jonathanmcsweet/hfcast-engine/badges/linux-aarch64.json)](https://github.com/jonathanmcsweet/hfcast-engine/actions/workflows/arch.yml)
+[![android arm64-v8a](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/jonathanmcsweet/hfcast-engine/badges/android-arm64-v8a.json)](https://github.com/jonathanmcsweet/hfcast-engine/actions/workflows/arch.yml)
+[![android armeabi-v7a](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/jonathanmcsweet/hfcast-engine/badges/android-armeabi-v7a.json)](https://github.com/jonathanmcsweet/hfcast-engine/actions/workflows/arch.yml)
+[![android x86_64](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/jonathanmcsweet/hfcast-engine/badges/android-x86-64.json)](https://github.com/jonathanmcsweet/hfcast-engine/actions/workflows/arch.yml)
+[![android x86](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/jonathanmcsweet/hfcast-engine/badges/android-x86.json)](https://github.com/jonathanmcsweet/hfcast-engine/actions/workflows/arch.yml)
+
+The two Linux badges run the whole test suite on that architecture. The
+four Android ones are library builds: a runner cannot execute them.
+
 A radio propagation engine in Rust, and the tests that prove it is
 correct. No dependencies: everything here is `std`.
 
@@ -136,6 +148,14 @@ cargo run --release --bin portcheck
 `cargo test` runs the default build, which reads the coefficients from
 that tree. `cargo test --all-features` also runs the tests that ask for
 the compiled-in copy. CI runs both.
+
+Hooks run the checks for you: formatting and clippy before a commit,
+both test builds and the analysis gates before a push. Turn them on once
+per clone, because git does not enable a hook directory by itself:
+
+```sh
+git config core.hooksPath .githooks
+```
 
 To make one prediction:
 

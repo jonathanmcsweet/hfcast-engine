@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+#
+# Runs before every push: both test builds and the static analysis gates.
+# The formatting and clippy checks are in the pre-commit hook.
+#
+# Turn the hooks on once per clone:
+#
+#     git config core.hooksPath .githooks
+#
+# To push without them: `git push --no-verify`.
+#
+# `portcheck` is not here. It is the check the crate rests on, but it
+# needs gfortran and a build of the reference, which takes minutes. CI
+# runs it in its own job. Run it yourself for any change that could move
+# a number:
+#
+#     VARIANTS=O2 tools/build-variants.sh
+#     HFCAST_ITSHFBC="$HOME/itshfbc" cargo run --release --bin portcheck
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+if ! command -v cargo > /dev/null 2>&1; then
+  [[ -x $HOME/.cargo/bin/cargo ]] || {
+    echo "pre-push: no cargo found. Put it on PATH." >&2
+    exit 1
+  }
+  PATH="$HOME/.cargo/bin:$PATH"
+  export PATH
+fi
+
+# Both builds. `--all-features` turns on `embedded-coefficients`; without
+# it the tests that read `<embedded>` do not run at all. The second line
+# is the default build, which is what a dependent from crates.io gets.
+echo "pre-push: tests, with the coefficient maps"
+cargo test --all-features
+
+echo "pre-push: tests, default build"
+cargo test
+
+echo "pre-push: static analysis gates"
+tools/analyze.sh --gate
