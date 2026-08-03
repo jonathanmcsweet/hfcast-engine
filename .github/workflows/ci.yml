@@ -36,9 +36,17 @@ jobs:
           cargo --version
           rustc --version
 
-      - run: cargo build --all-targets
+      # `--all-features` turns on `embedded-coefficients`. Without it the
+      # tests that ask for `<embedded>` do not run at all, because the
+      # published crate does not carry those files. CI is a source
+      # checkout, so it has them.
+      - run: cargo build --all-targets --all-features
+      - run: cargo test --all-features
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+
+      # And the default build, which is what a dependent from crates.io
+      # gets: no coefficients, reading them from an `itshfbc` tree.
       - run: cargo test
-      - run: cargo clippy --all-targets -- -D warnings
 
       # Two gates: clippy again with the default lints, and the
       # complexity measure against `tools/complexity-baseline.tsv`. The
@@ -51,6 +59,18 @@ jobs:
       # ones it skipped and does not fail for them. See docs/analysis.md.
       - name: Static analysis gates
         run: tools/analyze.sh --gate
+
+      # The crate is published, so the package has to keep building from
+      # its own tarball. This also fails if a coefficient file ever leaks
+      # back into the package.
+      - name: Package
+        run: |
+          cargo package
+          if tar tzf target/package/hfcast-*.crate | grep -q 'embedded/coeffs'; then
+            echo "::error::the ionospheric coefficients are in the package; see docs/licence.md"
+            exit 1
+          fi
+          echo "package holds no coefficient files"
 
       # No `cargo fmt --check`. The engine is laid out to match the
       # Fortran it was translated from, table by table, and rustfmt

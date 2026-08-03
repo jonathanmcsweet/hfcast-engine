@@ -110,27 +110,56 @@ these are not files whose distribution the ITU restricts.
 ### Decided, 2026-07-30: embed all of it
 
 All 45 files, 653 KB, are in `embedded/` and compiled in by
-`src/voacap/data.rs`. The engine now runs with no external tree, which is
-what the application on a phone needs — a phone user cannot be asked to
-build the Fortran and run `makeitshfbc`.
+`src/voacap/data.rs` when the `embedded-coefficients` feature is on. The
+engine then runs with no external tree, which is what the application on a
+phone needs — a phone user cannot be asked to build the Fortran and run
+`makeitshfbc`.
 
 The reasoning for going ahead while the licence question is open is that
 **building for one's own devices is not redistribution.** Embedding is a
 technical arrangement; distributing the result to other people is the act
-the question is about. So `Cargo.toml` keeps `publish = false`, and whether
-application builds may be handed out — F-Droid, an app store, a download —
-is a separate decision.
+the question is about. Whether application builds may be handed out —
+F-Droid, an app store, a download — is a separate decision, and it is still
+open.
 
-That decision is now being taken: the user intends to publish to Google Play,
-F-Droid, Accrescent, Obtainium and direct download (2026-07-30). The section
-above is why that is a smaller step than this paragraph assumed when it was
-written. `publish = false` on the crate is unchanged and is a separate question
-from distributing an application binary.
+## The decision, taken 2026-08-03
 
-If the answer ever turns out to be no, the fallback is unchanged and cheap:
-`embedded/coeffs/` comes out of the repository, `data.rs` keeps the antennas
-and the version file, and the caller supplies a coefficients directory
-through the overlay root the module already supports.
+**The crate is published, and it does not carry the coefficients.**
+
+`publish = false` is gone. What ships to crates.io is the engine, the 30
+antenna files and the version file — all NTIA/ITS work, all US Government
+work, none of it in question. The 637 KB in `embedded/coeffs/` is behind
+the `embedded-coefficients` feature, which is off by default and whose
+files are excluded from the package by `Cargo.toml`. A dependent from
+crates.io reads the coefficients from an `itshfbc` tree, which is how the
+reference engine has always found them, and gets a message naming the
+feature and the reason if it asks for `<embedded>` without them.
+
+This is the fallback the paragraph below already described, applied as
+the normal arrangement rather than as a retreat, and with one improvement:
+the files stay in the repository, so a build from a source checkout is
+unchanged and needs no network.
+
+CI asserts it. The `Package` step fails if a coefficient file ever appears
+in the tarball.
+
+### What this does not settle
+
+**An application binary still carries them.** The Android build turns the
+feature on, because a telephone has no `itshfbc` tree, so every APK holds
+the 637 KB. Handing that APK to other people through F-Droid, Accrescent,
+Obtainium or a download is the redistribution this document is about, and
+publishing the crate does not touch it. That question is open, and it is
+recorded in `docs/roadmap.md`.
+
+Building for one's own devices remains the reasoning for embedding at all.
+
+## The earlier reasoning, kept
+
+If the answer ever turns out to be no for the application too, the fallback
+is unchanged and cheap: `embedded/coeffs/` comes out of the repository,
+`data.rs` keeps the antennas and the version file, and the caller supplies a
+coefficients directory through the overlay root the module already supports.
 
 ## Attribution
 

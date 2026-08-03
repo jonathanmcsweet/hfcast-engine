@@ -29,4 +29,10 @@ Government endorsement, and neither is made here.
 Whether these files may be redistributed to other people is an open question,
 recorded with its reasoning in `docs/licence.md`. Embedding them for builds
 used on one's own devices is not redistribution, which is why they are here
-while that stays undecided. `Cargo.toml` keeps `publish = false`.
+while that stays undecided.
+
+`coeffs/` is therefore **not in the published crate**. It is compiled in only
+with the `embedded-coefficients` feature, which is off by default, and
+`Cargo.toml` excludes the directory from the package. Everything else here is
+NTIA/ITS work and ships. A build without the feature reads the coefficients
+from a real `itshfbc` root.

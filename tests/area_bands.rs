@@ -1,5 +1,9 @@
 //! Several bands in one area run must equal several runs of one band.
 //!
+//! Needs `embedded-coefficients`: these runs ask for `<embedded>`, and the
+//! coefficients are not compiled in by default. `cargo test --all-features`
+//! runs them, which is what CI does.
+//!
 //! This is the whole contract of `freqsMhz`, and it is not a contract
 //! the reference can be asked about: `HFAREA` answers several
 //! frequencies by printing the maximum over them, so there is no
@@ -16,6 +20,8 @@
 //!
 //! Needs no reference binary and no data tree: the coefficient files are
 //! compiled in, so this runs anywhere.
+
+#![cfg(feature = "embedded-coefficients")]
 
 use hfcast::json::{self, Json};
 

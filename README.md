@@ -6,7 +6,11 @@
 [![No dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)](Cargo.toml)
 
 A radio propagation engine in Rust, and the tests that prove it is
-correct.
+correct. No dependencies: everything here is `std`.
+
+```sh
+cargo add hfcast
+```
 
 ## What this is
 
@@ -127,8 +131,11 @@ cargo run --release --bin portcheck
 ```
 
 `voacapl` needs an installed `itshfbc` data tree. The tests read
-`$HFCAST_ITSHFBC`, and use `~/itshfbc` if it is not set. The engine
-itself needs no such tree: the data is compiled into it.
+`$HFCAST_ITSHFBC`, and use `~/itshfbc` if it is not set.
+
+`cargo test` runs the default build, which reads the coefficients from
+that tree. `cargo test --all-features` also runs the tests that ask for
+the compiled-in copy. CI runs both.
 
 To make one prediction:
 
@@ -173,15 +180,40 @@ agreement with the original.
 
 ## Data files
 
-The engine needs 653 KB of data: the ionospheric maps for each month,
-the antenna files, and one version string. All of it is in `embedded/`
-and is compiled into the library, so the engine operates with no
-external tree. A telephone cannot be asked to build Fortran.
+The engine needs 653 KB of data: the ionospheric maps for each month, the
+antenna files, and one version string. Where they come from decides how
+they are shipped.
 
-[docs/licence.md](docs/licence.md) records where each file comes from.
-The ionospheric coefficients originate in ITU publications, and ITU-R
-Study Group 3 publishes the same coefficients itself, for implementers,
-free from copyright assertions.
+| Part | Size | Origin | In the published crate |
+| --- | --: | --- | --- |
+| Antenna files, version string | 16 KB | NTIA/ITS | yes |
+| Ionospheric coefficients | 637 KB | CCIR Report 340, URSI | **no** |
+
+The coefficients are behind the `embedded-coefficients` feature, which is
+off by default, and the files are excluded from the package. A build from
+crates.io reads them from an `itshfbc` tree, which is how the reference
+engine has always found them:
+
+```rust
+// From a tree on disk. No feature needed.
+let answer = hfcast::service::run(r#"{"itshfbc": "/home/you/itshfbc", ...}"#)?;
+```
+
+A build from this repository can compile them in instead, which is what
+the telephone application does, because a telephone has no tree to read:
+
+```sh
+cargo build --features embedded-coefficients
+```
+
+Asking for `"<embedded>"` without the feature fails with a message saying
+so, rather than quietly giving a wrong answer.
+
+[docs/licence.md](docs/licence.md) records where each file comes from and
+why the split is drawn here. The ionospheric coefficients originate in ITU
+publications, and ITU-R Study Group 3 publishes the same coefficients
+itself, for implementers, free from copyright assertions — but that is a
+practice rather than a licence, so the crate does not rely on it.
 
 ## Licence
 

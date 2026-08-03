@@ -54,6 +54,11 @@ pub mod antenna;
 pub mod area;
 pub mod ccir;
 pub mod coefficients;
+// The file is `constants.rs`, not `con.rs`: CON is a reserved device name
+// on Windows, so a crate carrying that filename cannot be unpacked there.
+// The module keeps the reference's name, which is what every call site and
+// every cross-reference to the Fortran uses.
+#[path = "constants.rs"]
 pub mod con;
 pub mod data;
 pub mod geometry;

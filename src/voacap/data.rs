@@ -41,15 +41,17 @@ pub const EMBEDDED: &str = "<embedded>";
 const OVERLAY: char = '+';
 
 macro_rules! embedded_files {
-    ($($rel:literal),* $(,)?) => {
-        /// Every file compiled in, by its path relative to an `itshfbc` root.
-        static FILES: &[(&str, &[u8])] = &[
+    ($name:ident, $($rel:literal),* $(,)?) => {
+        static $name: &[(&str, &[u8])] = &[
             $(($rel, include_bytes!(concat!("../../embedded/", $rel))),)*
         ];
     };
 }
 
+// The files NTIA/ITS wrote, which are a work of the US Government and
+// carry no restriction on redistribution. Always compiled in.
 embedded_files!(
+    FREE_FILES,
     "antennas/default/ccir.000",
     "antennas/default/ccir.001",
     "antennas/default/ccir.002",
@@ -80,6 +82,19 @@ embedded_files!(
     "antennas/default/const17.voa",
     "antennas/default/isotrope",
     "antennas/default/swwhip.voa",
+    "database/version.w32",
+);
+
+// The ionospheric coefficients, which originate in CCIR Report 340 and URSI
+// publications rather than with NTIA/ITS. 637 KB of the 653.
+//
+// These are behind a feature that is off by default, so the published crate
+// carries none of them and redistributes nothing whose terms are unsettled.
+// A build from a source checkout can turn the feature on; a build without it
+// reads the files from a real `itshfbc` root instead. See `docs/licence.md`.
+#[cfg(feature = "embedded-coefficients")]
+embedded_files!(
+    COEFF_FILES,
     "coeffs/coeff01w.bin",
     "coeffs/coeff02w.bin",
     "coeffs/coeff03w.bin",
@@ -94,8 +109,18 @@ embedded_files!(
     "coeffs/coeff12w.bin",
     "coeffs/fof2CCIR.daw",
     "coeffs/fof2URSI.daw",
-    "database/version.w32",
 );
+
+/// Empty without the feature, so every lookup falls through to the message in
+/// [`compiled`] rather than to a wrong answer.
+#[cfg(not(feature = "embedded-coefficients"))]
+static COEFF_FILES: &[(&str, &[u8])] = &[];
+
+/// Every file compiled into this build, by its path relative to an `itshfbc`
+/// root. What is here depends on the `embedded-coefficients` feature.
+fn files() -> impl Iterator<Item = &'static (&'static str, &'static [u8])> {
+    FREE_FILES.iter().chain(COEFF_FILES.iter())
+}
 
 /// The root that reads only compiled-in bytes.
 pub fn embedded_root() -> PathBuf {
@@ -130,16 +155,31 @@ fn source(root: &Path) -> Source<'_> {
 }
 
 fn compiled(rel: &str) -> Result<Cow<'static, [u8]>> {
-    FILES
-        .iter()
-        .find(|(name, _)| *name == rel)
-        .map(|(_, bytes)| Cow::Borrowed(*bytes))
-        .ok_or_else(|| {
-            Error::new(
-                ErrorKind::NotFound,
-                format!("{rel} is not one of the {} embedded files", FILES.len()),
-            )
-        })
+    if let Some((_, bytes)) = files().find(|(name, _)| *name == rel) {
+        return Ok(Cow::Borrowed(bytes));
+    }
+    // A coefficient file asked for in a build without them is the one
+    // failure a caller can fix, so it says how rather than reporting a
+    // count. Without this the message reads as a corrupt build.
+    if cfg!(not(feature = "embedded-coefficients")) && rel.starts_with("coeffs/") {
+        return Err(Error::new(
+            ErrorKind::NotFound,
+            format!(
+                "{rel} is not compiled into this build: the `embedded-coefficients` \
+                 feature is off. Those files originate in CCIR Report 340 and URSI \
+                 publications, so the published crate does not carry them. Either \
+                 build with the feature from a source checkout, or give a real \
+                 itshfbc root in place of \"{EMBEDDED}\"."
+            ),
+        ));
+    }
+    Err(Error::new(
+        ErrorKind::NotFound,
+        format!(
+            "{rel} is not one of the {} embedded files",
+            files().count()
+        ),
+    ))
 }
 
 /// Reads a data file named relative to the root, as `coeffs/coeff01w.bin`.
@@ -181,8 +221,7 @@ mod tests {
     fn every_embedded_file_is_reachable_by_its_name() {
         // The list is written by hand, so a name that does not match its
         // path would compile and then fail at run time on one month only.
-        let missing: Vec<&str> = FILES
-            .iter()
+        let missing: Vec<&str> = files()
             .filter(|(rel, _)| read(&embedded_root(), rel).is_err())
             .map(|(rel, _)| *rel)
             .collect();
@@ -190,6 +229,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "embedded-coefficients")]
     fn the_twelve_months_and_both_models_are_present() {
         // A missing month is a prediction that fails in one month of the
         // year, which is the kind of gap a smoke test does not find.
@@ -218,9 +258,36 @@ mod tests {
         std::fs::write(dir.join("coeffs/coeff01w.bin"), b"overridden").expect("write");
         let root = overlay_root(&dir);
         assert_eq!(&*read(&root, "coeffs/coeff01w.bin").expect("read"), b"overridden");
-        // Not written there, so it comes from the binary.
-        assert!(read(&root, "coeffs/coeff02w.bin").expect("read").len() > 1000);
+        // Not written there, so it comes from the binary — when the binary
+        // has it. Without the feature the fall-through is the error instead,
+        // which is the same code path.
+        if cfg!(feature = "embedded-coefficients") {
+            assert!(read(&root, "coeffs/coeff02w.bin").expect("read").len() > 1000);
+        } else {
+            assert!(read(&root, "coeffs/coeff02w.bin").is_err());
+        }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_antenna_files_are_always_compiled_in() {
+        // NTIA/ITS wrote these and they carry no redistribution question,
+        // so they are present whether the coefficient feature is on or not.
+        assert!(read(&embedded_root(), "antennas/default/isotrope").is_ok());
+        assert!(read(&embedded_root(), "antennas/default/ccir.000").is_ok());
+        assert_eq!(FREE_FILES.len(), 31);
+    }
+
+    #[test]
+    #[cfg(not(feature = "embedded-coefficients"))]
+    fn a_missing_coefficient_says_which_feature_supplies_it() {
+        // The one failure a caller can act on. Without this it reads as a
+        // corrupt build rather than as a build made a particular way.
+        let err = read(&embedded_root(), "coeffs/coeff01w.bin").expect_err("no coeffs");
+        let text = err.to_string();
+        assert!(text.contains("embedded-coefficients"), "{text}");
+        assert!(text.contains("CCIR"), "{text}");
+        assert!(text.contains("itshfbc"), "{text}");
     }
 
     #[test]

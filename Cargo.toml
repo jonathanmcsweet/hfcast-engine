@@ -1,11 +1,42 @@
 [package]
 name = "hfcast"
-version = "0.64.0"
+version = "0.65.0"
 edition = "2021"
-description = "HF propagation engine: a Rust port of VOACAP, and the harness that verifies it"
+rust-version = "1.87"
+description = "HF radio propagation prediction: a Rust port of VOACAP, verified cell by cell against the Fortran"
 license = "Apache-2.0"
-# Publishing waits on the coefficient-file decision in docs/licence.md.
-publish = false
+repository = "https://github.com/jonathanmcsweet/hfcast-engine"
+readme = "README.md"
+keywords = ["radio", "propagation", "voacap", "ionosphere", "hf"]
+categories = ["science", "simulation"]
+
+# The ionospheric coefficients are not in the published package. They
+# originate in CCIR Report 340 and URSI publications rather than with
+# NTIA/ITS, and whether they may be redistributed is not settled — see
+# docs/licence.md. Everything else NTIA/ITS wrote is a work of the US
+# Government and ships.
+#
+# A build from a source checkout can compile them in with the
+# `embedded-coefficients` feature. A build without them reads them from a
+# real `itshfbc` root, which is how the reference engine has always found
+# them.
+exclude = [
+  "embedded/coeffs/**",
+  "docs/**",
+  "tools/**",
+  "tests/**",
+  "trace/**",
+  "soak-paths.tsv",
+]
+
+[features]
+default = []
+
+# Compiles the 637 KB of ionospheric coefficients into the binary, so a
+# prediction needs no `itshfbc` tree on disk. Only available when building
+# from the repository: the files are not in the published package. See the
+# note above.
+embedded-coefficients = []
 
 # No dependencies on purpose. The harness is the reference against which a port
 # is judged, so its own supply chain is kept empty: everything here is std.
