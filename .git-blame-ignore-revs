@@ -1,0 +1,12 @@
+# Commits that changed formatting only, and would otherwise hide the real
+# author of every line they touched.
+#
+# `git blame` skips these when told to:
+#
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# GitHub reads this file by name and skips them without any configuration.
+
+# style(engine): format with rustfmt, and gate CI on it
+# 37 files, whitespace only, verified by portcheck against the Fortran.
+c61ca7aa6e418dbb656a3a46b57c49c832f85544
