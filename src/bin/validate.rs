@@ -53,7 +53,7 @@ use hfcast::voacap::output::render;
 use hfcast::itu::{parse_report, run_case, ItuPaths};
 use hfcast::listing::parse_listing;
 use hfcast::runner::{itshfbc_dir, map_limit, run_deck, variant_bin, IsolatedRoot};
-use hfcast::stats::{correlation, fit_line, median, rms};
+use hfcast::stats::{correlation, fit_line, median, median_in_place, rms};
 use hfcast::wspr::{
     self, smoothed_ssn, WsprPath, DECODE_FLOOR_DB, WSPR_BANDWIDTH_HZ, WSPR_BANDWIDTH_OFFSET_DB,
 };
@@ -499,7 +499,7 @@ impl EngineScore {
         let mut residuals: Vec<f64> = predicted.iter().zip(observed).map(|(p, o)| p - o).collect();
         // One offset per path absorbs the unknown antennas, the unknown local
         // noise, and any constant error in the bandwidth conversion.
-        let offset = median(&mut residuals.clone());
+        let offset = median(&residuals);
         self.offsets.push(offset);
         for r in &mut residuals {
             *r -= offset;
@@ -521,11 +521,7 @@ impl EngineScore {
     }
 
     fn line(&self, name: &str) -> String {
-        let mut errors = self.errors.clone();
-        let mut scaled = self.scaled_errors.clone();
-        let mut correlations = self.correlations.clone();
-        let mut slopes = self.slopes.clone();
-        let optional = |v: &mut Vec<f64>, width: usize| -> String {
+        let optional = |v: &[f64], width: usize| -> String {
             if v.is_empty() {
                 "—".to_string()
             } else {
@@ -537,14 +533,14 @@ impl EngineScore {
         format!(
             "| {name} | {} | {:.1} | {:.1} | {} | {} | {} |",
             self.errors.len(),
-            median(&mut errors),
+            median(&self.errors),
             rms(&self.errors),
-            optional(&mut correlations, 2),
-            optional(&mut slopes, 2),
-            if scaled.is_empty() {
+            optional(&self.correlations, 2),
+            optional(&self.slopes, 2),
+            if self.scaled_errors.is_empty() {
                 "—".to_string()
             } else {
-                format!("{:.1}", median(&mut scaled))
+                format!("{:.1}", median(&self.scaled_errors))
             },
         )
     }
@@ -587,7 +583,7 @@ fn score(outcomes: &[PathOutcome], uncensored_only: bool) -> Scores {
         }
         s.used += 1;
 
-        let level = median(&mut observed.clone());
+        let level = median(&observed);
         let flat: Vec<f64> = vec![level; observed.len()];
         let take = |f: fn(&HourSample) -> f64| -> Vec<f64> { o.hours.iter().map(f).collect() };
 
@@ -621,14 +617,14 @@ fn report(month: &str, ssn: f64, sporadic_e: bool, outcomes: &[PathOutcome], dat
         let v: Vec<f64> = o.hours.iter().map(|h| h.voacap_snr).collect();
         let i: Vec<f64> = o.hours.iter().map(|h| h.itu_snr).collect();
         // The control: predict every hour as the path's own median.
-        let level = median(&mut observed.clone());
+        let level = median(&observed);
         let f: Vec<f64> = vec![level; observed.len()];
 
         let mad = |pred: &[f64]| -> f64 {
             let r: Vec<f64> = pred.iter().zip(&observed).map(|(p, o)| p - o).collect();
-            let off = median(&mut r.clone());
+            let off = median(&r);
             let mut abs: Vec<f64> = r.iter().map(|x| (x - off).abs()).collect();
-            median(&mut abs)
+            median_in_place(&mut abs)
         };
         per_path.push_str(&format!(
             "{},{:.0},{},{},{:.2},{:.2},{:.2}\n",

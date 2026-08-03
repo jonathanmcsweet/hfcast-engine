@@ -945,6 +945,18 @@ pub fn point_to_point_table(s: &AntennaSetup) -> Result<GainTable, Unsupported> 
         }
         31..=47 => {
             let indx = jant - 30;
+            // Type 40 is HFMUFES #10, which `mufesgan` has no gain for:
+            // the reference STOPs there and this port panics to match. A
+            // card naming it is refused here instead, because reaching
+            // that panic aborts the whole process, and this crate is
+            // linked into an application. `antcheck` reports it pending,
+            // which is what the other families the reference refuses do.
+            if indx == 10 {
+                return Err(Unsupported {
+                    jant,
+                    family: "HFMUFES #10 (no gain; the reference STOPs)",
+                });
+            }
             let mp = super::hfmufes::mufesint(indx, &parm);
             let mut st = super::hfmufes::MufesState::default();
             for ifreq in lo..=hi {
@@ -1173,6 +1185,18 @@ pub fn area_table(s: &AntennaSetup, freq: R) -> Result<(GainTable, AreaGainTable
         }
         31..=47 => {
             let indx = jant - 30;
+            // Type 40 is HFMUFES #10, which `mufesgan` has no gain for:
+            // the reference STOPs there and this port panics to match. A
+            // card naming it is refused here instead, because reaching
+            // that panic aborts the whole process, and this crate is
+            // linked into an application. `antcheck` reports it pending,
+            // which is what the other families the reference refuses do.
+            if indx == 10 {
+                return Err(Unsupported {
+                    jant,
+                    family: "HFMUFES #10 (no gain; the reference STOPs)",
+                });
+            }
             let mp = super::hfmufes::mufesint(indx, &parm);
             let mut st = super::hfmufes::MufesState::default();
             // The priming call passes KAS = 1, which computes the
@@ -1808,5 +1832,43 @@ mod tests {
         assert_eq!(az, 0.0);
         let (az, _) = dazel0(40.0, 20.0, 10.0, 20.0);
         assert_eq!(az, 180.0);
+    }
+
+    /// Type 40 is HFMUFES #10, the one `mufesgan` has no gain for.
+    ///
+    /// It is a labelled type, not a malformed one — `antmodel` names it
+    /// `HFMUFES#40` — and `jant` is read from a file with no range check,
+    /// so a card can ask for it. Before this guard the run reached a
+    /// `panic!` mirroring the reference's `STOP`, which aborts the whole
+    /// process. This crate is linked into an application, so it refuses
+    /// instead.
+    #[test]
+    fn antenna_type_40_is_refused_rather_than_aborting() {
+        assert_eq!(antmodel(40, 0.0), "HFMUFES#40");
+        let mut file = AntennaFile::default();
+        file.parm[1] = 40.0;
+        assert_eq!(file.jant(), 40);
+        let setup = AntennaSetup {
+            file: &file,
+            end: AntennaEnd::Transmit,
+            min_freq: 2,
+            max_freq: 3,
+            design_freq: 10.0,
+            beam_deg: 0.0,
+            power_field: 1.0,
+            azimuth_deg: 0.0,
+            model: Model::Compatible,
+        };
+        let refused = point_to_point_table(&setup).expect_err("type 40 has no gain");
+        assert_eq!(refused.jant, 40);
+        let refused = area_table(&setup, 7.1).expect_err("type 40 has no gain");
+        assert_eq!(refused.jant, 40);
+        assert!(refused.to_string().contains("HFMUFES #10"), "{refused}");
+
+        // Both refusals happen before any gain is computed, which is why
+        // this test needs no realistic antenna parameters. A neighbouring
+        // type is deliberately not built here: an all-zero card is not one
+        // any deck writes, and the families that accept one take an
+        // unbounded time over it.
     }
 }

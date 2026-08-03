@@ -32,7 +32,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use hfcast::geomag::{self, GeomagTable};
-use hfcast::stats::median;
+use hfcast::stats::{median, median_in_place};
 use hfcast::wspr::{self, PathKey};
 
 /// A day needs this many hours present before its mean residual is used.
@@ -119,7 +119,7 @@ fn series_for_month(dir: &Path, min_hours: usize) -> Result<Vec<Series>, String>
                 continue;
             }
             let mut values: Vec<f64> = days.iter().map(|(_, v)| *v).collect();
-            let centre = median(&mut values);
+            let centre = median_in_place(&mut values);
             for (day, value) in days {
                 by_day.entry(*day).or_default().push(value - centre);
             }
@@ -291,7 +291,7 @@ fn main() -> ExitCode {
             spread_db: if abs_sorted.is_empty() {
                 0.0
             } else {
-                median(&mut abs_sorted)
+                median_in_place(&mut abs_sorted)
             },
         });
     }
@@ -356,8 +356,7 @@ fn main() -> ExitCode {
     );
     println!();
     if !all_abs.is_empty() {
-        let mut sorted = all_abs.clone();
-        let typical = median(&mut sorted);
+        let typical = median(&all_abs);
         println!("Median absolute daily residual over every path and day: {typical:.2} dB.");
 
         // What perfect use of the correlation would be worth. A predictor

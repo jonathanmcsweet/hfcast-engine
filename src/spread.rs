@@ -30,7 +30,7 @@ use std::path::Path;
 use crate::deck::{build_deck, DeckCase};
 use crate::listing::parse_listing;
 use crate::runner::{map_limit, run_deck, variant_bin, IsolatedRoot};
-use crate::stats::{median, phi, quantile};
+use crate::stats::{median, phi, quantile_in_place};
 use crate::wspr::{self, smoothed_ssn};
 
 pub const VOACAP_VARIANT: &str = "O2";
@@ -173,13 +173,13 @@ pub fn gather(dir: &Path) -> Result<MonthSpread, String> {
             if observed.len() < MIN_DAYS {
                 continue;
             }
-            let mut values: Vec<f64> = observed.iter().map(|d| d.value).collect();
+            let values: Vec<f64> = observed.iter().map(|d| d.value).collect();
             records.push(SpreadRecord {
                 lw,
                 up,
                 hour: hour as u8,
                 days: observed.clone(),
-                centre: median(&mut values),
+                centre: median(&values),
             });
         }
         Ok::<Vec<SpreadRecord>, String>(records)
@@ -271,8 +271,8 @@ pub fn load_month(path: &Path) -> Option<MonthSpread> {
 /// clearly above the decode floor; otherwise it is truncated, not measured.
 pub fn observed_deciles(r: &SpreadRecord) -> (Option<f64>, Option<f64>) {
     let mut values: Vec<f64> = r.days.iter().map(|d| d.value).collect();
-    let q10 = quantile(&mut values, 0.1);
-    let q90 = quantile(&mut values, 0.9);
+    let q10 = quantile_in_place(&mut values, 0.1);
+    let q90 = quantile_in_place(&mut values, 0.9);
     let lower = if q10 >= CENSOR_SAFE_DB {
         Some(r.centre - q10)
     } else {
@@ -399,8 +399,7 @@ mod tests {
     use super::*;
 
     fn record(lw: f64, up: f64, values: Vec<f64>) -> SpreadRecord {
-        let mut sorted = values.clone();
-        let centre = median(&mut sorted);
+        let centre = median(&values);
         SpreadRecord {
             lw,
             up,

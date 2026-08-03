@@ -105,7 +105,9 @@ impl From<io::Error> for RunError {
 /// This is what makes concurrent runs safe. See the module comment for why
 /// unique deck filenames are not enough on their own.
 pub struct IsolatedRoot {
-    path: PathBuf,
+    /// `None` once [`IsolatedRoot::keep`] has given the directory up, which
+    /// is how `Drop` is told not to remove it.
+    path: Option<PathBuf>,
 }
 
 impl IsolatedRoot {
@@ -126,11 +128,11 @@ impl IsolatedRoot {
         // A leftover from an interrupted run would otherwise be reused.
         let _ = fs::remove_dir_all(&path);
         copy_dir_all(&itshfbc_dir(), &path)?;
-        Ok(Self { path })
+        Ok(Self { path: Some(path) })
     }
 
     pub fn path(&self) -> &Path {
-        &self.path
+        self.path.as_deref().expect("the root was given up by keep()")
     }
 
     /// Replaces one file in the private tree with the given bytes.
@@ -140,12 +142,21 @@ impl IsolatedRoot {
     /// into a real directory of per-entry links; only then can one entry be
     /// swapped without touching the shared installation.
     pub fn replace_file(&self, relative: &str, bytes: &[u8]) -> io::Result<()> {
-        let target = self.path.join(relative);
+        let target = self.path().join(relative);
         if let Some(parent) = target.parent() {
             materialize_dir(parent)?;
         }
         let _ = fs::remove_file(&target);
         fs::write(&target, bytes)
+    }
+
+    /// Gives up the directory: the path is returned and nothing is removed.
+    ///
+    /// A test that has already deleted the tree around this guard needs a way
+    /// to say so. Without one the only option was `std::mem::forget`, which
+    /// leaks the `PathBuf` and reads as a mistake rather than as a decision.
+    pub fn keep(mut self) -> PathBuf {
+        self.path.take().unwrap_or_default()
     }
 }
 
@@ -173,7 +184,10 @@ fn materialize_dir(dir: &Path) -> io::Result<()> {
 
 impl Drop for IsolatedRoot {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
+        // `None` after `keep`, which is how a caller declines the removal.
+        if let Some(path) = self.path.as_ref() {
+            let _ = fs::remove_dir_all(path);
+        }
     }
 }
 
@@ -476,7 +490,7 @@ mod tests {
         std::os::unix::fs::symlink(&share, root_dir.join("coeffs")).expect("link");
 
         let root = IsolatedRoot {
-            path: root_dir.clone(),
+            path: Some(root_dir.clone()),
         };
         root.replace_file("coeffs/fof2CCIR.daw", b"irtam")
             .expect("replace");
@@ -495,8 +509,9 @@ mod tests {
             fs::read(share.join("fof2CCIR.daw")).expect("shared"),
             b"climatology"
         );
-        // Forget the root so Drop does not delete the whole test base twice.
-        std::mem::forget(root);
+        // The tree is removed here, so the guard must not remove it again.
+        let kept = root.keep();
+        assert_eq!(kept, root_dir);
         let _ = fs::remove_dir_all(&base);
     }
 

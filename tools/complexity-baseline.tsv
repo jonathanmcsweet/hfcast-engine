@@ -11,7 +11,7 @@ src/bin/areacheck.rs	cases	1	267
 src/bin/areacheck.rs	main	25	186
 src/bin/complexity.rs	measure	24	57
 src/bin/complexity.rs	walk	21	59
-src/bin/daily.rs	main	29	221
+src/bin/daily.rs	main	29	220
 src/bin/engines.rs	diagnose	19	116
 src/bin/engines.rs	main	21	143
 src/bin/engines.rs	print_report	5	76
@@ -47,8 +47,8 @@ src/service.rs	area	30	168
 src/service.rs	build_request	19	57
 src/spread.rs	gather	22	110
 src/spread.rs	load_month	23	39
-src/voacap/antenna.rs	area_table	32	166
-src/voacap/antenna.rs	point_to_point_table	40	208
+src/voacap/antenna.rs	area_table	33	178
+src/voacap/antenna.rs	point_to_point_table	41	220
 src/voacap/antenna.rs	read_antenna	62	170
 src/voacap/ccir.rs	antinit2	8	147
 src/voacap/ccir.rs	gain	16	104

@@ -100,8 +100,8 @@ struct SlopeFit {
 
 impl SlopeFit {
     fn add_path(&mut self, observed: &[f64], predicted: &[f64]) {
-        let centre_p = median(&mut predicted.to_vec());
-        let centre_o = median(&mut observed.to_vec());
+        let centre_p = median(predicted);
+        let centre_o = median(observed);
         for (p, o) in predicted.iter().zip(observed) {
             let x = p - centre_p;
             let y = o - centre_o;
@@ -165,7 +165,7 @@ fn evaluate(
     for p in paths {
         let k = k_for(p);
         let predicted = &p.predicted[predictor];
-        let centre = median(&mut predicted.to_vec());
+        let centre = median(predicted);
         let corrected: Vec<f64> = predicted
             .iter()
             .map(|v| centre + k * (v - centre))
@@ -176,11 +176,11 @@ fn evaluate(
             .zip(&p.observed)
             .map(|(c, o)| c - o)
             .collect();
-        let offset = median(&mut residuals.clone());
+        let offset = median(&residuals);
         errors.extend(residuals.iter_mut().map(|r| (*r - offset).abs()));
     }
 
-    let med = median(&mut errors.clone());
+    let med = median(&errors);
     let rms = hfcast::stats::rms(&errors);
     (med, rms)
 }
@@ -190,10 +190,10 @@ fn evaluate(
 fn evaluate_flat(paths: &[PathSeries]) -> (f64, f64) {
     let mut errors: Vec<f64> = Vec::new();
     for p in paths {
-        let centre = median(&mut p.observed.clone());
+        let centre = median(&p.observed);
         errors.extend(p.observed.iter().map(|o| (o - centre).abs()));
     }
-    let med = median(&mut errors.clone());
+    let med = median(&errors);
     let rms = hfcast::stats::rms(&errors);
     (med, rms)
 }

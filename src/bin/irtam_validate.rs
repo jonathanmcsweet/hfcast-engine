@@ -27,7 +27,7 @@ use hfcast::geomag::{self, GeomagTable};
 use hfcast::irtam;
 use hfcast::listing::parse_listing;
 use hfcast::runner::{map_limit, run_deck, variant_bin, IsolatedRoot};
-use hfcast::stats::{correlation, fit_line, median};
+use hfcast::stats::{correlation, fit_line, median, median_in_place};
 use hfcast::wspr::{self, smoothed_ssn};
 
 const VOACAP_VARIANT: &str = "O2";
@@ -272,13 +272,13 @@ fn offset_adjusted_mae(samples: &[Sample], pick: &dyn Fn(&Sample) -> f64) -> f64
     }
     let offsets: HashMap<usize, f64> = by_path
         .into_iter()
-        .map(|(p, mut residuals)| (p, median(&mut residuals)))
+        .map(|(p, mut residuals)| (p, median_in_place(&mut residuals)))
         .collect();
     let mut errors: Vec<f64> = samples
         .iter()
         .map(|s| (s.observed - pick(s) - offsets[&s.path]).abs())
         .collect();
-    median(&mut errors)
+    median_in_place(&mut errors)
 }
 
 /// One deviation pair: how far the day sat from its path-hour's monthly
@@ -314,7 +314,7 @@ fn deviations(
     let centre = |m: &HashMap<(usize, u8), Vec<f64>>| -> HashMap<(usize, u8), f64> {
         m.iter()
             .filter(|(_, v)| v.len() >= 5)
-            .map(|(k, v)| (*k, median(&mut v.clone())))
+            .map(|(k, v)| (*k, median(v)))
             .collect()
     };
     let obs_centre = centre(&obs_by_hour);
@@ -346,8 +346,8 @@ fn deviation_row(label: &str, pairs: &[&DeviationPair]) {
     println!(
         "| {label} | {} | {corr} | {slope} | {:.2} | {:.2} |",
         pairs.len(),
-        median(&mut sizes),
-        median(&mut observed_sizes),
+        median_in_place(&mut sizes),
+        median_in_place(&mut observed_sizes),
     );
 }
 

@@ -184,7 +184,7 @@ fn print_band_table(pools: &ZPools) {
         let pool = &pools.below_by_band[i];
         match widening_below(pool) {
             Some(w) => {
-                let z10 = quantile(&mut pool.to_vec(), 0.1);
+                let z10 = quantile(pool, 0.1);
                 println!("| {label} | {} | {z10:.2} | x {w:.2} |", pool.len());
             }
             None => println!("| {label} | {} | too few | |", pool.len()),
@@ -198,7 +198,7 @@ fn widening_below(pool: &[f64]) -> Option<f64> {
     if pool.len() < MIN_POOL {
         return None;
     }
-    let z10 = quantile(&mut pool.to_vec(), 0.1);
+    let z10 = quantile(pool, 0.1);
     Some((-z10 / DECILE_TO_SIGMA).max(0.0))
 }
 
@@ -228,7 +228,7 @@ fn print_z_summary(pools: &ZPools, side_below: bool) {
             println!("| {} | {} | too few | | | |", group.label(), pool.len());
             continue;
         }
-        let q = |f: f64| quantile(&mut pool.to_vec(), f);
+        let q = |f: f64| quantile(pool, f);
         let (a, b, c) = if side_below {
             (q(0.10), q(0.05), q(0.02))
         } else {
