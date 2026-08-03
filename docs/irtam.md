@@ -1,6 +1,6 @@
 # Real-time ionosphere data, tested against measured radio
 
-The roadmap's biggest open idea was to replace VOACAP's monthly-climatology
+The biggest open idea was to replace VOACAP's monthly-climatology
 input with IRTAM, the real-time ionosphere model that refits the global foF2
 map every 15 minutes from about 50 ionosonde stations. The premise: the
 engine's physics is fine, its input is blind to the actual day. This

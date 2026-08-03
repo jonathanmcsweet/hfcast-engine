@@ -83,8 +83,8 @@ median-focused daily model:
   +0.424 on days after Kp 5, reaching +0.726 in a storm month, is
   materially stronger than the quiet-day figure, and it lands exactly
   where the shipped storm-spread widening already operates. That
-  supports widening uncertainty from a Kp forecast — which is an
-  existing roadmap item — rather than shifting the median.
+  supports widening uncertainty from a Kp forecast — which is already
+  open work — rather than shifting the median.
 - **Some individual paths are far more predictable than the pool.**
   Ten paths exceed lag-1 of +0.86. If a daily model is ever attempted,
   those are where it should be tested first, though with the caveat below
@@ -98,7 +98,7 @@ carries its own error, and measurement noise pushes a correlation toward
 zero. So +0.340 is a floor for the true day-to-day persistence, and a
 low figure here would read as "not visible with this ruler" rather than
 "absent". Separating the two needs absolute ground truth, which is what
-the ionosonde-grade validation item in [roadmap.md](roadmap.md) is for.
+the ionosonde-grade validation, still open work, is for.
 
 **Inflating: station behaviour, not ionosphere.** This measurement cannot
 tell ionospheric persistence from station persistence. A receiver whose

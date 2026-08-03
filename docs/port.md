@@ -6,8 +6,8 @@ maintained ITS VOACAP) to Rust, module `hfcast::engine`.
 The first target was the point-to-point path this app exercises —
 method 30, isotropic antennas, single power — and that is finished and
 bit-identical. The goal since 2026-07-26 is every code path of the
-`voacapl` program, so the port can be a library others depend on;
-`docs/roadmap.md` holds the remaining stages. The interactive front
+`voacapl` program, so the port can be a library others depend on. The
+remaining stages are open work. The interactive front
 end, plotting, and the sibling engines ICEPAC and REC533 stay out of
 scope.
 
@@ -1012,7 +1012,7 @@ shares the hour body with the point-to-point driver: `hour_setup` holds
 what one hour reads and does not change, and `hour_body` is the hour
 itself, so `run`, `run_hour` and `run_area` cannot drift apart.
 
-Two things the driver does that a reading of the roadmap's note would
+Two things the driver does that a reading of the code alone would
 miss. The mode-loop state and `FSECV` carry from one grid point to the
 next, exactly as they carry from hour to hour: `HFAREA` does not reset
 them, so only the first point starts from the program-start zero. And it

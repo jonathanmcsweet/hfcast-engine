@@ -9,4 +9,4 @@
 
 # style(engine): format with rustfmt, and gate CI on it
 # 37 files, whitespace only, verified by portcheck against the Fortran.
-c61ca7aa6e418dbb656a3a46b57c49c832f85544
+d9db90e86527dc32a119ffc7e182f51a02ad5949

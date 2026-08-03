@@ -44,7 +44,7 @@
 //! They redirect where cards are read from and where the listing is
 //! written to; a caller who passes a [`Request`] and receives a
 //! `String` has nothing for them to do, and they never touch the
-//! model. `docs/roadmap-progress.md` records the decision.
+//! model.
 
 use std::path::Path;
 

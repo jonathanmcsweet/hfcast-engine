@@ -1,6 +1,12 @@
 # Rust build output
 target/
 
+# The roadmap and the completions ledger are kept outside this
+# repository. They stay in the working tree so a session can read and
+# update them, and must never be committed here.
+/docs/roadmap.md
+/docs/roadmap-progress.md
+
 # The reference engine and its builds, fetched rather than vendored.
 # tools/build-variants.sh writes one source copy and build per
 # optimisation level, and the ITU-R P.533 checkout is about 700 MB.

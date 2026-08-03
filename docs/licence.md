@@ -217,7 +217,7 @@ itself — and it now rests on that rather than on "building for one's own
 devices", which only ever covered a private build.
 
 The enquiry to ITU-R Study Group 3 has not been sent. It is free and
-slow, it blocks nothing, and it is recorded in `docs/roadmap.md`.
+slow, it blocks nothing, and it is recorded as open work.
 
 ## The fallback, unchanged
 

@@ -7,7 +7,7 @@
 //! "identical to the reference" a checkable claim rather than an
 //! opinion, and it is the only property the whole verification method
 //! rests on. But several of the reproduced behaviours are plainly
-//! defects, documented at their sites and in `docs/roadmap.md`, and
+//! defects, documented at their sites in this engine, and
 //! the point of having a readable engine is to be able to fix them.
 //!
 //! So both live in one engine, chosen at run time. Not two

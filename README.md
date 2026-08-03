@@ -176,7 +176,6 @@ agreement with the original.
 | [irtam.md](docs/irtam.md) | Real-time ionospheric maps, measured |
 | [licence.md](docs/licence.md) | Where the code and the data come from |
 | [soak.md](docs/soak.md) | The daily parity job |
-| [roadmap.md](docs/roadmap.md) | Open work |
 
 ## Data files
 
