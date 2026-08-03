@@ -4,7 +4,8 @@
 //!
 //! * `fof2CCIR.daw` (or `fof2URSI.daw`) — direct-access, one 7904-byte
 //!   record per month, holding `XF2COF(13,76,2)` as little-endian f32: the
-//!   foF2 spherical-harmonic map at sunspot numbers 0 and 100.
+//!   foF2 spherical-harmonic map at sunspot numbers 0 and 100. Only the
+//!   CCIR file is embedded; `URSI88` needs a real `itshfbc` root.
 //! * `coeffNNw.bin` — gfortran sequential unformatted (each record framed
 //!   by 4-byte length markers), nine records matching the nine `READ`
 //!   statements in the Fortran.
@@ -300,6 +301,10 @@ fn blend<const I: usize, const J: usize>(
 }
 
 /// Which foF2 coefficient family the run uses (the `COEFFS` card).
+///
+/// [`FoF2Model::Ursi`] needs a real `itshfbc` root. Its maps are not embedded
+/// in any build of this crate, because the ITU publishes the CCIR maps itself
+/// and does not publish the URSI-88 ones. See `docs/licence.md`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FoF2Model {
     Ccir,

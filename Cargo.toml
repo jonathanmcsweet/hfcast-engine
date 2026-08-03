@@ -1,6 +1,6 @@
 [package]
 name = "hfcast"
-version = "0.65.0"
+version = "0.66.0"
 edition = "2021"
 rust-version = "1.87"
 description = "HF radio propagation prediction: a Rust port of VOACAP, verified cell by cell against the Fortran"
@@ -10,11 +10,10 @@ readme = "README.md"
 keywords = ["radio", "propagation", "voacap", "ionosphere", "hf"]
 categories = ["science", "simulation"]
 
-# The ionospheric coefficients are not in the published package. They
-# originate in CCIR Report 340 and URSI publications rather than with
-# NTIA/ITS, and whether they may be redistributed is not settled — see
-# docs/licence.md. Everything else NTIA/ITS wrote is a work of the US
-# Government and ships.
+# The ionospheric coefficients are not in the published package. Part of
+# that data comes from CCIR Reports 322 and 340 rather than from NTIA/ITS
+# — see NOTICE and docs/licence.md. Everything NTIA/ITS wrote is a work of
+# the US Government and ships.
 #
 # A build from a source checkout can compile them in with the
 # `embedded-coefficients` feature. A build without them reads them from a
@@ -32,10 +31,13 @@ exclude = [
 [features]
 default = []
 
-# Compiles the 637 KB of ionospheric coefficients into the binary, so a
+# Compiles the 544 KB of ionospheric coefficients into the binary, so a
 # prediction needs no `itshfbc` tree on disk. Only available when building
 # from the repository: the files are not in the published package. See the
 # note above.
+#
+# This does not cover the URSI-88 foF2 maps, which are in no build at all.
+# A `COEFFS URSI88` card needs a real `itshfbc` root.
 embedded-coefficients = []
 
 # No dependencies on purpose. The harness is the reference against which a port

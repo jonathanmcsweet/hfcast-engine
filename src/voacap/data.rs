@@ -85,13 +85,21 @@ embedded_files!(
     "database/version.w32",
 );
 
-// The ionospheric coefficients, which originate in CCIR Report 340 and URSI
-// publications rather than with NTIA/ITS. 637 KB of the 653.
+// The ionospheric coefficients: 544 KB of the 560 in the repository.
 //
-// These are behind a feature that is off by default, so the published crate
-// carries none of them and redistributes nothing whose terms are unsettled.
-// A build from a source checkout can turn the feature on; a build without it
-// reads the files from a real `itshfbc` root instead. See `docs/licence.md`.
+// Two bodies wrote them. About 210 KB is NTIA/ITS work — sporadic E, the E
+// region, F1 and the prediction-error tables. The rest comes from CCIR
+// Report 322 (atmospheric noise) and CCIR Report 340 (the foF2 and
+// M(3000)F2 maps), which the ITU publishes itself in its P.372 and P.533
+// reference software. See `NOTICE` and `docs/licence.md`.
+//
+// They are behind a feature that is off by default, so the published crate
+// carries none of them. A build from a source checkout can turn the feature
+// on; a build without it reads the files from a real `itshfbc` root.
+//
+// `fof2URSI.daw` is deliberately absent. The URSI-88 maps are the one part
+// with no ITU publication behind them, and no caller here selects them, so
+// `COEFFS URSI88` needs a real `itshfbc` root.
 #[cfg(feature = "embedded-coefficients")]
 embedded_files!(
     COEFF_FILES,
@@ -108,7 +116,6 @@ embedded_files!(
     "coeffs/coeff11w.bin",
     "coeffs/coeff12w.bin",
     "coeffs/fof2CCIR.daw",
-    "coeffs/fof2URSI.daw",
 );
 
 /// Empty without the feature, so every lookup falls through to the message in
@@ -158,6 +165,19 @@ fn compiled(rel: &str) -> Result<Cow<'static, [u8]>> {
     if let Some((_, bytes)) = files().find(|(name, _)| *name == rel) {
         return Ok(Cow::Borrowed(bytes));
     }
+    // The URSI-88 maps are in no build, with the feature or without it, so
+    // the message must not send the caller to turn a feature on.
+    if rel == "coeffs/fof2URSI.daw" {
+        return Err(Error::new(
+            ErrorKind::NotFound,
+            format!(
+                "{rel} is not compiled into any build of this crate. The URSI-88 \
+                 foF2 maps are not in the repository: unlike the CCIR maps, the \
+                 ITU does not publish them itself. Give a real itshfbc root in \
+                 place of \"{EMBEDDED}\", or use the default CCIR maps."
+            ),
+        ));
+    }
     // A coefficient file asked for in a build without them is the one
     // failure a caller can fix, so it says how rather than reporting a
     // count. Without this the message reads as a corrupt build.
@@ -166,10 +186,10 @@ fn compiled(rel: &str) -> Result<Cow<'static, [u8]>> {
             ErrorKind::NotFound,
             format!(
                 "{rel} is not compiled into this build: the `embedded-coefficients` \
-                 feature is off. Those files originate in CCIR Report 340 and URSI \
-                 publications, so the published crate does not carry them. Either \
-                 build with the feature from a source checkout, or give a real \
-                 itshfbc root in place of \"{EMBEDDED}\"."
+                 feature is off. Part of that data comes from CCIR Reports 322 and \
+                 340, so the published crate does not carry it. Either build with \
+                 the feature from a source checkout, or give a real itshfbc root in \
+                 place of \"{EMBEDDED}\"."
             ),
         ));
     }
@@ -230,7 +250,7 @@ mod tests {
 
     #[test]
     #[cfg(feature = "embedded-coefficients")]
-    fn the_twelve_months_and_both_models_are_present() {
+    fn the_twelve_months_and_the_ccir_maps_are_present() {
         // A missing month is a prediction that fails in one month of the
         // year, which is the kind of gap a smoke test does not find.
         for month in 1..=12 {
@@ -238,8 +258,18 @@ mod tests {
             assert!(read(&embedded_root(), &rel).is_ok(), "{rel}");
         }
         assert!(read(&embedded_root(), "coeffs/fof2CCIR.daw").is_ok());
-        assert!(read(&embedded_root(), "coeffs/fof2URSI.daw").is_ok());
         assert!(read(&embedded_root(), "database/version.w32").is_ok());
+    }
+
+    #[test]
+    fn the_ursi_maps_are_in_no_build_and_say_so() {
+        // Turning the feature on does not bring these back, so the message
+        // must not name the feature: it would send the reader in a circle.
+        let error = read(&embedded_root(), "coeffs/fof2URSI.daw")
+            .expect_err("URSI-88 is not embedded in any build");
+        let text = error.to_string();
+        assert!(text.contains("not in the repository"), "{text}");
+        assert!(!text.contains("embedded-coefficients"), "{text}");
     }
 
     #[test]

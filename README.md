@@ -180,14 +180,20 @@ agreement with the original.
 
 ## Data files
 
-The engine needs 653 KB of data: the ionospheric maps for each month, the
-antenna files, and one version string. Where they come from decides how
-they are shipped.
+The engine needs 560 KB of data: the ionospheric maps and noise tables for
+each month, the antenna files, and one version string. Where they come
+from decides how they are shipped.
 
 | Part | Size | Origin | In the published crate |
 | --- | --: | --- | --- |
 | Antenna files, version string | 16 KB | NTIA/ITS | yes |
-| Ionospheric coefficients | 637 KB | CCIR Report 340, URSI | **no** |
+| Sporadic E, E, F1, prediction error | 195 KB | NTIA/ITS | **no** |
+| Atmospheric noise | 216 KB | CCIR Report 322 | **no** |
+| foF2 and M(3000)F2 maps | 134 KB | CCIR Report 340 | **no** |
+
+The URSI-88 foF2 maps are in no build. They are the one part the ITU does
+not publish itself, and nothing here selects them, so a `COEFFS URSI88`
+card needs a real `itshfbc` root.
 
 The coefficients are behind the `embedded-coefficients` feature, which is
 off by default, and the files are excluded from the package. A build from
@@ -209,11 +215,13 @@ cargo build --features embedded-coefficients
 Asking for `"<embedded>"` without the feature fails with a message saying
 so, rather than quietly giving a wrong answer.
 
-[docs/licence.md](docs/licence.md) records where each file comes from and
-why the split is drawn here. The ionospheric coefficients originate in ITU
-publications, and ITU-R Study Group 3 publishes the same coefficients
-itself, for implementers, free from copyright assertions — but that is a
-practice rather than a licence, so the crate does not rely on it.
+[NOTICE](NOTICE) records what is inside `embedded/coeffs/`, array by
+array, and [docs/licence.md](docs/licence.md) records how that was
+measured and what it does and does not settle. In short: ITU-R Study
+Group 3 publishes the CCIR Report 322 and 340 data itself, for
+implementers, free from copyright assertions, in its P.372 and P.533
+reference software. The crate does not rely on that — it carries none of
+it — but the repository and the telephone application do.
 
 ## Licence
 

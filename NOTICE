@@ -23,10 +23,64 @@ NTIA/ITS disclaimer, carried forward from the original distribution:
     no liability for its use. Use of this software does not imply
     endorsement by NTIA/ITS or the United States Government.
 
-This product does not distribute the ionospheric coefficient files
-that VOACAP reads at run time. Those originate in CCIR and URSI
-publications rather than with NTIA/ITS. See docs/licence.md.
 
-The comparisons in docs/engines.md drive the ITU-R Study Group 3
+THE DATA FILES IN `embedded/`
+
+Apache-2.0 covers the software in this repository. It does not cover
+these data files, which are the work of other bodies and keep their
+own status. They are listed here so that status travels with them.
+
+`embedded/antennas/` and `embedded/database/`, about 16 KB, are part
+of the VOACAP distribution and carry the NTIA/ITS status above.
+
+`embedded/coeffs/` holds 544 KB in thirteen files: twelve monthly
+files and the CCIR foF2 map. Two bodies wrote what is inside them.
+The split below is measured by the arrays `REDMAP` reads, record by
+record, and rounded:
+
+    195 KB   Sporadic-E, E region and F1 maps, the F2 height ratio,
+             the solar index table and the prediction error
+             statistics. NTIA/ITS work, same status as the antenna
+             files above.
+
+    216 KB   Atmospheric radio noise: Fam, its variability and the
+             related maps. From CCIR Report 322.
+
+    134 KB   The foF2 and M(3000)F2 ionospheric maps. From CCIR
+             Report 340.
+
+The ITU publishes the CCIR Report 322 and Report 340 data itself, in
+the reference software of ITU-R Study Group 3 for Recommendations
+P.372 and P.533, at github.com/ITU-R-Study-Group-3/ITU-R-HF, with this
+statement:
+
+    The ITURHFProp, P533 and P372 software has been developed
+    collaboratively by participants in ITU-R Study Group 3. It may be
+    used by implementers in their implementation of the Recommendation
+    as well as in revisions of the specific original Recommendation and
+    in other ITU Recommendations, free from any copyright assertions.
+
+The files here come through the VOACAP distribution rather than
+through the ITU's own release, so they hold the same coefficient set
+in a different binary format. `docs/licence.md` records what was
+compared, and what this arrangement does and does not settle.
+
+The URSI-88 foF2 maps, which VOACAP reads for a `COEFFS URSI88` card,
+are not in this repository. They are the one part of the coefficient
+set that the ITU does not publish itself. `COEFFS URSI88` therefore
+needs a real `itshfbc` tree.
+
+The published crate on crates.io carries none of `embedded/coeffs/`.
+Those files are behind the `embedded-coefficients` feature, which is
+off by default and excluded from the package.
+
+
+OTHER SOFTWARE THIS PRODUCT DOES NOT INCLUDE
+
+The comparisons in `docs/engines.md` drive the ITU-R Study Group 3
 reference implementation of Recommendation P.533. That software is not
 included here and is not part of this product.
+
+The `voacapl` distribution contains two GPL-3.0 programs, `dst2csv.f90`
+and `dst2ascii.f90`. Neither is included here, and nothing in this
+product derives from them or from the `f90getopt` module they use.

@@ -857,7 +857,9 @@ measured result rather than a reading of the source.
 CCIR, which `REDMAP` reads as a different `.daw` file. The port's
 coefficient reader already had both; the card now selects between
 them, and `fuzz --coeffs URSI88` runs the corpus through the URSI maps
-— 60 cases, identical.
+— 60 cases, identical. `fuzz` reads a real `itshfbc` tree, which is
+what `URSI88` needs: `fof2URSI.daw` is not embedded (see
+`docs/licence.md`), so `<embedded>` serves the CCIR maps only.
 
 `FPROB` multiplies each layer's critical frequency: E, F1, F2 and
 sporadic E. The deck builder wrote only the sporadic-E switch, all
