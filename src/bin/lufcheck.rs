@@ -15,10 +15,10 @@
 use std::process::ExitCode;
 
 use hfcast::deck::build_deck;
-use hfcast::voacap::run::{run_luf, RunInputs};
 use hfcast::fuzz::fuzz_cases;
 use hfcast::listing::parse_muf_table;
 use hfcast::runner::{map_limit, run_deck, variant_bin, IsolatedRoot};
+use hfcast::voacap::run::{run_luf, RunInputs};
 
 /// One parsed table row: GMT, LMT, FOT, HPF, ES MUF, MUF, LUF.
 type Row = [f64; 7];
@@ -49,7 +49,10 @@ fn main() -> ExitCode {
     for case in cases.iter_mut() {
         case.method = 26;
     }
-    println!("# LUF check: {} method-26 cases, indices {from}..\n", cases.len());
+    println!(
+        "# LUF check: {} method-26 cases, indices {from}..\n",
+        cases.len()
+    );
 
     struct Outcome {
         index: u64,
@@ -147,7 +150,11 @@ fn main() -> ExitCode {
             }
         }
     }
-    println!("\n{} hour-rows compared over {} cases.", rows, outcomes.len());
+    println!(
+        "\n{} hour-rows compared over {} cases.",
+        rows,
+        outcomes.len()
+    );
     if failed {
         println!("Verdict: the LUF search disagrees with the reference.");
         ExitCode::FAILURE

@@ -28,19 +28,19 @@
 
 pub mod api;
 pub mod compare;
-pub mod json;
-/// Temporary step timers; see `src/perf.rs`.
-pub mod perf;
 pub mod deck;
-pub mod voacap;
 pub mod fuzz;
 pub mod geomag;
 pub mod irtam;
 pub mod itu;
+pub mod json;
 pub mod listing;
+/// Temporary step timers; see `src/perf.rs`.
+pub mod perf;
 pub mod runner;
 pub mod service;
 pub mod spread;
 pub mod stats;
 pub mod sweep;
+pub mod voacap;
 pub mod wspr;

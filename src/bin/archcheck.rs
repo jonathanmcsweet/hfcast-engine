@@ -115,7 +115,12 @@ fn area_cases() -> Vec<AreaCase> {
         base("area/seattle-14mhz-03z", whole_sphere(47.6, -122.3), 0.0, 4),
         // Southern hemisphere and east of Greenwich, so both coordinate
         // signs are exercised, at an hour on the other side of the day.
-        base("area/sydney-14mhz-15z", whole_sphere(-33.9, 151.2), 90.0, 16),
+        base(
+            "area/sydney-14mhz-15z",
+            whole_sphere(-33.9, 151.2),
+            90.0,
+            16,
+        ),
         // A transmitter inside the polar cap, where the paths to most of the
         // grid cross the auroral zone and the bearings converge.
         base("area/polar-14mhz-12z", whole_sphere(78.2, 15.6), 180.0, 13),
@@ -195,10 +200,7 @@ fn main() -> ExitCode {
                 return ExitCode::FAILURE;
             }
         };
-        let text = listing_text(
-            &hours,
-            &body_lines(case.method, case.botlines.as_deref()),
-        );
+        let text = listing_text(&hours, &body_lines(case.method, case.botlines.as_deref()));
         if full {
             println!("=== {}\n{text}", case.id);
         } else {

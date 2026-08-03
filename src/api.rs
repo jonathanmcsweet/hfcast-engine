@@ -58,9 +58,7 @@ pub use crate::deck::{AntennaChoice, Edp, EfVar, EsVar, FREQ_SLOTS};
 pub use crate::voacap::coefficients::FoF2Model;
 pub use crate::voacap::model::Model;
 pub use crate::voacap::modes::{AllModesOut, Son};
-pub use crate::voacap::run::{
-    HourPrediction, IonPlot, MufHourOut, ParRow, PathReport, Prediction,
-};
+pub use crate::voacap::run::{HourPrediction, IonPlot, MufHourOut, ParRow, PathReport, Prediction};
 
 /// One end of the path.
 #[derive(Debug, Clone)]

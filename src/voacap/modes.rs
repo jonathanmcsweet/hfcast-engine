@@ -26,9 +26,9 @@
 
 use super::con::{D2R, DCL, PIO2, R, R2D, RZ, VOFL};
 use super::ionogram::{Ionogram, ANG};
-use super::model::Model;
 use super::ionosphere::{EsParams, LayerParams};
 use super::magnetic::MagneticVars;
+use super::model::Model;
 use super::muf::{IonoState, MufHour};
 use super::noise::NoiseResult;
 use super::sigdis::{prbmuf, xlin, SignalDistribution};

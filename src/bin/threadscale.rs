@@ -77,7 +77,10 @@ fn run_all(requests: &[String], threads: usize) -> (u128, usize) {
                 })
             })
             .collect();
-        handles.into_iter().map(|h| h.join().expect("a worker panicked")).sum()
+        handles
+            .into_iter()
+            .map(|h| h.join().expect("a worker panicked"))
+            .sum()
     });
 
     (started.elapsed().as_millis(), points)

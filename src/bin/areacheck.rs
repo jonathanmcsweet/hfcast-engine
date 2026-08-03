@@ -17,11 +17,11 @@
 
 use std::process::ExitCode;
 
+use hfcast::runner::{map_limit, run_area, variant_bin, IsolatedRoot};
 use hfcast::voacap::area::{Grid, Projection};
 use hfcast::voacap::coefficients::FoF2Model;
 use hfcast::voacap::model::Model;
 use hfcast::voacap::run::{f_fixed, run_area as port_area, AntennaCardSpec, AreaInputs};
-use hfcast::runner::{map_limit, run_area, variant_bin, IsolatedRoot};
 
 /// The values the area file holds fixed. What varies between cases is
 /// the geometry.
@@ -405,13 +405,20 @@ fn main() -> ExitCode {
             for i in 0..11 {
                 list += &format!("{:8.3}", case.freqs.get(i).copied().unwrap_or(0.0));
             }
-            if let Err(e) = std::fs::write(root.path().join("run").join("areafreq.dat"), list + "\n")
+            if let Err(e) =
+                std::fs::write(root.path().join("run").join("areafreq.dat"), list + "\n")
             {
                 out.broken = Some(format!("areafreq.dat: {e}"));
                 return out;
             }
         }
-        let text = match run_area(&reference, root.path(), case.name, &area_file(case), case.inverse) {
+        let text = match run_area(
+            &reference,
+            root.path(),
+            case.name,
+            &area_file(case),
+            case.inverse,
+        ) {
             Ok(t) => t,
             Err(e) => {
                 out.broken = Some(format!("reference: {e}"));
@@ -571,7 +578,8 @@ fn area_file(case: &Case) -> String {
     };
     [
         "Model    :VOACAP".to_string(),
-        "Colors   :Black    :Blue     :Ignore   :Ignore   :Red      :Black with shading".to_string(),
+        "Colors   :Black    :Blue     :Ignore   :Ignore   :Red      :Black with shading"
+            .to_string(),
         "Cities   :Receive.cty".to_string(),
         "Nparms   :    1".to_string(),
         "Parameter:MUF      0".to_string(),
@@ -593,7 +601,10 @@ fn area_file(case: &Case) -> String {
         "Method   :   30".to_string(),
         "Coeffs   :CCIR".to_string(),
         format!("Months   :{MONTH:7.2}   0.00   0.00   0.00   0.00   0.00   0.00   0.00   0.00"),
-        format!("Ssns     :{:7}      0      0      0      0      0      0      0      0", SSN as i32),
+        format!(
+            "Ssns     :{:7}      0      0      0      0      0      0      0      0",
+            SSN as i32
+        ),
         format!("Hours    :{HOUR:7}      0      0      0      0      0      0      0      0"),
         {
             // One frequency per plot. A value at or below 0.5 asks the

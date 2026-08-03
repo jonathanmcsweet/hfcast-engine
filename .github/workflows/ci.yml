@@ -40,6 +40,7 @@ jobs:
       # tests that ask for `<embedded>` do not run at all, because the
       # published crate does not carry those files. CI is a source
       # checkout, so it has them.
+      - run: cargo fmt --check
       - run: cargo build --all-targets --all-features
       - run: cargo test --all-features
       - run: cargo clippy --all-targets --all-features -- -D warnings
@@ -72,9 +73,6 @@ jobs:
           fi
           echo "package holds no coefficient files"
 
-      # No `cargo fmt --check`. The engine is laid out to match the
-      # Fortran it was translated from, table by table, and rustfmt
-      # would reflow that. See docs/roadmap.md.
 
   # The claim this crate is built on: that the Rust engine and the Fortran
   # it was translated from give the same answer. `portcheck` runs both over

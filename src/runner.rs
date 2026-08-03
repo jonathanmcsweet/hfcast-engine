@@ -132,7 +132,9 @@ impl IsolatedRoot {
     }
 
     pub fn path(&self) -> &Path {
-        self.path.as_deref().expect("the root was given up by keep()")
+        self.path
+            .as_deref()
+            .expect("the root was given up by keep()")
     }
 
     /// Replaces one file in the private tree with the given bytes.

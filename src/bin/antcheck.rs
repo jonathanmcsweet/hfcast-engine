@@ -19,11 +19,11 @@
 use std::path::Path;
 use std::process::ExitCode;
 
+use hfcast::runner::{itshfbc_dir, run_deck, variant_bin, IsolatedRoot};
 use hfcast::voacap::antenna::{
     dazel0, point_to_point_table, read_antenna, AntennaEnd, AntennaSetup, GainTable, ELEVS, FREQS,
 };
 use hfcast::voacap::model::Model;
-use hfcast::runner::{itshfbc_dir, run_deck, variant_bin, IsolatedRoot};
 
 /// The circuit every probe deck uses. Only the azimuth from these two
 /// points reaches the pattern, so one circuit is enough. Held as `f32`
@@ -302,13 +302,7 @@ fn probe_deck(antenna: &str) -> String {
             width = width
         )
     };
-    let lon = |v: f32| {
-        format!(
-            "{:>9.2}{}",
-            v.abs(),
-            if v >= 0.0 { "E" } else { "W" }
-        )
-    };
+    let lon = |v: f32| format!("{:>9.2}{}", v.abs(), if v >= 0.0 { "E" } else { "W" });
     let circuit = format!(
         "CIRCUIT   {}{}{}{}  S     0",
         lat(FROM.0, 5),

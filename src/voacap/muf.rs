@@ -216,9 +216,7 @@ pub fn ionset(s: &mut IonoState) {
     }
     for k in 0..s.kfx {
         if s.fi[k][1] > 0.0 {
-            if s.fi[k][1] - s.fi[k][0] - 0.2 <= 0.0
-                || s.fi[k][2] - s.fi[k][1] - 0.2 <= 0.0
-            {
+            if s.fi[k][1] - s.fi[k][0] - 0.2 <= 0.0 || s.fi[k][2] - s.fi[k][1] - 0.2 <= 0.0 {
                 // E-F1 or F1-F2 criticals too close: drop the F1 layer.
                 s.fi[k][1] = 0.0;
                 s.yi[k][1] = 0.0;
@@ -413,10 +411,12 @@ fn profile_interpolate(from: &[R; 50], to: &[R; 50], probe: R) -> R {
         if d < 0.0 {
             if from[ih] - probe <= 0.0 {
                 if probe - from[ih + 1] < 0.0 {
-                    return to[ih] + (probe - from[ih]) * (to[ih + 1] - to[ih]) / (from[ih + 1] - from[ih]);
+                    return to[ih]
+                        + (probe - from[ih]) * (to[ih + 1] - to[ih]) / (from[ih + 1] - from[ih]);
                 }
             } else {
-                return to[ih] + (probe - from[ih]) * (to[ih + 1] - to[ih]) / (from[ih + 1] - from[ih]);
+                return to[ih]
+                    + (probe - from[ih]) * (to[ih + 1] - to[ih]) / (from[ih + 1] - from[ih]);
             }
         } else if d == 0.0 {
             if probe - from[ih] == 0.0 {
@@ -824,7 +824,13 @@ pub fn curmuf(
         2 => 1,
         _ => 2,
     };
-    let compare_e = |s: &IonoState| if s.fi[kt][0] - s.fi[kr][0] <= 0.0 { kt } else { kr };
+    let compare_e = |s: &IonoState| {
+        if s.fi[kt][0] - s.fi[kr][0] <= 0.0 {
+            kt
+        } else {
+            kr
+        }
+    };
     let ks = if kr == 0 {
         kt
     } else if kr == 1 {
@@ -896,7 +902,9 @@ pub fn curmuf(
         gethp(s, fx2)
     } else {
         (
-            s.hi[ks][2] - s.yi[ks][2] + bendy(s, 2, ks, fx2) + (pen(s, 0, ks, fx2) - 2.0 * s.yi[ks][0]),
+            s.hi[ks][2] - s.yi[ks][2]
+                + bendy(s, 2, ks, fx2)
+                + (pen(s, 0, ks, fx2) - 2.0 * s.yi[ks][0]),
             s.hi[ks][2] - s.yi[ks][2] + s.yi[ks][2] * (1.0 - (1.0 - xt2 * xt2).sqrt()),
         )
     };

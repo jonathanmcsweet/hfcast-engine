@@ -269,7 +269,11 @@ mod tests {
         };
         // Point (3,3) of five is the centre, which is the station.
         let (lon, lat) = grid.receiver(3, 3, 35.8, -5.9, Model::Compatible);
-        assert_eq!((lat, lon), (35.8, 354.1), "the reference leaves it in place");
+        assert_eq!(
+            (lat, lon),
+            (35.8, 354.1),
+            "the reference leaves it in place"
+        );
 
         let (lon, lat) = grid.receiver(3, 3, 35.8, -5.9, Model::Corrected);
         assert_eq!(lat, 35.8);

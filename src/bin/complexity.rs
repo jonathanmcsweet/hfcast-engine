@@ -667,8 +667,14 @@ mod tests {
 
     #[test]
     fn logical_operators_are_decisions() {
-        assert_eq!(one("fn f(a: bool, b: bool) { let _ = a && b; }").cyclomatic, 2);
-        assert_eq!(one("fn f(a: bool, b: bool) { let _ = a || b; }").cyclomatic, 2);
+        assert_eq!(
+            one("fn f(a: bool, b: bool) { let _ = a && b; }").cyclomatic,
+            2
+        );
+        assert_eq!(
+            one("fn f(a: bool, b: bool) { let _ = a || b; }").cyclomatic,
+            2
+        );
     }
 
     #[test]
@@ -682,7 +688,10 @@ mod tests {
     #[test]
     fn loops_count_and_a_word_that_starts_with_one_does_not() {
         assert_eq!(one("fn f() { for _ in 0..3 { } }").cyclomatic, 2);
-        assert_eq!(one("fn f() { let iffy = 1; let former = 2; }").cyclomatic, 1);
+        assert_eq!(
+            one("fn f() { let iffy = 1; let former = 2; }").cyclomatic,
+            1
+        );
     }
 
     #[test]
@@ -707,7 +716,10 @@ mod tests {
 
     #[test]
     fn self_is_not_a_parameter() {
-        assert_eq!(one("impl S { fn f(&self, a: u8) { let _ = a; } }").params, 1);
+        assert_eq!(
+            one("impl S { fn f(&self, a: u8) { let _ = a; } }").params,
+            1
+        );
         assert_eq!(one("impl S { fn f(&self) { } }").params, 0);
     }
 

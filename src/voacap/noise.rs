@@ -234,7 +234,11 @@ pub fn genois(
         xnois = 204.0 - xnois + 13.22;
         xnois -= 27.7 * freq.log10();
     } else {
-        let ma = if man == 0 { 4 } else { man.unsigned_abs().min(4) as usize };
+        let ma = if man == 0 {
+            4
+        } else {
+            man.unsigned_abs().min(4) as usize
+        };
         xnois = XNINT[ma - 1] - CONN[ma - 1] * freq.log10();
         znoise = 204.0 - XNINT[ma - 1] + CONN[ma - 1] * (3.0 as R).log10();
     }

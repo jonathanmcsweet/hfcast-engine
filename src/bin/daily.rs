@@ -107,7 +107,10 @@ fn series_for_month(dir: &Path, min_hours: usize) -> Result<Vec<Series>, String>
         // Per hour: every day's value, so the hour's own centre can be taken.
         let mut by_hour: BTreeMap<u8, Vec<(u8, f64)>> = BTreeMap::new();
         for s in samples {
-            by_hour.entry(s.hour).or_default().push((s.day, s.snr_median));
+            by_hour
+                .entry(s.hour)
+                .or_default()
+                .push((s.day, s.snr_median));
         }
 
         // Per day: the residuals of that day across all hours.
@@ -148,7 +151,10 @@ fn series_for_month(dir: &Path, min_hours: usize) -> Result<Vec<Series>, String>
                 .get(key)
                 .cloned()
                 .unwrap_or_else(|| format!("{} to {} {} MHz", key.0, key.1, key.2)),
-            points: points.into_iter().map(|(d, v)| (d, v, (v - m) / sd)).collect(),
+            points: points
+                .into_iter()
+                .map(|(d, v)| (d, v, (v - m) / sd))
+                .collect(),
         });
     }
     out.sort_by(|a, b| a.label.cmp(&b.label));
@@ -207,7 +213,10 @@ fn main() -> ExitCode {
     };
     months.sort();
     if months.is_empty() {
-        eprintln!("no month directories with a daily.csv under {}", root.display());
+        eprintln!(
+            "no month directories with a daily.csv under {}",
+            root.display()
+        );
         return ExitCode::FAILURE;
     }
 
@@ -219,7 +228,11 @@ fn main() -> ExitCode {
     let mut worst: Vec<(f64, String, String)> = Vec::new();
 
     for dir in &months {
-        let name = dir.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let name = dir
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
         let (year, month) = match (
             name.get(..4).and_then(|s| s.parse::<u32>().ok()),
             name.get(5..7).and_then(|s| s.parse::<u32>().ok()),

@@ -229,10 +229,7 @@ pub fn sigdis(
     } else if feav - 0.5 <= 0.0 {
         (0.0, 0.0)
     } else {
-        (
-            1.359 * (feav - 0.5) / 1.5,
-            8.617 * (feav - 0.5) / 1.5,
-        )
+        (1.359 * (feav - 0.5) / 1.5, 8.617 * (feav - 0.5) / 1.5)
     };
 
     // The signal distribution table frequency FTAB, from the F2 FOT,
@@ -251,8 +248,7 @@ pub fn sigdis(
     // tables; each mode and frequency replaces them as necessary.
     let mut eslsm: R = 0.0;
     if hour.layers[3].ymuf > 0.0 {
-        let pes = prbmuf(hour, ftab, hour.layers[3].ymuf, hour.layers[3].ymuf, 4)
-            .clamp(0.1, 0.9);
+        let pes = prbmuf(hour, ftab, hour.layers[3].ymuf, hour.layers[3].ymuf, 4).clamp(0.1, 0.9);
         eslsm = -10.0 * (1.0 - pes).log10();
     }
     let pf2 = prbmuf(hour, ftab, hour.layers[2].ymuf, hour.layers[2].ymuf, 3).max(0.1);
@@ -262,25 +258,19 @@ pub fn sigdis(
     // Upper decile.
     let mut pes: R = 0.0;
     if hour.layers[3].yfot > 0.0 {
-        pes = prbmuf(hour, ftab, hour.layers[3].yfot, hour.layers[3].yfot, 4)
-            .clamp(0.1, 0.9);
+        pes = prbmuf(hour, ftab, hour.layers[3].yfot, hour.layers[3].yfot, 4).clamp(0.1, 0.9);
     }
     let pf2 = prbmuf(hour, ftab, hour.layers[2].yhpf, hour.layers[2].yhpf, 3).max(0.1);
-    let dsu = (1.28 * sl
-        - (10.0 * (1.0 - pes).log10() + eslsm)
-        - (10.0 * pf2.log10() + f2lsm))
-        .max(0.5);
+    let dsu =
+        (1.28 * sl - (10.0 * (1.0 - pes).log10() + eslsm) - (10.0 * pf2.log10() + f2lsm)).max(0.5);
 
     // Lower decile.
     let mut pes: R = 0.0;
     if hour.layers[3].yhpf > 0.0 {
-        pes = prbmuf(hour, ftab, hour.layers[3].yhpf, hour.layers[3].yhpf, 4)
-            .clamp(0.1, 0.9);
+        pes = prbmuf(hour, ftab, hour.layers[3].yhpf, hour.layers[3].yhpf, 4).clamp(0.1, 0.9);
     }
     let pf2 = prbmuf(hour, ftab, hour.layers[2].yfot, hour.layers[2].yfot, 3).max(0.1);
-    let dsl = (1.28 * su
-        - (-10.0 * (1.0 - pes).log10() - eslsm)
-        - (-10.0 * pf2.log10() - f2lsm))
+    let dsl = (1.28 * su - (-10.0 * (1.0 - pes).log10() - eslsm) - (-10.0 * pf2.log10() - f2lsm))
         .max(1.0);
 
     SignalDistribution {

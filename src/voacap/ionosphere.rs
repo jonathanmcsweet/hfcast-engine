@@ -351,8 +351,7 @@ pub fn layer_parameters(
                 clock += 24.0;
             }
             let z = cenlg - ssl;
-            let cycen =
-                (cenlat.sin() * ssp.sin() + cenlat.cos() * ssp.cos() * z.cos()).acos();
+            let cycen = (cenlat.sin() * ssp.sin() + cenlat.cos() * ssp.cos() * z.cos()).acos();
 
             // --- EF1VAR: E and F1 layers.
             let mut fi = [0.0 as R; 3];
@@ -370,7 +369,8 @@ pub fn layer_parameters(
             let zdeg = cycen * R2D;
             let cosz = cycen.cos();
             let cosdi = mag.gmdip.cos();
-            let zenmax = set.achi[0] + set.bchi[0] * ssn + (set.achi[1] + set.bchi[1] * ssn) * cosdi;
+            let zenmax =
+                set.achi[0] + set.bchi[0] * ssn + (set.achi[1] + set.bchi[1] * ssn) * cosdi;
             let zenang = zdeg;
             if zdeg <= zenmax {
                 let f1 = (set.anew[0] + set.bnew[0] * ssn)

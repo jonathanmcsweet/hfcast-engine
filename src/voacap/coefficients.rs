@@ -141,7 +141,9 @@ fn read2<const I: usize, const J: usize>(c: &mut Cursor) -> Result<[[R; I]; J]> 
 }
 
 /// Fills a 3-D array in Fortran column-major read order.
-fn read3<const I: usize, const J: usize, const K: usize>(c: &mut Cursor) -> Result<[[[R; I]; J]; K]> {
+fn read3<const I: usize, const J: usize, const K: usize>(
+    c: &mut Cursor,
+) -> Result<[[[R; I]; J]; K]> {
     let mut out = [[[0.0 as R; I]; J]; K];
     for plane in out.iter_mut() {
         for row in plane.iter_mut() {
@@ -285,12 +287,7 @@ fn parse_month_file(bytes: &[u8], name: &str) -> Result<RawMonthFile> {
 
 /// Interpolates a pair of sunspot planes with `(a*wa + b*wb) / d`, the
 /// Fortran's expression shape, element by element in f32.
-fn blend<const I: usize, const J: usize>(
-    x: &[[[R; I]; J]; 2],
-    wa: R,
-    wb: R,
-    d: R,
-) -> [[R; I]; J] {
+fn blend<const I: usize, const J: usize>(x: &[[[R; I]; J]; 2], wa: R, wb: R, d: R) -> [[R; I]; J] {
     let mut out = [[0.0 as R; I]; J];
     for j in 0..J {
         for i in 0..I {
@@ -380,7 +377,11 @@ impl CoefficientSet {
             a.iter().flatten().map(|&v| f64::from(v)).collect()
         }
         fn f3<const I: usize, const J: usize, const K: usize>(a: &[[[R; I]; J]; K]) -> Vec<f64> {
-            a.iter().flatten().flatten().map(|&v| f64::from(v)).collect()
+            a.iter()
+                .flatten()
+                .flatten()
+                .map(|&v| f64::from(v))
+                .collect()
         }
         vec![
             (

@@ -1170,13 +1170,7 @@ pub fn area_table(s: &AntennaSetup, freq: R) -> Result<(GainTable, AreaGainTable
                 for (ielev, slot) in row.iter_mut().enumerate() {
                     let delev = ielev as R * 0.017_453_3;
                     let (rain, e) = super::ioncap::iongain(
-                        &mut st,
-                        indx,
-                        iazim as R,
-                        &ip,
-                        delev,
-                        freq,
-                        s.model,
+                        &mut st, indx, iazim as R, &ip, delev, freq, s.model,
                     );
                     *slot = area_store(rain);
                     eff = e;
@@ -1747,8 +1741,10 @@ mod tests {
             };
             // Receive first: the order the reference's own list can
             // hold and the port's area driver never produces.
-            set.install_area(card(2), directional(220)).expect("receive");
-            set.install_area(card(1), directional(40)).expect("transmit");
+            set.install_area(card(2), directional(220))
+                .expect("receive");
+            set.install_area(card(1), directional(40))
+                .expect("transmit");
             set
         };
 

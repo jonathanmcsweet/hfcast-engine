@@ -249,7 +249,7 @@ impl IonoCarry {
         krun: i32,
         gmt: R,
     ) {
-    let _perf = crate::perf::Step::new(crate::perf::IONO_HOUR);
+        let _perf = crate::perf::Step::new(crate::perf::IONO_HOUR);
         // `GEOTIM` always runs, and writes every point's local mean
         // time by its own arithmetic. `TIMVAR` writes it again from a
         // different expression, so this value only survives a run that
@@ -498,7 +498,15 @@ pub fn run_par(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<ParRow>, String> {
     for jt in 1..=24i32 {
         let gmt = jt as R;
         iono.hour(
-            &set, &cof, &geo.points, &mags, inp.month, inp.ssn, &psc, inp.krun, gmt,
+            &set,
+            &cof,
+            &geo.points,
+            &mags,
+            inp.month,
+            inp.ssn,
+            &psc,
+            inp.krun,
+            gmt,
         );
         let (params, es) = (&iono.params, &iono.es);
         let geog = Geog::from_points(params, &mags, &grounds);
@@ -608,7 +616,15 @@ pub fn run_ion(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<Vec<IonPlot>>, Str
     for jt in 1..=24i32 {
         let gmt = jt as R;
         iono.hour(
-            &set, &cof, &geo.points, &mags, inp.month, inp.ssn, &psc, inp.krun, gmt,
+            &set,
+            &cof,
+            &geo.points,
+            &mags,
+            inp.month,
+            inp.ssn,
+            &psc,
+            inp.krun,
+            gmt,
         );
         let params = &iono.params;
         let mut state = iono.state(inp.iedp, inp.edp.as_ref());
@@ -694,7 +710,15 @@ pub fn run_muf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<MufHourOut>, Strin
     for jt in 1..=24i32 {
         let gmt = jt as R;
         iono.hour(
-            &set, &cof, &geo.points, &mags, inp.month, inp.ssn, &psc, inp.krun, gmt,
+            &set,
+            &cof,
+            &geo.points,
+            &mags,
+            inp.month,
+            inp.ssn,
+            &psc,
+            inp.krun,
+            gmt,
         );
         let params = &iono.params;
         let mut state = iono.state(inp.iedp, inp.edp.as_ref());
@@ -787,7 +811,15 @@ pub fn run_luf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<MufHourOut>, Strin
     for jt in 1..=24i32 {
         let gmt = jt as R;
         iono.hour(
-            &set, &cof, &geo.points, &mags, inp.month, inp.ssn, &psc, inp.krun, gmt,
+            &set,
+            &cof,
+            &geo.points,
+            &mags,
+            inp.month,
+            inp.ssn,
+            &psc,
+            inp.krun,
+            gmt,
         );
         let params = &iono.params;
         let mut state = iono.state(inp.iedp, inp.edp.as_ref());
@@ -1144,7 +1176,15 @@ fn hour_body(
     {
         let gmt = jt as R;
         iono.hour(
-            set, &s.cof, &geo.points, &s.mags, s.month, s.ssn, &psc, s.krun, gmt,
+            set,
+            &s.cof,
+            &geo.points,
+            &s.mags,
+            s.month,
+            s.ssn,
+            &psc,
+            s.krun,
+            gmt,
         );
         let params = &iono.params;
         let mut state = iono.state(s.iedp, s.edp.as_ref());
@@ -1577,7 +1617,8 @@ pub fn run_area(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<AreaPoint>, Str
             // transmitter in an inverse one. Either way it is the point
             // the output row names.
             let (glon, glat) = if area.inverse {
-                area.grid.transmitter(ix, iy, fixed_lat, fixed_lon, area.model)
+                area.grid
+                    .transmitter(ix, iy, fixed_lat, fixed_lon, area.model)
             } else {
                 area.grid.receiver(ix, iy, fixed_lat, fixed_lon, area.model)
             };

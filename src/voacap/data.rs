@@ -21,14 +21,15 @@
 //!
 //! The third form exists for the application. It generates an antenna
 //! definition per station and needs the engine to read it, so it writes that
-//! one file to its own cache directory and leaves the 653 KB of coefficients
+//! one file to its own cache directory and leaves the 544 KB of coefficients
 //! compiled in. A plain directory root never falls back: a server with an
 //! incomplete tree must fail loudly rather than quietly predict from
 //! something else.
 //!
-//! What is embedded, and why each part is here, is in
-//! `docs/licence.md`. Briefly: the coefficients originate in CCIR Report 340
-//! and URSI publications, the antennas and the version file are NTIA/ITS.
+//! What is embedded, and why each part is here, is in `NOTICE` and
+//! `docs/licence.md`. Briefly: the antennas and the version file are
+//! NTIA/ITS, and so is about 195 KB of the coefficients; the rest is CCIR
+//! Report 322 and 340 data that the ITU publishes itself.
 
 use std::borrow::Cow;
 use std::io::{Error, ErrorKind, Result};
@@ -87,7 +88,7 @@ embedded_files!(
 
 // The ionospheric coefficients: 544 KB of the 560 in the repository.
 //
-// Two bodies wrote them. About 210 KB is NTIA/ITS work — sporadic E, the E
+// Two bodies wrote them. About 195 KB is NTIA/ITS work — sporadic E, the E
 // region, F1 and the prediction-error tables. The rest comes from CCIR
 // Report 322 (atmospheric noise) and CCIR Report 340 (the foF2 and
 // M(3000)F2 maps), which the ITU publishes itself in its P.372 and P.533
@@ -195,10 +196,7 @@ fn compiled(rel: &str) -> Result<Cow<'static, [u8]>> {
     }
     Err(Error::new(
         ErrorKind::NotFound,
-        format!(
-            "{rel} is not one of the {} embedded files",
-            files().count()
-        ),
+        format!("{rel} is not one of the {} embedded files", files().count()),
     ))
 }
 
@@ -287,7 +285,10 @@ mod tests {
         std::fs::create_dir_all(dir.join("coeffs")).expect("dirs");
         std::fs::write(dir.join("coeffs/coeff01w.bin"), b"overridden").expect("write");
         let root = overlay_root(&dir);
-        assert_eq!(&*read(&root, "coeffs/coeff01w.bin").expect("read"), b"overridden");
+        assert_eq!(
+            &*read(&root, "coeffs/coeff01w.bin").expect("read"),
+            b"overridden"
+        );
         // Not written there, so it comes from the binary — when the binary
         // has it. Without the feature the fall-through is the error instead,
         // which is the same code path.

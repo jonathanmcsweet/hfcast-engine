@@ -14,24 +14,24 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use hfcast::deck::build_deck;
+use hfcast::fuzz::fuzz_cases;
+use hfcast::runner::{run_deck_with_env, variant_bin, IsolatedRoot};
+use hfcast::sweep::sweep_cases;
 use hfcast::voacap::coefficients::{redmap, FoF2Model};
 use hfcast::voacap::con::MagneticPole;
-use hfcast::voacap::ionosphere::{cofion, esind, layer_parameters, virtim, LayerParams};
 use hfcast::voacap::con::D2R;
+use hfcast::voacap::geometry::{path_geometry, PathGeometry};
 use hfcast::voacap::ionogram::{alosfv, fobby, genion, sang, selmod};
 use hfcast::voacap::ionosphere::{alatd, geotim, ground_constants};
-use hfcast::voacap::noise::{anois1, genois};
+use hfcast::voacap::ionosphere::{cofion, esind, layer_parameters, virtim, LayerParams};
+use hfcast::voacap::magnetic::magvar;
 use hfcast::voacap::modes::{
     es_slots, luffy_freq_loop, luffy_smooth, outbod_sentinels, setlng, AllModes, DeckParams,
     FreqDebug, Geog, HourSaves, ModeLoopState, PassCtx, Son, Zon,
 };
 use hfcast::voacap::muf::{curmuf, ionset, lecden, IonoState};
+use hfcast::voacap::noise::{anois1, genois};
 use hfcast::voacap::sigdis::sigdis;
-use hfcast::voacap::geometry::{path_geometry, PathGeometry};
-use hfcast::voacap::magnetic::magvar;
-use hfcast::runner::{run_deck_with_env, variant_bin, IsolatedRoot};
-use hfcast::fuzz::fuzz_cases;
-use hfcast::sweep::sweep_cases;
 
 /// One worst-case tracker per compared field.
 struct Worst {
@@ -146,9 +146,12 @@ fn parse_hour_traces(text: &str, header: &str) -> Vec<HourTrace> {
             }
             Some(&"PT") => {
                 if let Some(current) = out.last_mut() {
-                    current
-                        .points
-                        .push(fields[1..].iter().map(|v| v.parse().unwrap_or(f64::NAN)).collect());
+                    current.points.push(
+                        fields[1..]
+                            .iter()
+                            .map(|v| v.parse().unwrap_or(f64::NAN))
+                            .collect(),
+                    );
                 }
             }
             Some(_) => {
@@ -221,12 +224,12 @@ fn parse_redmap_trace(text: &str) -> Option<RedmapTrace> {
 /// (zero: the label bytes are still NUL, the program-start state).
 fn laytyp_code(layer: i32) -> f64 {
     match layer {
-        1 => (32 * 256 + 69) as f64,  // " E"
-        2 => (70 * 256 + 49) as f64,  // "F1"
-        3 => (70 * 256 + 50) as f64,  // "F2"
-        4 => (69 * 256 + 83) as f64,  // "ES"
-        5 => (32 * 256 + 78) as f64,  // " N"
-        6 => (78 * 256 + 65) as f64,  // "NA", the OUTBOD sentinel
+        1 => (32 * 256 + 69) as f64, // " E"
+        2 => (70 * 256 + 49) as f64, // "F1"
+        3 => (70 * 256 + 50) as f64, // "F2"
+        4 => (69 * 256 + 83) as f64, // "ES"
+        5 => (32 * 256 + 78) as f64, // " N"
+        6 => (78 * 256 + 65) as f64, // "NA", the OUTBOD sentinel
         _ => 0.0,
     }
 }
@@ -272,9 +275,28 @@ const SON_IDX: [usize; 24] = [
 fn zon_row(z: &Zon, i: usize) -> ([f64; 22], i32) {
     (
         [
-            z.abps[i], z.crel[i], z.eff[i], z.fldst[i], z.grlos[i], z.hn[i], z.hp[i], z.prob[i],
-            z.rely[i], z.rgain[i], z.sigpow[i], z.sn[i], z.spro[i], z.tgain[i], z.timed[i],
-            z.tloss[i], z.b[i], z.fslos[i], z.adv[i], z.obf[i], z.tllow[i], z.tlhgh[i],
+            z.abps[i],
+            z.crel[i],
+            z.eff[i],
+            z.fldst[i],
+            z.grlos[i],
+            z.hn[i],
+            z.hp[i],
+            z.prob[i],
+            z.rely[i],
+            z.rgain[i],
+            z.sigpow[i],
+            z.sn[i],
+            z.spro[i],
+            z.tgain[i],
+            z.timed[i],
+            z.tloss[i],
+            z.b[i],
+            z.fslos[i],
+            z.adv[i],
+            z.obf[i],
+            z.tllow[i],
+            z.tlhgh[i],
         ]
         .map(f64::from),
         z.nmode[i],
@@ -285,9 +307,28 @@ fn zon_row(z: &Zon, i: usize) -> ([f64; 22], i32) {
 fn amd_row(a: &AllModes, i: usize) -> ([f64; 22], i32) {
     (
         [
-            a.abps[i], a.crel[i], a.eff[i], a.fldst[i], a.grlos[i], a.hn[i], a.hp[i], a.prob[i],
-            a.rely[i], a.rgain[i], a.sigpow[i], a.sn[i], a.spro[i], a.tgain[i], a.timed[i],
-            a.tloss[i], a.b[i], a.fslos[i], a.adv[i], a.obf[i], a.tllow[i], a.tlhgh[i],
+            a.abps[i],
+            a.crel[i],
+            a.eff[i],
+            a.fldst[i],
+            a.grlos[i],
+            a.hn[i],
+            a.hp[i],
+            a.prob[i],
+            a.rely[i],
+            a.rgain[i],
+            a.sigpow[i],
+            a.sn[i],
+            a.spro[i],
+            a.tgain[i],
+            a.timed[i],
+            a.tloss[i],
+            a.b[i],
+            a.fslos[i],
+            a.adv[i],
+            a.obf[i],
+            a.tllow[i],
+            a.tlhgh[i],
         ]
         .map(f64::from),
         a.nmode[i],
@@ -399,7 +440,10 @@ fn compare_freq_debug(c: CompareFreq) {
         }
         let mut base = snap.rows.len() * 7;
         rfx_worst[6].update((f64::from(snap.dskpkm) - rt.values[base]).abs(), case_id);
-        rfx_worst[7].update((f64::from(snap.dmaxkm) - rt.values[base + 1]).abs(), case_id);
+        rfx_worst[7].update(
+            (f64::from(snap.dmaxkm) - rt.values[base + 1]).abs(),
+            case_id,
+        );
         base += 2;
         if let Some(skip) = snap.skip {
             for j in 0..4 {
@@ -512,7 +556,8 @@ fn compare_freq_debug(c: CompareFreq) {
                 for (i, row) in rows.iter().enumerate() {
                     let base = jj * 225 + i * 5;
                     for j in 0..5 {
-                        los_worst[j].update((f64::from(row[j]) - lt.values[base + j]).abs(), case_id);
+                        los_worst[j]
+                            .update((f64::from(row[j]) - lt.values[base + j]).abs(), case_id);
                     }
                 }
             }
@@ -713,26 +758,8 @@ fn main() -> ExitCode {
     .map(|n| Worst::new(n))
     .collect();
     let mut sig_worst: Vec<Worst> = [
-        "DSL",
-        "ASM",
-        "DSU",
-        "AGLAT",
-        "ACAV",
-        "FEAV",
-        "AFE",
-        "BFE",
-        "HNU",
-        "HTLOSS",
-        "XNUZ",
-        "XVE",
-        "ADJ",
-        "SU",
-        "SL",
-        "ADS",
-        "SUS",
-        "SLS",
-        "ABIY",
-        "ARTIC",
+        "DSL", "ASM", "DSU", "AGLAT", "ACAV", "FEAV", "AFE", "BFE", "HNU", "HTLOSS", "XNUZ", "XVE",
+        "ADJ", "SU", "SL", "ADS", "SUS", "SLS", "ABIY", "ARTIC",
     ]
     .iter()
     .map(|n| Worst::new(n))
@@ -749,9 +776,9 @@ fn main() -> ExitCode {
         "SN", "SPRO", "TGAIN", "TIMED", "TLOSS", "B", "FSLOS", "ADV", "OBF", "TLLOW", "TLHGH",
     ];
     const SON_NAMES: [&str; 24] = [
-        "ANGLE", "ANGLER", "CPROB", "DBLOS", "DBLOSL", "DBLOSU", "DBU", "DELAY", "DBW",
-        "XNYNOIS", "PROBMP", "RELIAB", "SNDB", "SNPR", "SNRLW", "SNRUP", "SPROB", "VHIGH",
-        "RNEFF", "SNXX", "GAINT", "GAINR", "DU_NOIS", "DL_NOIS",
+        "ANGLE", "ANGLER", "CPROB", "DBLOS", "DBLOSL", "DBLOSU", "DBU", "DELAY", "DBW", "XNYNOIS",
+        "PROBMP", "RELIAB", "SNDB", "SNPR", "SNRLW", "SNRUP", "SPROB", "VHIGH", "RNEFF", "SNXX",
+        "GAINT", "GAINR", "DU_NOIS", "DL_NOIS",
     ];
     let mut rfx_worst: Vec<Worst> = [
         "takeoff angle (deg)",
@@ -1089,11 +1116,8 @@ fn main() -> ExitCode {
         // control point has foEs = 0, so CURMUF skips them all and
         // zeroes the Es layer.
         let psc = case.fprob().map(|v| v as f32);
-        for (((vir, f2h), esh), (lech, mufh)) in virs
-            .iter()
-            .zip(&f2s)
-            .zip(&ess)
-            .zip(lecs.iter().zip(&mufs))
+        for (((vir, f2h), esh), (lech, mufh)) in
+            virs.iter().zip(&f2s).zip(&ess).zip(lecs.iter().zip(&mufs))
         {
             let gmt = vir.gmt as f32;
             let ab = virtim(&cof, &set.ikim, gmt);
@@ -1487,7 +1511,8 @@ fn main() -> ExitCode {
                     nang,
                     long: plan.long,
                 };
-                let dbgs = luffy_freq_loop(&mut lp, &ctx, &mut hour_m, &noise_for, &frel, &mut saves);
+                let dbgs =
+                    luffy_freq_loop(&mut lp, &ctx, &mut hour_m, &noise_for, &frel, &mut saves);
                 let expected_pass = if plan.long { 2 } else { 1 };
                 for dbg in dbgs.into_iter().flatten() {
                     compare_freq_debug(CompareFreq {
@@ -1582,9 +1607,7 @@ fn main() -> ExitCode {
             while noi_index < nois.len() && nois[noi_index].gmt == vir.gmt {
                 let noih = &nois[noi_index];
                 noi_index += 1;
-                if noih.h2 as usize != an.kj
-                    || noih.h3 as usize != an.jk
-                    || noih.values.len() != 16
+                if noih.h2 as usize != an.kj || noih.h3 as usize != an.jk || noih.values.len() != 16
                 {
                     eprintln!(
                         "{}: GENOIS blocks {} {} where Rust chose {} {}",
@@ -1626,7 +1649,6 @@ fn main() -> ExitCode {
                     worst.update((r - t).abs(), &case.id);
                 }
             }
-
         }
     }
 
@@ -1655,9 +1677,7 @@ fn main() -> ExitCode {
     }
 
     println!("\n## Stage: ionosphere (virtim, versy, ef1var, timvar, f2var)\n");
-    println!(
-        "Compared {ab_points} AB coefficients and {iono_points} control-point-hours.\n"
-    );
+    println!("Compared {ab_points} AB coefficients and {iono_points} control-point-hours.\n");
     println!("| field | worst difference | case |");
     println!("| --- | --: | --- |");
     println!(
@@ -1708,7 +1728,9 @@ fn main() -> ExitCode {
         println!("| {} | {:.2e} | {} |", w.name, w.value, w.case);
     }
 
-    println!("\n## Stage: mode loop (penang, findf, fdist, inmuf, regmod, esmod, esreg, allmodes)\n");
+    println!(
+        "\n## Stage: mode loop (penang, findf, fdist, inmuf, regmod, esmod, esreg, allmodes)\n"
+    );
     println!(
         "Compared {rfx_calls} reflectrix builds, {zon_calls} hop-mode dumps and {amd_calls} accumulated-mode dumps.\n"
     );

@@ -297,7 +297,12 @@ struct Outcome {
 /// The month, year and sunspot number come from the command line
 /// rather than the file, because the point of a path list is to hold
 /// the geography still while the live inputs move.
-fn load_paths(file: &std::path::Path, month: u32, year: u32, ssn: f64) -> Result<Vec<Case>, String> {
+fn load_paths(
+    file: &std::path::Path,
+    month: u32,
+    year: u32,
+    ssn: f64,
+) -> Result<Vec<Case>, String> {
     let text = std::fs::read_to_string(file).map_err(|e| format!("{}: {e}", file.display()))?;
     let mut out = Vec::new();
     for (n, line) in text.lines().enumerate() {
@@ -397,7 +402,10 @@ fn main() -> ExitCode {
         }
     }
 
-    eprintln!("comparing {} request shapes through both paths", cases.len());
+    eprintln!(
+        "comparing {} request shapes through both paths",
+        cases.len()
+    );
     let outcomes = map_limit(&cases, jobs, |case, index| {
         run_case(case, index, &reference, &predict, dump.as_deref())
     });
@@ -538,15 +546,15 @@ fn run_case(
         };
         match (fortran.get(&key), rust.get(&key)) {
             (Some(a), Some(b)) if a == b => {}
-            (Some(a), Some(b)) => out.differing.push(format!(
-                "{hour:02}z {band} {field}: fortran {a}, rust {b}"
+            (Some(a), Some(b)) => out
+                .differing
+                .push(format!("{hour:02}z {band} {field}: fortran {a}, rust {b}")),
+            (Some(a), None) => out.differing.push(format!(
+                "{hour:02}z {band} {field}: fortran {a}, rust absent"
             )),
-            (Some(a), None) => out
-                .differing
-                .push(format!("{hour:02}z {band} {field}: fortran {a}, rust absent")),
-            (None, Some(b)) => out
-                .differing
-                .push(format!("{hour:02}z {band} {field}: fortran absent, rust {b}")),
+            (None, Some(b)) => out.differing.push(format!(
+                "{hour:02}z {band} {field}: fortran absent, rust {b}"
+            )),
             (None, None) => {}
         }
     }

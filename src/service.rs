@@ -396,9 +396,7 @@ fn area_freqs(req: &Json) -> Result<Vec<f32>, String> {
             f.as_f64()
                 .filter(|v| *v > 0.0)
                 .map(|v| v as f32)
-                .ok_or_else(|| {
-                    "every entry in \"freqsMhz\" must be a frequency in MHz".to_string()
-                })
+                .ok_or_else(|| "every entry in \"freqsMhz\" must be a frequency in MHz".to_string())
         })
         .collect::<Result<_, _>>()?;
     if freqs.windows(2).any(|pair| pair[1] <= pair[0]) {
@@ -419,7 +417,14 @@ fn area(tree: &std::path::Path, req: &Json) -> Result<Json, String> {
             world_axis(lon_step, -180.0, 360.0)?,
         ),
         Some(box_) => (
-            part_axis(box_.lat_min, box_.lat_max, lat_step, -90.0, 180.0, "latitude")?,
+            part_axis(
+                box_.lat_min,
+                box_.lat_max,
+                lat_step,
+                -90.0,
+                180.0,
+                "latitude",
+            )?,
             part_axis(
                 box_.lon_min,
                 box_.lon_max,
@@ -493,10 +498,7 @@ fn area(tree: &std::path::Path, req: &Json) -> Result<Json, String> {
                 let angles = p
                     .per_freq
                     .iter()
-                    .map(|f| {
-                        f.takeoff_angle_deg
-                            .map_or(Json::Null, num)
-                    })
+                    .map(|f| f.takeoff_angle_deg.map_or(Json::Null, num))
                     .collect();
                 obj([
                     ("lat", num(f64::from(p.lat))),
@@ -691,7 +693,10 @@ fn prediction(text: &str, freqs: &[f64]) -> Json {
     for hour in 0..24u8 {
         for (slot, freq) in freqs.iter().enumerate() {
             let at = |row: &str| -> Option<f64> {
-                by_row.get(&(hour, row)).and_then(|m| m.get(&(slot as i8))).copied()
+                by_row
+                    .get(&(hour, row))
+                    .and_then(|m| m.get(&(slot as i8)))
+                    .copied()
             };
             // The server drops a cell without both of these, because
             // the listing prints no slot past the last with a mode.
@@ -722,7 +727,10 @@ fn prediction(text: &str, freqs: &[f64]) -> Json {
     }
 
     obj([
-        ("mufByHour", Json::Arr(muf.iter().copied().map(num).collect())),
+        (
+            "mufByHour",
+            Json::Arr(muf.iter().copied().map(num).collect()),
+        ),
         ("cells", Json::Arr(cells)),
     ])
 }
@@ -855,8 +863,7 @@ mod tests {
             (1.5, -180.0, 360.0),
         ] {
             let whole = world_axis(step, edge, span).expect("a grid");
-            let asked =
-                part_axis(edge, edge + span, step, edge, span, "axis").expect("a grid");
+            let asked = part_axis(edge, edge + span, step, edge, span, "axis").expect("a grid");
             assert_eq!(
                 (whole.min, whole.max, whole.n),
                 (asked.min, asked.max, asked.n),
@@ -912,10 +919,18 @@ mod tests {
     #[test]
     fn an_empty_or_inverted_rectangle_is_refused() {
         let refused = |text: &str| bounds(&parsed(text)).is_err();
-        assert!(refused(r#"{"latMin":50,"latMax":30,"lonMin":-10,"lonMax":10}"#));
-        assert!(refused(r#"{"latMin":30,"latMax":30,"lonMin":-10,"lonMax":10}"#));
-        assert!(refused(r#"{"latMin":30,"latMax":50,"lonMin":10,"lonMax":10}"#));
-        assert!(refused(r#"{"latMin":-91,"latMax":50,"lonMin":-10,"lonMax":10}"#));
+        assert!(refused(
+            r#"{"latMin":50,"latMax":30,"lonMin":-10,"lonMax":10}"#
+        ));
+        assert!(refused(
+            r#"{"latMin":30,"latMax":30,"lonMin":-10,"lonMax":10}"#
+        ));
+        assert!(refused(
+            r#"{"latMin":30,"latMax":50,"lonMin":10,"lonMax":10}"#
+        ));
+        assert!(refused(
+            r#"{"latMin":-91,"latMax":50,"lonMin":-10,"lonMax":10}"#
+        ));
     }
 
     #[test]
@@ -933,8 +948,7 @@ mod tests {
         // `Grid::point` divides by the number of points less one, so a
         // single-point axis is a division by zero rather than a small
         // answer.
-        let message =
-            part_axis(30.0, 31.0, 15.0, -90.0, 180.0, "latitude").expect_err("refused");
+        let message = part_axis(30.0, 31.0, 15.0, -90.0, 180.0, "latitude").expect_err("refused");
         assert!(message.contains("latitude"), "{message}");
     }
 }

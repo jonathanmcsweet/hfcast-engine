@@ -35,15 +35,15 @@ use std::collections::BTreeMap;
 use std::process::ExitCode;
 
 use hfcast::deck::{build_deck, AntennaChoice, DeckCase};
+use hfcast::fuzz::fuzz_cases;
+use hfcast::listing::{parse_listing, ModeSample, Sample};
+use hfcast::runner::{map_limit, IsolatedRoot};
+use hfcast::sweep::sweep_cases;
 use hfcast::voacap::area::{Grid, Projection};
 use hfcast::voacap::coefficients::FoF2Model;
 use hfcast::voacap::model::{Fixes, Model};
 use hfcast::voacap::output::render;
 use hfcast::voacap::run::{run_area, AreaInputs};
-use hfcast::fuzz::fuzz_cases;
-use hfcast::listing::{parse_listing, ModeSample, Sample};
-use hfcast::runner::{map_limit, IsolatedRoot};
-use hfcast::sweep::sweep_cases;
 
 const CONCURRENCY: usize = 2;
 
@@ -69,7 +69,10 @@ const FIX_NAMES: [(&str, &str); 6] = [
     ("luf_scan_best", "luf"),
     ("luf_pass_area", "luf"),
     ("area_centre_nudge", "area"),
-    ("area_antenna_end", "no corpus can reach it; see corrected.md"),
+    (
+        "area_antenna_end",
+        "no corpus can reach it; see corrected.md",
+    ),
 ];
 
 /// The one sample file in the tree whose antenna type is the IONCAP
@@ -535,7 +538,10 @@ fn report(name: &str, corpus: &str, outcomes: &[Outcome]) -> ExitCode {
     let compared: usize = outcomes.iter().map(|o| o.compared).sum();
     let moved: usize = outcomes.iter().map(|o| o.moved).sum();
     let structural: usize = outcomes.iter().map(|o| o.structural).sum();
-    let touched = outcomes.iter().filter(|o| o.moved + o.structural > 0).count();
+    let touched = outcomes
+        .iter()
+        .filter(|o| o.moved + o.structural > 0)
+        .count();
 
     let mut rows: BTreeMap<String, Moved> = BTreeMap::new();
     for o in outcomes {

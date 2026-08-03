@@ -20,11 +20,11 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::process::ExitCode;
 
 use hfcast::deck::{build_deck, DeckCase};
-use hfcast::voacap::model::Model;
-use hfcast::voacap::output::render;
 use hfcast::fuzz::{band_for, fuzz_cases};
 use hfcast::listing::{parse_listing, ParsedListing};
 use hfcast::runner::{map_limit, run_deck, variant_bin, IsolatedRoot};
+use hfcast::voacap::model::Model;
+use hfcast::voacap::output::render;
 
 /// Concurrent runs. Each one copies the `itshfbc` tree, so this trades
 /// disk and memory for wall clock; four is what the other harness

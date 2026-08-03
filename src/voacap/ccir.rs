@@ -215,7 +215,8 @@ fn gainterp1(gainaa: &[R; 3], fr: R, iant: i32) -> R {
     let jant = if iant == 1 { 0 } else { 1 };
     let idx = if fr < 1.0 { 0 } else { 1 };
     gainaa[idx]
-        + (gainaa[idx + 1] - gainaa[idx]) * (fr - FRS[jant][idx]) / (FRS[jant][idx + 1] - FRS[jant][idx])
+        + (gainaa[idx + 1] - gainaa[idx]) * (fr - FRS[jant][idx])
+            / (FRS[jant][idx + 1] - FRS[jant][idx])
 }
 
 /// `gainterp`: the maximum gain over operating and design frequency
@@ -241,7 +242,12 @@ fn gainterp(gainmax: &[[R; 3]; 2], freq_oper: R, freq_design: R, iant: i32) -> R
 ///
 /// Returns `giso`, or `None` for `modegain` 3 (the curtain), where the
 /// source falls through every branch and leaves `giso` stale.
-pub fn setmaxgain(file: &AntennaFile, parm: &mut [R; 20], freq_oper: R, freq_design_card: R) -> Option<R> {
+pub fn setmaxgain(
+    file: &AntennaFile,
+    parm: &mut [R; 20],
+    freq_oper: R,
+    freq_design_card: R,
+) -> Option<R> {
     let iant = file.jant();
     match file.modegain {
         0 => Some(parm[0]),
@@ -570,7 +576,8 @@ impl CcirAntenna {
                 let b2 = (self.p11 * a11).cos() - self.cp11;
                 let w0 = (1.0 - a11 * a11).abs();
                 let z1 = b2 / w0;
-                let z2 = (1.0 + self.q2 * self.q2
+                let z2 = (1.0
+                    + self.q2 * self.q2
                     + 2.0 * self.q2 * (self.p11 - self.p11 * b0 * b1).cos())
                 .abs()
                 .sqrt();
@@ -595,7 +602,8 @@ impl CcirAntenna {
                 let b2 = (self.pfr * a11).cos() - self.cpfr;
                 let w0 = (1.0 - a11 * a11).abs();
                 let z1 = b2 / w0;
-                let z2 = (1.0 + self.q2 * self.q2
+                let z2 = (1.0
+                    + self.q2 * self.q2
                     + 2.0 * self.q2 * (self.p11 - self.p11 * b0 * b1).cos())
                 .abs()
                 .sqrt();
@@ -1056,10 +1064,18 @@ pub mod curtain {
         [0, 0, 31, 31, 0, 77, 77, 109, 109, 0, 155, 155, 186, 186],
         [0, 47, 56, 103, 0, 139, 185, 195, 242, 0, 278, 324, 334, 381],
         [0, 47, 81, 128, 0, 200, 246, 281, 327, 0, 399, 446, 480, 527],
-        [0, 47, 105, 152, 0, 260, 306, 365, 411, 0, 519, 566, 624, 671],
-        [0, 47, 129, 176, 0, 318, 365, 447, 494, 0, 636, 683, 765, 812],
-        [0, 90, 152, 242, 0, 375, 465, 527, 617, 0, 750, 840, 903, 993],
-        [0, 90, 180, 270, 0, 444, 534, 624, 714, 0, 888, 978, 1068, 1158],
+        [
+            0, 47, 105, 152, 0, 260, 306, 365, 411, 0, 519, 566, 624, 671,
+        ],
+        [
+            0, 47, 129, 176, 0, 318, 365, 447, 494, 0, 636, 683, 765, 812,
+        ],
+        [
+            0, 90, 152, 242, 0, 375, 465, 527, 617, 0, 750, 840, 903, 993,
+        ],
+        [
+            0, 90, 180, 270, 0, 444, 534, 624, 714, 0, 888, 978, 1068, 1158,
+        ],
     ];
 
     /// The vertical excitation modes, `IVMA`: a sign per stack pair.
@@ -1224,7 +1240,13 @@ pub mod curtain {
             z: [0.0; 8],
             nbs: numbay.unsigned_abs().min(14) as usize,
         };
-        for (is, (z, c)) in ant.z.iter_mut().zip(ant.c.iter_mut()).enumerate().take(nostak) {
+        for (is, (z, c)) in ant
+            .z
+            .iter_mut()
+            .zip(ant.c.iter_mut())
+            .enumerate()
+            .take(nostak)
+        {
             *z = xs * is as R + xh;
             *c = stkrat[is];
         }

@@ -48,12 +48,12 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use hfcast::deck::{build_deck, DeckCase};
-use hfcast::voacap::model::{Fixes, Model};
-use hfcast::voacap::output::render;
 use hfcast::itu::{parse_report, run_case, ItuPaths};
 use hfcast::listing::parse_listing;
 use hfcast::runner::{itshfbc_dir, map_limit, run_deck, variant_bin, IsolatedRoot};
 use hfcast::stats::{correlation, fit_line, median, median_in_place, rms};
+use hfcast::voacap::model::{Fixes, Model};
+use hfcast::voacap::output::render;
 use hfcast::wspr::{
     self, smoothed_ssn, WsprPath, DECODE_FLOOR_DB, WSPR_BANDWIDTH_HZ, WSPR_BANDWIDTH_OFFSET_DB,
 };
@@ -185,9 +185,7 @@ fn main() -> ExitCode {
                 return ExitCode::FAILURE;
             }
         },
-        None if std::env::args().any(|a| a == "--ported") => {
-            Engine::Ported(Model::Compatible)
-        }
+        None if std::env::args().any(|a| a == "--ported") => Engine::Ported(Model::Compatible),
         None => Engine::Reference,
     };
 
@@ -313,13 +311,13 @@ fn run_path(
         botlines: None,
         toplines: None,
         outgraph: None,
-            integrate: None,
-            comment: None,
-            extra_cards: Vec::new(),
-            krun: 0,
-            efvar: Vec::new(),
-            esvar: Vec::new(),
-            edp: None,
+        integrate: None,
+        comment: None,
+        extra_cards: Vec::new(),
+        krun: 0,
+        efvar: Vec::new(),
+        esvar: Vec::new(),
+        edp: None,
         from_lat: path.tx_lat,
         from_lon: path.tx_lon,
         to_lat: path.rx_lat,
@@ -350,27 +348,25 @@ fn run_path(
     let voacap: Option<[Option<(f64, f64)>; 24]> =
         match listing_text(engine, voacap_bin, &case, &deck, index) {
             Ok(text) => {
-                {
-                    let listing = parse_listing(&text);
-                    let mut snr = [None; 24];
-                    let mut signal = [None; 24];
-                    for s in listing.numeric.iter().filter(|s| s.slot == 0) {
-                        match s.row.as_str() {
-                            "SNR" if s.value > IMPLAUSIBLE_SNR_DB => {
-                                snr[s.hour as usize] = Some(s.value - WSPR_BANDWIDTH_OFFSET_DB);
-                            }
-                            "S DBW" if s.value > IMPLAUSIBLE_SIGNAL_DBW => {
-                                signal[s.hour as usize] = Some(s.value);
-                            }
-                            _ => {}
+                let listing = parse_listing(&text);
+                let mut snr = [None; 24];
+                let mut signal = [None; 24];
+                for s in listing.numeric.iter().filter(|s| s.slot == 0) {
+                    match s.row.as_str() {
+                        "SNR" if s.value > IMPLAUSIBLE_SNR_DB => {
+                            snr[s.hour as usize] = Some(s.value - WSPR_BANDWIDTH_OFFSET_DB);
                         }
+                        "S DBW" if s.value > IMPLAUSIBLE_SIGNAL_DBW => {
+                            signal[s.hour as usize] = Some(s.value);
+                        }
+                        _ => {}
                     }
-                    let mut day = [None; 24];
-                    for (hour, slot) in day.iter_mut().enumerate() {
-                        *slot = snr[hour].zip(signal[hour]);
-                    }
-                    Some(day)
                 }
+                let mut day = [None; 24];
+                for (hour, slot) in day.iter_mut().enumerate() {
+                    *slot = snr[hour].zip(signal[hour]);
+                }
+                Some(day)
             }
             Err(e) => {
                 outcome.failure = Some(format!("engine: {e}"));

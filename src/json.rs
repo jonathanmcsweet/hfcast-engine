@@ -155,7 +155,10 @@ fn write_string(s: &str, out: &mut String) {
 
 pub fn parse(text: &str) -> Result<Json, String> {
     let bytes: Vec<char> = text.chars().collect();
-    let mut p = Parser { chars: &bytes, i: 0 };
+    let mut p = Parser {
+        chars: &bytes,
+        i: 0,
+    };
     p.skip_ws();
     let value = p.value()?;
     p.skip_ws();

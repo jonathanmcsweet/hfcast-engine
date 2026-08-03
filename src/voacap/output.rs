@@ -39,8 +39,12 @@ pub const MODEL: &str = "  VOACAP";
 /// following `Version `. It stops with an error when the file is
 /// missing, and so does this.
 pub fn read_version(itshfbc: &Path) -> Result<String, String> {
-    let text = super::data::read_to_string(itshfbc, "database/version.w32")
-        .map_err(|e| format!("{}: {e}", super::data::describe(itshfbc, "database/version.w32")))?;
+    let text = super::data::read_to_string(itshfbc, "database/version.w32").map_err(|e| {
+        format!(
+            "{}: {e}",
+            super::data::describe(itshfbc, "database/version.w32")
+        )
+    })?;
     let line = text.lines().next().unwrap_or("");
     let rest: String = line.chars().skip(8).collect();
     Ok(text_field(&rest, 8))

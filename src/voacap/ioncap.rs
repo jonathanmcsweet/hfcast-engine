@@ -172,13 +172,11 @@ pub fn cisi(x: R) -> (R, R) {
         let x2 = x * x;
         let t = x.cos();
         let s = x.sin();
-        let mut g = ((((x2 + 48.196_927) * x2 + 482.485_984) * x2 + 1114.978_885) * x2
-            + 449.690_326)
-            * x2;
+        let mut g =
+            ((((x2 + 48.196_927) * x2 + 482.485_984) * x2 + 1114.978_885) * x2 + 449.690_326) * x2;
         g = ((((x2 + 42.252_855) * x2 + 302.757_865) * x2 + 352.018_498) * x2 + 21.821_899) / g;
-        let mut f = ((((x2 + 40.021_433) * x2 + 322.624_911) * x2 + 570.236_28) * x2
-            + 157.105_423)
-            * x;
+        let mut f =
+            ((((x2 + 40.021_433) * x2 + 322.624_911) * x2 + 570.236_28) * x2 + 157.105_423) * x;
         f = ((((x2 + 38.027_264) * x2 + 265.187_033) * x2 + 335.677_32) * x2 + 38.102_495) / f;
         let si = 1.5708 - f * t - g * s;
         let ci = f * s - g * t;
@@ -225,8 +223,7 @@ fn finish(kop: i32, mut rain: R, x: R, sok: R, eff8: R, from_385: bool) -> (R, R
             if x >= 0.35 {
                 0.0
             } else {
-                -((((6416.702_573 * x - 6091.332_95) * x + 2179.890_548) * x - 364.817_380_3)
-                    * x
+                -((((6416.702_573 * x - 6091.332_95) * x + 2179.890_548) * x - 364.817_380_3) * x
                     + 25.646_201_46)
             }
         }
@@ -348,9 +345,7 @@ fn iongain2(
                 * (rhi.cos() * (fac * u1).sin() * (fac * u2).sin() / (u1 * u2)).powi(2)
                 * ((cb - rhi.sin() * t).powi(2)
                     * (ch * ch + 1.0 - 2.0 * ch * (psih - 2.0 * hwave * q).cos())
-                    + sb * sb
-                        * (cv * cv + 1.0 - 2.0 * cv * (psiv - 2.0 * hwave * q).cos())
-                        * r);
+                    + sb * sb * (cv * cv + 1.0 - 2.0 * cv * (psiv - 2.0 * hwave * q).cos()) * r);
         }
         // Terminated interlaced rhombic, KOP=10.
         10 => {
@@ -424,8 +419,7 @@ fn iongain2(
                 0.0
             };
             let f1 = if t != 0.0 {
-                (a * a + b * b) * (1.0 - 2.0 * cv * (psiv - 2.0 * bprim).cos() + cv * cv)
-                    / (t * t)
+                (a * a + b * b) * (1.0 - 2.0 * cv * (psiv - 2.0 * bprim).cos() + cv * cv) / (t * t)
             } else {
                 0.0
             };
@@ -487,24 +481,24 @@ fn iongain2(
                 let uc45 = u4 * copsi5;
                 let uc36 = u3 * copsi6;
                 rain = 0.025
-                    * (pp * pp
+                    * (pp
+                        * pp
                         * (((y2 * z1 - y1 * z2) / (u1 * u2)
                             - ch / (u3 * u4)
                                 * (y4 * (w1 * z3 + w2 * v3) - y3 * (w1 * z4 + w2 * v4)))
-                        .powi(2)
+                            .powi(2)
                             + ((-y2 * v1 + y1 * v2) / (u1 * u2)
                                 - ch / (u3 * u4)
                                     * (y4 * (w2 * z3 - w1 * v3) - y3 * (w2 * z4 - w1 * v4)))
-                            .powi(2))
+                                .powi(2))
                         + ((z1 * uc27 - z2 * uc18) / (u1 * u2)
                             - cv / (u3 * u4)
                                 * (w3 * (z3 * uc45 - z4 * uc36) + w4 * (v3 * uc45 - v4 * uc36)))
-                        .powi(2)
+                            .powi(2)
                         + ((-v1 * uc27 + v2 * uc18) / (u1 * u2)
                             - cv / (u3 * u4)
-                                * (w3 * (-v3 * uc45 + v4 * uc36)
-                                    + w4 * (z3 * uc45 - z4 * uc36)))
-                        .powi(2));
+                                * (w3 * (-v3 * uc45 + v4 * uc36) + w4 * (z3 * uc45 - z4 * uc36)))
+                            .powi(2));
                 rain *= 2.0;
                 x = 1.0;
             } else {
@@ -550,9 +544,21 @@ fn iongain2(
             };
             if (delta - PIO2).abs() > near_vertical {
                 sok = 0.0;
-                let dy = if ex[1] <= 0.0 { ex[1].abs() } else { ex[1] / wave };
-                let dz = if ex[2] <= 0.0 { ex[2].abs() } else { ex[2] / wave };
-                let dx = if ex[3] <= 0.0 { ex[3].abs() } else { ex[3] / wave };
+                let dy = if ex[1] <= 0.0 {
+                    ex[1].abs()
+                } else {
+                    ex[1] / wave
+                };
+                let dz = if ex[2] <= 0.0 {
+                    ex[2].abs()
+                } else {
+                    ex[2] / wave
+                };
+                let dx = if ex[3] <= 0.0 {
+                    ex[3].abs()
+                } else {
+                    ex[3] / wave
+                };
                 let chi = ch;
                 let psihi = psih;
                 ch = -chi * psihi.cos();
@@ -585,7 +591,11 @@ fn iongain2(
                 // ten elements per bay would write past them.
                 let mut ca = [0.0 as R; 10];
                 let mut sa = [0.0 as R; 10];
-                for (j, (c, s)) in ca.iter_mut().zip(sa.iter_mut()).enumerate().take(m as usize)
+                for (j, (c, s)) in ca
+                    .iter_mut()
+                    .zip(sa.iter_mut())
+                    .enumerate()
+                    .take(m as usize)
                 {
                     let fm = j as R;
                     let arg = 2.0 * PI * q * (h1 + fm * dz);
@@ -726,7 +736,15 @@ mod tests {
     fn a_dipole_answers_a_finite_gain_above_the_horizon() {
         let p = dipole_params();
         let mut st = IoncapState::default();
-        let (rain, eff) = iongain(&mut st, 3, 0.0, &p, 30.0_f32.to_radians(), 10.0, Model::Compatible);
+        let (rain, eff) = iongain(
+            &mut st,
+            3,
+            0.0,
+            &p,
+            30.0_f32.to_radians(),
+            10.0,
+            Model::Compatible,
+        );
         assert!(rain.is_finite());
         assert!((FLOOR..15.0).contains(&rain), "gain {rain}");
         assert_eq!(eff, 0.0);
@@ -763,8 +781,24 @@ mod tests {
         // SOK has not been reset on that path.
         let p = curtain_params();
         let mut st = IoncapState::default();
-        let (low, _) = iongain(&mut st, 6, 0.0, &p, 20.0_f32.to_radians(), 10.0, Model::Compatible);
-        let (high, _) = iongain(&mut st, 6, 0.0, &p, 45.0_f32.to_radians(), 10.0, Model::Compatible);
+        let (low, _) = iongain(
+            &mut st,
+            6,
+            0.0,
+            &p,
+            20.0_f32.to_radians(),
+            10.0,
+            Model::Compatible,
+        );
+        let (high, _) = iongain(
+            &mut st,
+            6,
+            0.0,
+            &p,
+            45.0_f32.to_radians(),
+            10.0,
+            Model::Compatible,
+        );
         assert!(low > FLOOR, "20 degrees should compute: {low}");
         // Floor plus the four elements per bay that SOK still holds.
         assert_eq!(high, FLOOR + 4.0);
@@ -774,8 +808,15 @@ mod tests {
     fn the_corrected_curtain_computes_above_thirty_three_degrees() {
         let p = curtain_params();
         let mut st = IoncapState::default();
-        let (high, _) =
-            iongain(&mut st, 6, 0.0, &p, 45.0_f32.to_radians(), 10.0, Model::Corrected);
+        let (high, _) = iongain(
+            &mut st,
+            6,
+            0.0,
+            &p,
+            45.0_f32.to_radians(),
+            10.0,
+            Model::Corrected,
+        );
         assert!(
             high > FLOOR + 4.0,
             "45 degrees should compute on the corrected tier: {high}"
@@ -805,7 +846,15 @@ mod tests {
 
         let mut warmed = IoncapState::default();
         // 5 m at 10 MHz is 0.1668 wavelengths: X ends below 0.35.
-        let _ = iongain(&mut warmed, 2, 0.0, &p, 30.0_f32.to_radians(), 10.0, Model::Compatible);
+        let _ = iongain(
+            &mut warmed,
+            2,
+            0.0,
+            &p,
+            30.0_f32.to_radians(),
+            10.0,
+            Model::Compatible,
+        );
         let (at_zero_warm, _) = iongain(&mut warmed, 2, 0.0, &p, 0.0, 10.0, Model::Compatible);
 
         assert_ne!(at_zero_fresh, at_zero_warm);

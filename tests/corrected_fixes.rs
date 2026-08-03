@@ -16,11 +16,11 @@
 //! stays runnable anywhere.
 
 use hfcast::deck::{build_deck, AntennaChoice, DeckCase};
-use hfcast::voacap::model::{Fixes, Model};
-use hfcast::voacap::output::render;
 use hfcast::fuzz::fuzz_cases;
 use hfcast::runner::{itshfbc_dir, IsolatedRoot};
 use hfcast::sweep::sweep_cases;
+use hfcast::voacap::model::{Fixes, Model};
+use hfcast::voacap::output::render;
 
 /// The first few method-26 cases from the fuzz corpus: the decks that
 /// run the LUF search. Their frequencies are ignored — the LUF methods

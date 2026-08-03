@@ -26,8 +26,17 @@ pub const WRITE: usize = 7;
 pub const FIELDS: usize = 8;
 const STEPS: usize = 9;
 
-const NAMES: [&str; STEPS] =
-    ["genion", "gethp", "luffy_freq_loop", "iono.hour", "findf", "area points", "answer json", "write", "area fields"];
+const NAMES: [&str; STEPS] = [
+    "genion",
+    "gethp",
+    "luffy_freq_loop",
+    "iono.hour",
+    "findf",
+    "area points",
+    "answer json",
+    "write",
+    "area fields",
+];
 
 static ON: AtomicBool = AtomicBool::new(false);
 static NS: [AtomicU64; STEPS] = [
@@ -77,7 +86,10 @@ pub struct Step {
 impl Step {
     pub fn new(which: usize) -> Self {
         if !enabled() {
-            return Step { which, started: None };
+            return Step {
+                which,
+                started: None,
+            };
         }
         let outer = DEPTH.with(|d| {
             let mut levels = d.get();
@@ -89,10 +101,16 @@ impl Step {
         // Already inside this region, so the outer timer is already
         // counting the same nanoseconds.
         if outer > 0 {
-            return Step { which, started: None };
+            return Step {
+                which,
+                started: None,
+            };
         }
         CALLS[which].fetch_add(1, Ordering::Relaxed);
-        Step { which, started: Some(Instant::now()) }
+        Step {
+            which,
+            started: Some(Instant::now()),
+        }
     }
 }
 
@@ -131,7 +149,13 @@ pub fn report(whole: std::time::Duration) -> String {
             if total > 0.0 { 100.0 * ns / total } else { 0.0 },
         ));
     }
-    out.push_str(&format!("{:<16} {:>8} {:>9.1} {:>6.1}%\n", "whole run", 1, total / 1e6, 100.0));
+    out.push_str(&format!(
+        "{:<16} {:>8} {:>9.1} {:>6.1}%\n",
+        "whole run",
+        1,
+        total / 1e6,
+        100.0
+    ));
     out.push_str("\ngethp nests inside genion, so their shares overlap.\n");
     out
 }

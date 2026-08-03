@@ -23,8 +23,8 @@ use super::sigdis::xlin;
 /// The elevation-angle scan, `ANG(40)` from `blkdat.for`, degrees.
 pub const ANG: [R; 40] = [
     0.0, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0,
-    26.0, 28.0, 30.0, 32.0, 34.0, 36.0, 38.0, 40.0, 42.0, 44.0, 46.0, 48.0, 50.0, 52.0, 54.0,
-    56.0, 60.0, 65.0, 70.0, 75.0, 80.0, 85.0, 89.99,
+    26.0, 28.0, 30.0, 32.0, 34.0, 36.0, 38.0, 40.0, 42.0, 44.0, 46.0, 48.0, 50.0, 52.0, 54.0, 56.0,
+    60.0, 65.0, 70.0, 75.0, 80.0, 85.0, 89.99,
 ];
 
 /// `NANGX`: how many of the scan angles apply per 2000 km of distance.
@@ -184,8 +184,8 @@ pub fn genion(s: &IonoState, k: usize) -> Ionogram {
     } else {
         for i in 10..30 {
             let f = ion.fvert[i];
-            ion.hprim[i] = s.hi[k][2] - s.yi[k][2] + bendy(s, 2, k, f)
-                + (pen(s, 0, k, f) - 2.0 * s.yi[k][0]);
+            ion.hprim[i] =
+                s.hi[k][2] - s.yi[k][2] + bendy(s, 2, k, f) + (pen(s, 0, k, f) - 2.0 * s.yi[k][0]);
         }
     }
     ion

@@ -681,7 +681,11 @@ fn sqmult(a: &[[R; 20]; 20], b: &[[R; 20]; 20], c: &mut [[R; 20]; 20], n: usize)
 
 /// `CMPINV`: the inverse `c + i d` of `a + i b` via two real
 /// inversions. Panics where the source STOPs on a singular matrix.
-fn cmpinv(a: &mut [[R; 20]; 20], b: &mut [[R; 20]; 20], n: usize) -> ([[R; 20]; 20], [[R; 20]; 20]) {
+fn cmpinv(
+    a: &mut [[R; 20]; 20],
+    b: &mut [[R; 20]; 20],
+    n: usize,
+) -> ([[R; 20]; 20], [[R; 20]; 20]) {
     let mut c = [[0.0 as R; 20]; 20];
     let mut d = [[0.0 as R; 20]; 20];
     let mut swapped = false;
@@ -983,13 +987,10 @@ pub fn mufesgan(
                     let c2 = 2.0 * cfac2 * cfac2 - 1.0;
                     let s2 = 2.0 * cfac2 * sfac2;
                     let zt = csz1(4.0 * fac2);
-                    let mut rzero = 0.5
-                        * (c2 * (zt.re - flog - 1.3862943612 - GAMA) - s2 * zt.im);
+                    let mut rzero = 0.5 * (c2 * (zt.re - flog - 1.3862943612 - GAMA) - s2 * zt.im);
                     let zt = csz1(fac4);
                     rzero = 30.0
-                        * (rzero
-                            + (1.0 + c2) * (-zt.re + flog + 0.6931471806 + GAMA)
-                            + s2 * zt.im);
+                        * (rzero + (1.0 + c2) * (-zt.re + flog + 0.6931471806 + GAMA) + s2 * zt.im);
                     let mut rin = rzero;
                     if el1 < 0.2 {
                         rin = 400.0 * el1 * el1 * RINTW / 16.0;
@@ -1127,8 +1128,8 @@ pub fn mufesgan(
                         z[j] = zj * 60.0 / (1.0 - cfac2);
                     }
                     let sqrd = dif.csqrt();
-                    let cxc = (z[0] * ((Cf32::new(1.0, 0.0) - sqrd) / (Cf32::new(1.0, 0.0) + sqrd)))
-                        .re;
+                    let cxc =
+                        (z[0] * ((Cf32::new(1.0, 0.0) - sqrd) / (Cf32::new(1.0, 0.0) + sqrd))).re;
                     st.rin = z[1].re + cxc;
                 }
                 rain = (120.0 * (aa * aa * sb * sb * q * q + bb * bb * cb * cb))
@@ -1216,7 +1217,8 @@ pub fn mufesgan(
                         v = v + Cf32::new(st.cix[j], st.ciy[j]) * zs[j];
                     }
                     let sqrd = dif.csqrt();
-                    let sum2 = (v * (Cf32::new(1.0, 0.0) - sqrd) / (Cf32::new(1.0, 0.0) + sqrd)
+                    let sum2 = (v * (Cf32::new(1.0, 0.0) - sqrd)
+                        / (Cf32::new(1.0, 0.0) + sqrd)
                         / Cf32::new(st.cix[nm1], st.ciy[nm1]))
                     .re;
                     st.rin = sum1 + sum2;
@@ -1235,10 +1237,12 @@ pub fn mufesgan(
                         etr += tt * (st.cix[j] * ctk - st.ciy[j] * stk);
                         eti += tt * (st.cix[j] * stk + st.ciy[j] * ctk);
                     }
-                    let epmag = cb * cb
+                    let epmag = cb
+                        * cb
                         * ((etr * (1.0 + w1) - eti * w2).powi(2)
                             + (eti * (1.0 + w1) + etr * w2).powi(2));
-                    let etmag = sb * sb
+                    let etmag = sb
+                        * sb
                         * (q * q)
                         * ((etr * (1.0 - w3) + eti * w4).powi(2)
                             + (eti * (1.0 - w3) - etr * w4).powi(2));
@@ -1353,8 +1357,7 @@ pub fn mufesgan(
                 let an = cm * b1 + cn * (a2 * w4 + b2 * w3);
                 let pam = cmp * a1 + cnp * (a2 * w1 - b2 * w2);
                 let pan = cmp * b1 + cnp * (a2 * w2 + b2 * w1);
-                rain =
-                    0.05 * (am * am + an * an + cdelp * cdelp * (pam * pam + pan * pan));
+                rain = 0.05 * (am * am + an * an + cdelp * cdelp * (pam * pam + pan * pan));
                 eff = -1.7;
             } else {
                 z1 -= 1.0;
@@ -1394,8 +1397,7 @@ pub fn mufesgan(
                         c1 += ch * (w1 * aa2 - w2 * bb2) / u34;
                         d1 += ch * (w1 * bb2 + w2 * aa2) / u34;
                     }
-                    rain = 0.05
-                        * (a1 * a1 + b1 * b1 + cdelp * cdelp * (c1 * c1 + d1 * d1));
+                    rain = 0.05 * (a1 * a1 + b1 * b1 + cdelp * cdelp * (c1 * c1 + d1 * d1));
                     eff = -1.7;
                 }
             }
@@ -1488,8 +1490,7 @@ pub fn mufesgan(
             let si4 = -csz1(w4h).im;
             let cw2h = w2h.cos();
             let sw2h = w2h.sin();
-            let vrt =
-                30.0 * ((1.0 + cw2h) * cin2 - 0.5 * cw2h * cin4 - sw2h * (si2 - 0.5 * si4));
+            let vrt = 30.0 * ((1.0 + cw2h) * cin2 - 0.5 * cw2h * cin4 - sw2h * (si2 - 0.5 * si4));
             let mut rin = vrt;
             if x < 0.2 {
                 rin = 400.0 * x * x * RINTW / 16.0;
@@ -1498,8 +1499,7 @@ pub fn mufesgan(
             rin = 16.0 * fmult * rin / RINTW;
             rain = g / rin;
             if x <= 0.20 {
-                eff =
-                    20.0 * (x * (6.335 + x * (67.95 - x * (693.0 - x * 1600.0)))).log10();
+                eff = 20.0 * (x * (6.335 + x * (67.95 - x * (693.0 - x * 1600.0)))).log10();
             }
         }
         // KOP=10 is not used for HFMUFES gains; the source STOPs.
@@ -1555,11 +1555,9 @@ pub fn mufesgan(
                     st.rin = 30.0
                         * (0.5 * (flog - w5)
                             + 0.6931471806
-                            + cfac2
-                                * (cfac2 * (flog - 2.0 * w33 + w5) - sfac2 * (w6 - 2.0 * w4b)));
+                            + cfac2 * (cfac2 * (flog - 2.0 * w33 + w5) - sfac2 * (w6 - 2.0 * w4b)));
                 }
-                rain = 30.0
-                    * (ethet1 * ethet1 + ethet2 * ethet2 + ephi1 * ephi1 + ephi2 * ephi2)
+                rain = 30.0 * (ethet1 * ethet1 + ethet2 * ethet2 + ephi1 * ephi1 + ephi2 * ephi2)
                     / st.rin;
             }
         }
@@ -1652,8 +1650,7 @@ pub fn mufesgan(
                 // and SUM2 contributes nothing. Kept as written.
                 let v = Cf32::ZERO;
                 let sqrd = dif.csqrt();
-                let sum2 =
-                    (v * (Cf32::new(1.0, 0.0) - sqrd) / (Cf32::new(1.0, 0.0) + sqrd)).re;
+                let sum2 = (v * (Cf32::new(1.0, 0.0) - sqrd) / (Cf32::new(1.0, 0.0) + sqrd)).re;
                 st.rin = sum0 + sum2;
             }
             let n = st.n;
@@ -1753,8 +1750,7 @@ pub fn mufesgan(
                 .re;
                 st.rin = r11 + cxc;
             }
-            rain = 120.0
-                * (etheta1 * etheta1 + etheta2 * etheta2 + ephi1 * ephi1 + ephi2 * ephi2)
+            rain = 120.0 * (etheta1 * etheta1 + etheta2 * etheta2 + ephi1 * ephi1 + ephi2 * ephi2)
                 / st.rin;
         }
         // Half rhombic, KOP=15.
@@ -1787,8 +1783,8 @@ pub fn mufesgan(
             let cc = -fi1 + fi2 + ((-cts4 + r4c) * w4 + (-sts4 + f4c) * w3) * cv;
             let ra = r1 + r2 + ((cts4 + r4c) * w1 - (sts4 + f4c) * w2) * ch;
             let ai = fi1 + fi2 + ((cts4 + r4c) * w2 + (sts4 + f4c) * w1) * ch;
-            let em1 = (cr * cb * q * rb + sr * t * rc).powi(2)
-                + (cr * cb * q * bi + sr * t * cc).powi(2);
+            let em1 =
+                (cr * cb * q * rb + sr * t * rc).powi(2) + (cr * cb * q * bi + sr * t * cc).powi(2);
             let enn1 = (cr * sb * ra).powi(2) + (cr * sb * ai).powi(2);
             rain = 0.1 * (enn1 + em1);
             eff = -1.7;

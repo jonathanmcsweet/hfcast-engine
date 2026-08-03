@@ -19,9 +19,9 @@
 use std::process::ExitCode;
 
 use hfcast::deck::build_deck;
-use hfcast::voacap::run::{run_muf, run_par, RunInputs};
 use hfcast::fuzz::fuzz_cases;
 use hfcast::runner::{map_limit, run_deck, variant_bin, IsolatedRoot};
+use hfcast::voacap::run::{run_muf, run_par, RunInputs};
 
 /// Comparisons round half to even, the way the Fortran runtime's
 /// formatted output does: a value that lands exactly on a printing
@@ -120,7 +120,11 @@ fn main() -> ExitCode {
                 }
             };
             if want.is_empty() || want.len() != got.len() {
-                out.broken = Some(format!("parsed {} rows, port has {}", want.len(), got.len()));
+                out.broken = Some(format!(
+                    "parsed {} rows, port has {}",
+                    want.len(),
+                    got.len()
+                ));
                 return out;
             }
             for (row, p) in want.iter().zip(&got) {
@@ -151,7 +155,9 @@ fn main() -> ExitCode {
                 for (i, (name, got, decimals)) in fields.into_iter().enumerate() {
                     out.cells += 1;
                     let want = row[i];
-                    if (want * decimals).round_ties_even() != (f64::from(got) * decimals).round_ties_even() {
+                    if (want * decimals).round_ties_even()
+                        != (f64::from(got) * decimals).round_ties_even()
+                    {
                         out.diffs.push(format!(
                             "UT {} point {}: {name} reference {want}, port {got}",
                             row[3], row[0]
@@ -182,8 +188,10 @@ fn main() -> ExitCode {
                 let got = f64::from(got);
                 out.cells += 1;
                 if (want * decimals).round_ties_even() != (got * decimals).round_ties_even() {
-                    out.diffs
-                        .push(format!("hour {} {}: reference {}, port {}", row.gmt, name, want, got));
+                    out.diffs.push(format!(
+                        "hour {} {}: reference {}, port {}",
+                        row.gmt, name, want, got
+                    ));
                 }
             };
             check("GMT", row.gmt, hour.gmt, 10.0);

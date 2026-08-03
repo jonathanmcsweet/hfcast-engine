@@ -15,10 +15,10 @@ use std::process::ExitCode;
 
 use hfcast::compare::{compare_listings, Comparison};
 use hfcast::deck::build_deck;
-use hfcast::voacap::run::{body_lines, listing_text, run, RunInputs};
 use hfcast::listing::parse_listing;
 use hfcast::runner::{run_deck, variant_bin, IsolatedRoot};
 use hfcast::sweep::sweep_cases;
+use hfcast::voacap::run::{body_lines, listing_text, run, RunInputs};
 
 /// `docs/sensitivity.md`, "Derived tolerance": the widest disagreement
 /// between IEEE-conformant builds of the reference.
@@ -97,7 +97,10 @@ fn main() -> ExitCode {
                 return ExitCode::FAILURE;
             }
         };
-        let ported = parse_listing(&listing_text(&hours, &body_lines(case.method, case.botlines.as_deref())));
+        let ported = parse_listing(&listing_text(
+            &hours,
+            &body_lines(case.method, case.botlines.as_deref()),
+        ));
         merged.merge(compare_listings(&fortran, &ported));
         compared += 1;
     }
