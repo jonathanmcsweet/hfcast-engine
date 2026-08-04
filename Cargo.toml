@@ -1,11 +1,11 @@
 [package]
 name = "hfcast"
-version = "0.66.3"
+version = "0.66.4"
 edition = "2021"
 rust-version = "1.87"
 description = "HF radio propagation prediction: a Rust port of VOACAP, verified cell by cell against the Fortran"
 license = "Apache-2.0"
-repository = "https://github.com/jonathanmcsweet/hfcast-engine"
+repository = "https://github.com/isopod/hfcast-engine"
 readme = "README.md"
 keywords = ["radio", "propagation", "voacap", "ionosphere", "hf"]
 categories = ["science", "simulation"]
@@ -26,6 +26,31 @@ exclude = [
   "tests/**",
   "trace/**",
   "soak-paths.tsv",
+
+  # Cargo finds a binary for every file in `src/bin/`, so all 22 of them
+  # would ship and `cargo install hfcast` would build and install all 22.
+  # Only `predict` is of any use to somebody who depends on this crate.
+  "src/bin/antcheck.rs",
+  "src/bin/archcheck.rs",
+  "src/bin/areacheck.rs",
+  "src/bin/calibrate.rs",
+  "src/bin/complexity.rs",
+  "src/bin/correctcheck.rs",
+  "src/bin/daily.rs",
+  "src/bin/engines.rs",
+  "src/bin/fuzz.rs",
+  "src/bin/irtam_validate.rs",
+  "src/bin/lufcheck.rs",
+  "src/bin/measure.rs",
+  "src/bin/mufcheck.rs",
+  "src/bin/paritycheck.rs",
+  "src/bin/portcheck.rs",
+  "src/bin/porttest.rs",
+  "src/bin/reliability.rs",
+  "src/bin/spacewx.rs",
+  "src/bin/storm.rs",
+  "src/bin/threadscale.rs",
+  "src/bin/validate.rs",
 ]
 
 [features]
@@ -42,10 +67,15 @@ embedded-coefficients = []
 
 # No dependencies on purpose. The harness is the reference against which a port
 # is judged, so its own supply chain is kept empty: everything here is std.
+#
+# `build.rs` has no dependencies either. It exists only to explain one
+# failure that would otherwise be a bare "file not found" — see the file.
 
-[[bin]]
-name = "measure"
-path = "src/bin/measure.rs"
+# `measure` had a `[[bin]]` section here naming the default path, which
+# Cargo finds by itself. It is gone because `src/bin/measure.rs` is now
+# excluded from the package, and a section naming a file the package does
+# not carry would fail the packaged build. `cargo run --bin measure`
+# still works in a source checkout.
 
 [profile.release]
 debug = true
