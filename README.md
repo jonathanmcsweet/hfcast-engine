@@ -61,7 +61,7 @@ compares the output character by character.
 | `paritycheck` | 7,104 fields that the application reads | 0 differ |
 | `archcheck` | this engine against itself on a different processor | identical |
 
-Plus 203 unit tests and 40 harness and integration tests.
+Plus 211 unit tests and 40 harness and integration tests.
 
 A [daily job](docs/soak.md) runs 200 paths through both engines with the
 space weather of that day. It fails if one number is different.
@@ -125,7 +125,7 @@ P.533.
 | `src/wspr.rs` | Reads collected WSPR reception reports |
 | `src/itu.rs` | Operates the ITU-R P.533 reference implementation |
 | `src/bin/` | The tests, `predict`, and `spacewx` |
-| `embedded/` | The 653 KB of data the engine needs, compiled in |
+| `embedded/` | The 560 KB of data the engine needs, compiled in |
 
 **There are no dependencies, on purpose.** This crate is the reference
 that a translation is judged against, so its own supply chain is empty.
@@ -161,9 +161,15 @@ To make one prediction:
 
 ```sh
 echo '{"fromLat":47.6,"fromLon":-122.3,"toLat":51.5,"toLon":-0.1,
-       "month":8,"year":2026,"ssn":60,"watts":100}' |
+       "month":8,"year":2026,"ssn":60,"watts":100,
+       "bands":[7.1,14.1,21.1],"requiredSnrDb":24,"noiseDbw":-145}' |
   cargo run --release --bin predict
 ```
+
+Each field above is necessary. `predict` reads the data tree named in
+the request, or `$HFCAST_ITSHFBC`, or `~/itshfbc`. A build with
+`--features embedded-coefficients` accepts `"itshfbc":"<embedded>"` and
+needs no tree.
 
 [docs/port.md](docs/port.md) has the complete list of tests, the options
 each one takes, and a "Traps" section that records each way a result has
