@@ -83,6 +83,30 @@ jobs:
         if: matrix.tests
         run: cargo build --all-targets --all-features --target ${{ matrix.target }}
 
+      # Ten of the tests read an `itshfbc` tree: eight open antenna files
+      # from it and two copy it. A runner has no tree, so all ten failed
+      # here with a "No such file or directory" panic naming the file and
+      # not the reason. `makeitshfbc` writes the tree and comes from
+      # voacapl, so building the reference is how a runner gets one.
+      - name: The voacapl commit, for the cache key
+        if: matrix.tests
+        id: voacapl
+        run: echo "commit=$(tools/build-itshfbc.sh --commit)" >>"$GITHUB_OUTPUT"
+
+      - name: Cache the data tree
+        if: matrix.tests
+        uses: actions/cache@v4
+        with:
+          path: ~/itshfbc
+          key: itshfbc-${{ matrix.slug }}-${{ steps.voacapl.outputs.commit }}
+
+      - name: Build the data tree
+        if: matrix.tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran make
+          tools/build-itshfbc.sh
+
       - name: Test
         if: matrix.tests
         run: |

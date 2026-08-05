@@ -29,6 +29,27 @@ if ! command -v cargo > /dev/null 2>&1; then
   export PATH
 fi
 
+# Ten of the tests read an `itshfbc` tree, and without one they fail with
+# ten "No such file or directory" panics that name a file and not the
+# reason. This says the reason once, before any of them run.
+#
+# It is also what CI needs, and CI not having a tree is exactly how this
+# was found: the workflows ran the tests with no tree and went red on
+# every push. A machine that can push is now a machine that could have
+# told you first.
+tree="${HFCAST_ITSHFBC:-$HOME/itshfbc}"
+if [[ ! -d $tree ]]; then
+  echo "pre-push: no itshfbc data tree at $tree" >&2
+  echo >&2
+  echo "  Ten tests read antenna files from it and will fail without it." >&2
+  echo "  Build it once, which takes about three minutes:" >&2
+  echo >&2
+  echo "      tools/build-itshfbc.sh" >&2
+  echo >&2
+  echo "  Or point HFCAST_ITSHFBC at a tree you already have." >&2
+  exit 1
+fi
+
 # Both builds. `--all-features` turns on `embedded-coefficients`; without
 # it the tests that read `<embedded>` do not run at all. The second line
 # is the default build, which is what a dependent from crates.io gets.
