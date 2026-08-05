@@ -52,8 +52,26 @@ jobs:
           git clone https://github.com/jawatson/voacapl.git vendor/voacapl
           git -C vendor/voacapl checkout --quiet "$VOACAPL_COMMIT"
           cd vendor/voacapl
+
+          # git does not record modification times, so a fresh clone can
+          # leave `aclocal.m4` looking older than `configure.ac`. make
+          # then tries to run aclocal-1.15 to make it again, which is not
+          # installed and is not needed: the generated files are in the
+          # repository. Setting the inputs old and the outputs new stops
+          # make trying. Without this the build stops at
+          # "aclocal-1.15: command not found". `ci.yml` does the same.
+          find . \( -name 'configure.ac' -o -name 'configure.in' \
+            -o -name 'Makefile.am' -o -name 'acinclude.m4' \) \
+            -exec touch -d '2000-01-01' {} +
+          find . \( -name 'aclocal.m4' -o -name 'configure' \
+            -o -name 'Makefile.in' -o -name 'config.h.in' \) -exec touch {} +
+
           ./configure --prefix="$HOME/.local"
-          make -j4
+          # Serial. `itshfbc/bin/anttyp99` compiles a module that two
+          # other files read, and the generated Makefile does not declare
+          # that dependency, so a parallel make can start a reader first
+          # and fail on a missing `cant99.mod`.
+          make
           make install
           # The installed copy, not the one in the source tree: the
           # prefix is substituted into it by the install hook, and the
