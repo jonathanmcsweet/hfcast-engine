@@ -32,9 +32,26 @@ fi
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tree="${HFCAST_ITSHFBC:-$HOME/itshfbc}"
 
-if [[ -d $tree && ${1:-} != --force ]]; then
+# `makeitshfbc` does not copy the data. It builds a tree of symlinks into
+# the voacapl install, so `$tree/coeffs`, `geocity`, `geonatio`, `geostate`
+# and four files under `database/` point at
+# `~/.local/share/voacapl/itshfbc/`. The tree is a set of directions to
+# the data, not the data.
+#
+# So "the directory is there" answers the wrong question. Move or drop the
+# install and every link dangles while the directory still looks fine, and
+# the tests fail with "No such file or directory" naming a file that is
+# right in front of you. Read something from behind a symlink instead: it
+# is the coefficients that matter and the coefficients that go missing.
+if [[ -r $tree/coeffs/coeff01.bin && ${1:-} != --force ]]; then
   echo "itshfbc tree already at $tree"
   exit 0
+fi
+
+if [[ -d $tree && ${1:-} != --force ]]; then
+  echo "build-itshfbc: $tree exists but its data is unreachable." >&2
+  echo "               Its symlinks point into a voacapl install that is" >&2
+  echo "               not there. Rebuilding both." >&2
 fi
 
 for tool in gfortran make; do

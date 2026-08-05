@@ -88,10 +88,19 @@ jobs:
       # here with a "No such file or directory" panic naming the file and
       # not the reason. `makeitshfbc` writes the tree and comes from
       # voacapl, so building the reference is how a runner gets one.
+      # Assigned, not interpolated straight into the echo: `echo "x=$(cmd)"`
+      # succeeds when the command fails, and an empty key caches nothing
+      # quietly.
       - name: The voacapl commit, for the cache key
         if: matrix.tests
         id: voacapl
-        run: echo "commit=$(tools/build-itshfbc.sh --commit)" >>"$GITHUB_OUTPUT"
+        run: |
+          commit=$(tools/build-itshfbc.sh --commit)
+          test -n "$commit" || {
+            echo "::error::build-itshfbc.sh --commit printed nothing"
+            exit 1
+          }
+          echo "commit=$commit" >>"$GITHUB_OUTPUT"
 
       - name: Cache the data tree
         if: matrix.tests
