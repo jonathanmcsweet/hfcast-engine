@@ -11,7 +11,32 @@ judgement made once the numbers are in.
 
 ## What runs
 
-`.github/workflows/soak.yml`, daily at 06:00 UTC:
+`.github/workflows/soak.yml`. Three events start it, and only the
+first writes the record:
+
+- **The schedule**, daily at 06:00 UTC. This is the soak itself. It is
+  the only run that appends to `log.tsv`, so the record stays one line
+  per day.
+- **A push to `main`.** The same sweep, against that day's numbers, so
+  a change is measured on real inputs without waiting for the next
+  morning. It records nothing; a failing sweep keeps its evidence as a
+  run artefact for 30 days.
+- **A manual dispatch**, which is how a release is checked. Same rules
+  as a push.
+
+## The badge
+
+The README badge reports the verdict of the last sweep and nothing
+else. A clean sweep turns it green, with the date it was measured.
+Differing fields turn it red, with the count. A run that could not
+measure — NOAA unreachable, the reference failing to build, a runner
+fault — does not move the badge, because on that run the engine was
+not compared. Such a run still fails in the Actions tab and still
+notifies; only the badge stays quiet. The date in the green badge is
+what shows staleness: if it falls behind, the measurements themselves
+have been failing to run.
+
+On the scheduled run:
 
 1. Builds `voacapl` from a pinned commit of `jawatson/voacapl`, with
    the runner's `gfortran`.
