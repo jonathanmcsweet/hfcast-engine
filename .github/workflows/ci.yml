@@ -16,7 +16,10 @@ env:
   VOACAPL_COMMIT: c12a98b
 
 jobs:
-  # A change that does not move the crate version fails here. Pull
+  # A change to what the published package ships that does not move the
+  # crate version fails here. Workflows, hooks, tools and documentation
+  # do not ship — the script asks `cargo package --list`, so the
+  # boundary is the `exclude` list in Cargo.toml and nowhere else. Pull
   # requests only: it compares against the base branch, and a push to
   # `main` has no base branch to compare against.
   version:
