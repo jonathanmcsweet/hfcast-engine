@@ -65,9 +65,19 @@ jobs:
       # not the reason. `makeitshfbc` writes the tree and comes from
       # voacapl, so building the reference is how a runner gets one. The
       # portcheck job below builds the same tree for its own reasons.
+      # Assigned, not interpolated straight into the echo. `echo "x=$(cmd)"`
+      # succeeds when the command fails, so a broken script here wrote an
+      # empty cache key and said nothing. That happened once, when the
+      # script reached the runner without its executable bit.
       - name: The voacapl commit, for the cache key
         id: voacapl
-        run: echo "commit=$(tools/build-itshfbc.sh --commit)" >>"$GITHUB_OUTPUT"
+        run: |
+          commit=$(tools/build-itshfbc.sh --commit)
+          test -n "$commit" || {
+            echo "::error::build-itshfbc.sh --commit printed nothing"
+            exit 1
+          }
+          echo "commit=$commit" >>"$GITHUB_OUTPUT"
 
       - name: Cache the data tree
         uses: actions/cache@v4
