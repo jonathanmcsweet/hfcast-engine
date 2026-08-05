@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Runs before every push: the typechecks and the tests of both packages.
-# The formatting and lint checks are in the pre-commit hook.
+# Runs before every push: both test builds and the static analysis gates.
+# The formatting and clippy checks are in the pre-commit hook.
 #
 # Turn the hooks on once per clone:
 #
@@ -9,38 +9,93 @@
 #
 # To push without them: `git push --no-verify`.
 #
-# CI runs four more tests that start the engine as a subprocess and check
-# the JSON contract between it and the server. They need gfortran and the
-# engine version in `mobile/modules/engine-bridge/rust/Cargo.lock`, so
-# they are not here.
+# `portcheck` is not here. It is the check the crate rests on, but it
+# needs gfortran and a build of the reference, which takes minutes. CI
+# runs it in its own job. Run it yourself for any change that could move
+# a number:
+#
+#     VARIANTS=O2 tools/build-variants.sh
+#     HFCAST_ITSHFBC="$HOME/itshfbc" cargo run --release --bin portcheck
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
-pnpm_bin() {
-  if command -v pnpm > /dev/null 2>&1; then
-    command -v pnpm
-    return
-  fi
-  local newest
-  newest="$(ls -d "$HOME"/.nvm/versions/node/*/bin/pnpm 2> /dev/null | sort -V | tail -1)"
-  [[ -n $newest ]] || {
-    echo "pre-push: no pnpm found. Put it on PATH." >&2
+if ! command -v cargo > /dev/null 2>&1; then
+  [[ -x $HOME/.cargo/bin/cargo ]] || {
+    echo "pre-push: no cargo found. Put it on PATH." >&2
     exit 1
   }
-  echo "$newest"
-}
+  PATH="$HOME/.cargo/bin:$PATH"
+  export PATH
+fi
 
-pnpm="$(pnpm_bin)"
+# Ten of the tests read an `itshfbc` tree, and without one they fail with
+# ten "No such file or directory" panics that name a file and not the
+# reason. This says the reason once, before any of them run.
+#
+# It is also what CI needs, and CI not having a tree is exactly how this
+# was found: the workflows ran the tests with no tree and went red on
+# every push. A machine that can push is now a machine that could have
+# told you first.
+tree="${HFCAST_ITSHFBC:-$HOME/itshfbc}"
+if [[ ! -d $tree ]]; then
+  echo "pre-push: no itshfbc data tree at $tree" >&2
+  echo >&2
+  echo "  Ten tests read antenna files from it and will fail without it." >&2
+  echo "  Build it once, which takes about three minutes:" >&2
+  echo >&2
+  echo "      tools/build-itshfbc.sh" >&2
+  echo >&2
+  echo "  Or point HFCAST_ITSHFBC at a tree you already have." >&2
+  exit 1
+fi
 
-echo "pre-push: mobile typecheck"
-"$pnpm" --dir mobile typecheck
+# Both builds. `--all-features` turns on `embedded-coefficients`; without
+# it the tests that read `<embedded>` do not run at all. The second line
+# is the default build, which is what a dependent from crates.io gets.
+echo "pre-push: tests, with the coefficient maps"
+cargo test --all-features
 
-echo "pre-push: mobile tests"
-"$pnpm" --dir mobile test
+echo "pre-push: tests, default build"
+cargo test
 
-echo "pre-push: server typecheck"
-"$pnpm" --dir server typecheck
+echo "pre-push: static analysis gates"
+tools/analyze.sh --gate
 
-echo "pre-push: server tests"
-"$pnpm" --dir server test
+# The same command CI runs, last, for the same reasons — but against a
+# clean checkout of HEAD rather than this working tree. Three things come
+# out of it that nothing above can tell you:
+#
+#   - `cargo package` refuses to run against a modified tree. Every build
+#     above rewrites `Cargo.lock` when it disagrees with `Cargo.toml`, so
+#     a version bump that left the lock behind is dirty by the time this
+#     runs, and this is what says so. Finding that out from CI cost a
+#     full run of a job that had already passed everything else.
+#   - the crate is published, so the package has to keep building from
+#     its own tarball, which is the build `cargo package` does.
+#   - a coefficient file leaking back into the package, which is a
+#     licensing question rather than a build one. See docs/licence.md.
+#
+# The worktree is the point, not ceremony. Run in place, this would read
+# whatever you happen to have open and refuse to push while you hold any
+# unrelated edit. What matters is the commit you are sending, which is
+# also exactly what a runner will check out.
+echo "pre-push: package, from a clean checkout of HEAD"
+package_tree=$(mktemp -d)
+git worktree add --quiet --detach "$package_tree" HEAD
+cleanup() { git worktree remove --force "$package_tree" > /dev/null 2>&1 || true; }
+trap cleanup EXIT
+
+# This repository's target directory, not the worktree's. Resolved here
+# because inside the worktree `--show-toplevel` answers the worktree, and
+# the build output would be thrown away with it on every push.
+package_target="$PWD/target/prepush-package"
+(cd "$package_tree" && CARGO_TARGET_DIR="$package_target" cargo package)
+
+crate=("$package_target"/package/hfcast-*.crate)
+if tar tzf "${crate[0]}" | grep -q 'embedded/coeffs'; then
+  echo "pre-push: the ionospheric coefficients are in the package." >&2
+  echo "          See docs/licence.md. Do not publish this." >&2
+  exit 1
+fi
+echo "pre-push: package builds and holds no coefficient files"

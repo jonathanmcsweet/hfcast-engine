@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Runs before every commit. Formatting and lint only, so that it stays
-# fast. The tests are in the pre-push hook.
+# Runs before every commit: formatting and clippy. The tests and the
+# gates are in the pre-push hook.
 #
 # Turn the hooks on once per clone:
 #
@@ -21,26 +21,77 @@ if git diff --cached --name-only | grep -qE '^docs/roadmap(-progress)?\.md$'; th
   exit 1
 fi
 
-# pnpm is not always on PATH. Take the one in use if it is there, and the
-# newest nvm install if it is not.
-pnpm_bin() {
-  if command -v pnpm > /dev/null 2>&1; then
-    command -v pnpm
-    return
-  fi
-  local newest
-  newest="$(ls -d "$HOME"/.nvm/versions/node/*/bin/pnpm 2> /dev/null | sort -V | tail -1)"
-  [[ -n $newest ]] || {
-    echo "pre-commit: no pnpm found. Put it on PATH." >&2
+# cargo is not always on PATH.
+if ! command -v cargo > /dev/null 2>&1; then
+  [[ -x $HOME/.cargo/bin/cargo ]] || {
+    echo "pre-commit: no cargo found. Put it on PATH." >&2
     exit 1
   }
-  echo "$newest"
-}
+  PATH="$HOME/.cargo/bin:$PATH"
+  export PATH
+fi
 
-pnpm="$(pnpm_bin)"
+# A workflow that runs the tests has to build the data tree first, or it
+# goes red on ten tests that name a missing file and not the reason. That
+# happened, and nothing here would have said so before the push.
+#
+# The check is per file, not per job: it asks that a workflow running
+# `cargo test` also runs `tools/build-itshfbc.sh` somewhere. A workflow
+# with two jobs could still satisfy it wrongly. It is a reminder in the
+# right place, not a proof — running the workflows is what proves it.
+for workflow in .github/workflows/*.yml; do
+  if grep -q 'cargo test' "$workflow" &&
+    ! grep -q 'build-itshfbc.sh' "$workflow"; then
+    echo "pre-commit: $workflow runs the tests and never builds the" >&2
+    echo "            itshfbc tree they read. Add:" >&2
+    echo >&2
+    echo "                tools/build-itshfbc.sh" >&2
+    exit 1
+  fi
+done
+
+# The workflows run these by path, so a script committed without its
+# executable bit stops the job at "Permission denied", exit 126. That is
+# what git records, not what the working copy happens to be: a file
+# copied between clones by hand arrives as 0644 and looks fine locally.
+# It has happened.
+while read -r mode _ _ path; do
+  case $path in
+    tools/*.sh | .githooks/*)
+      [[ $mode == 100755 ]] || {
+        echo "pre-commit: $path is committed as $mode, not executable." >&2
+        echo "            CI runs it by path and would stop at" >&2
+        echo "            \"Permission denied\". Fix it with:" >&2
+        echo >&2
+        echo "                git update-index --chmod=+x $path" >&2
+        exit 1
+      }
+      ;;
+  esac
+done < <(git diff --cached --name-only --diff-filter=d -z |
+  xargs -0 --no-run-if-empty git ls-files -s --)
 
 echo "pre-commit: formatting"
-"$pnpm" fmt:check
+cargo fmt --check
 
-echo "pre-commit: lint"
-"$pnpm" lint
+echo "pre-commit: clippy"
+cargo clippy --all-targets --all-features -- -D warnings
+
+# Any cargo command resolves dependencies first, so the clippy build above
+# has just rewritten `Cargo.lock` if it disagreed with `Cargo.toml` — a
+# version bump that left the lock behind, most often. The repaired lock is
+# now on disk and the stale one is still in the commit, which is the worst
+# of both: it looks right here and fails in CI, at `cargo package`, after
+# everything else has passed.
+#
+# Asking git what the build changed beats parsing the versions and
+# comparing them. It needs no knowledge of what may drift, and this crate
+# gaining a dependency one day would not quietly narrow it.
+if ! git diff --quiet -- Cargo.lock; then
+  echo "pre-commit: the build updated Cargo.lock, so the commit would" >&2
+  echo "            carry a stale one and CI would fail at \`cargo" >&2
+  echo "            package\`. Include it:" >&2
+  echo >&2
+  echo "                git add Cargo.lock" >&2
+  exit 1
+fi
