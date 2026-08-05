@@ -61,3 +61,41 @@ cargo test
 
 echo "pre-push: static analysis gates"
 tools/analyze.sh --gate
+
+# The same command CI runs, last, for the same reasons — but against a
+# clean checkout of HEAD rather than this working tree. Three things come
+# out of it that nothing above can tell you:
+#
+#   - `cargo package` refuses to run against a modified tree. Every build
+#     above rewrites `Cargo.lock` when it disagrees with `Cargo.toml`, so
+#     a version bump that left the lock behind is dirty by the time this
+#     runs, and this is what says so. Finding that out from CI cost a
+#     full run of a job that had already passed everything else.
+#   - the crate is published, so the package has to keep building from
+#     its own tarball, which is the build `cargo package` does.
+#   - a coefficient file leaking back into the package, which is a
+#     licensing question rather than a build one. See docs/licence.md.
+#
+# The worktree is the point, not ceremony. Run in place, this would read
+# whatever you happen to have open and refuse to push while you hold any
+# unrelated edit. What matters is the commit you are sending, which is
+# also exactly what a runner will check out.
+echo "pre-push: package, from a clean checkout of HEAD"
+package_tree=$(mktemp -d)
+git worktree add --quiet --detach "$package_tree" HEAD
+cleanup() { git worktree remove --force "$package_tree" > /dev/null 2>&1 || true; }
+trap cleanup EXIT
+
+# This repository's target directory, not the worktree's. Resolved here
+# because inside the worktree `--show-toplevel` answers the worktree, and
+# the build output would be thrown away with it on every push.
+package_target="$PWD/target/prepush-package"
+(cd "$package_tree" && CARGO_TARGET_DIR="$package_target" cargo package)
+
+crate=("$package_target"/package/hfcast-*.crate)
+if tar tzf "${crate[0]}" | grep -q 'embedded/coeffs'; then
+  echo "pre-push: the ionospheric coefficients are in the package." >&2
+  echo "          See docs/licence.md. Do not publish this." >&2
+  exit 1
+fi
+echo "pre-push: package builds and holds no coefficient files"

@@ -50,8 +50,48 @@ for workflow in .github/workflows/*.yml; do
   fi
 done
 
+# The workflows run these by path, so a script committed without its
+# executable bit stops the job at "Permission denied", exit 126. That is
+# what git records, not what the working copy happens to be: a file
+# copied between clones by hand arrives as 0644 and looks fine locally.
+# It has happened.
+while read -r mode _ _ path; do
+  case $path in
+    tools/*.sh | .githooks/*)
+      [[ $mode == 100755 ]] || {
+        echo "pre-commit: $path is committed as $mode, not executable." >&2
+        echo "            CI runs it by path and would stop at" >&2
+        echo "            \"Permission denied\". Fix it with:" >&2
+        echo >&2
+        echo "                git update-index --chmod=+x $path" >&2
+        exit 1
+      }
+      ;;
+  esac
+done < <(git diff --cached --name-only --diff-filter=d -z |
+  xargs -0 --no-run-if-empty git ls-files -s --)
+
 echo "pre-commit: formatting"
 cargo fmt --check
 
 echo "pre-commit: clippy"
 cargo clippy --all-targets --all-features -- -D warnings
+
+# Any cargo command resolves dependencies first, so the clippy build above
+# has just rewritten `Cargo.lock` if it disagreed with `Cargo.toml` — a
+# version bump that left the lock behind, most often. The repaired lock is
+# now on disk and the stale one is still in the commit, which is the worst
+# of both: it looks right here and fails in CI, at `cargo package`, after
+# everything else has passed.
+#
+# Asking git what the build changed beats parsing the versions and
+# comparing them. It needs no knowledge of what may drift, and this crate
+# gaining a dependency one day would not quietly narrow it.
+if ! git diff --quiet -- Cargo.lock; then
+  echo "pre-commit: the build updated Cargo.lock, so the commit would" >&2
+  echo "            carry a stale one and CI would fail at \`cargo" >&2
+  echo "            package\`. Include it:" >&2
+  echo >&2
+  echo "                git add Cargo.lock" >&2
+  exit 1
+fi
