@@ -59,12 +59,12 @@ jobs:
             runner: ubuntu-latest
             tests: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - run: rustup target add ${{ matrix.target }}
 
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -104,7 +104,7 @@ jobs:
 
       - name: Cache the data tree
         if: matrix.tests
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/itshfbc
           key: itshfbc-${{ matrix.slug }}-${{ steps.voacapl.outputs.commit }}
@@ -128,7 +128,7 @@ jobs:
         if: always()
         run: tools/write-badge.sh "${{ matrix.label }}" "${{ job.status }}" "badges/${{ matrix.slug }}.json"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: always()
         with:
           name: badge-${{ matrix.slug }}
@@ -145,9 +145,9 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           path: badges
           pattern: badge-*
