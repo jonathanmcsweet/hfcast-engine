@@ -2,19 +2,26 @@
 #
 # Puts badge files on the `badges` branch, which holds nothing else.
 #
-#   tools/publish-badges.sh <directory of .json files>
+#   tools/publish-badges.sh <directory of .json files> [glob...]
 #
 # The branch is an orphan: it shares no history with `main`, so it costs
 # almost nothing and a reader who clones the repository does not get it
 # unless they ask. shields.io reads each file from raw.githubusercontent
 # and draws it.
 #
-# The branch is made on the first run. Later runs replace every file, so
-# a badge for an architecture that no longer exists goes away with it.
+# The branch is made on the first run. The globs name the files this
+# caller owns: those are deleted before the new files are copied in, so
+# a badge for an architecture that no longer exists goes away, while a
+# badge published by a different workflow stays. With no glob the
+# caller owns every file, which is right only while it is the sole
+# publisher.
 set -euo pipefail
 
-src=${1:?usage: publish-badges.sh <directory>}
+src=${1:?usage: publish-badges.sh <directory> [glob...]}
 src="$(cd "$src" && pwd)"
+shift
+globs=("${@}")
+[[ ${#globs[@]} -gt 0 ]] || globs=('*.json')
 
 # Fail here rather than push an empty branch if the artefacts did not
 # arrive.
@@ -42,7 +49,9 @@ else
   git -C "$work" rm --quiet -rf . > /dev/null 2>&1 || true
 fi
 
-find "$work" -maxdepth 1 -name '*.json' -delete
+for glob in "${globs[@]}"; do
+  find "$work" -maxdepth 1 -name "$glob" -delete
+done
 cp "$src"/*.json "$work/"
 
 git -C "$work" add -A
@@ -52,6 +61,6 @@ if git -C "$work" diff --cached --quiet; then
   exit 0
 fi
 
-git -C "$work" commit --quiet -m "ci: update the architecture badges"
+git -C "$work" commit --quiet -m "ci: update the badges"
 git -C "$work" push --quiet origin badges
 echo "pushed $(find "$src" -maxdepth 1 -name '*.json' | wc -l) badges"

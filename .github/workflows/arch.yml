@@ -153,4 +153,6 @@ jobs:
           pattern: badge-*
           merge-multiple: true
 
-      - run: tools/publish-badges.sh badges
+      # The globs name the badges this workflow owns. The soak publishes
+      # `soak.json` to the same branch, and it must survive this run.
+      - run: tools/publish-badges.sh badges 'linux-*.json' 'android-*.json'
