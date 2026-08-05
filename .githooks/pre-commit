@@ -31,6 +31,25 @@ if ! command -v cargo > /dev/null 2>&1; then
   export PATH
 fi
 
+# A workflow that runs the tests has to build the data tree first, or it
+# goes red on ten tests that name a missing file and not the reason. That
+# happened, and nothing here would have said so before the push.
+#
+# The check is per file, not per job: it asks that a workflow running
+# `cargo test` also runs `tools/build-itshfbc.sh` somewhere. A workflow
+# with two jobs could still satisfy it wrongly. It is a reminder in the
+# right place, not a proof — running the workflows is what proves it.
+for workflow in .github/workflows/*.yml; do
+  if grep -q 'cargo test' "$workflow" &&
+    ! grep -q 'build-itshfbc.sh' "$workflow"; then
+    echo "pre-commit: $workflow runs the tests and never builds the" >&2
+    echo "            itshfbc tree they read. Add:" >&2
+    echo >&2
+    echo "                tools/build-itshfbc.sh" >&2
+    exit 1
+  fi
+done
+
 echo "pre-commit: formatting"
 cargo fmt --check
 
