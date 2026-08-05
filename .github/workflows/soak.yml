@@ -9,7 +9,20 @@ name: Parity soak
 # and appends one line to the record, or it fails and keeps everything
 # needed to reproduce the difference. No judgement happens here.
 
+# Three ways in, and they are not the same job:
+#
+#   schedule   the daily measurement, and the only one that writes the
+#              record on `soak-results`
+#   push       every change that reaches `main`, against that day's real
+#              numbers. `portcheck` in `ci.yml` compares the two engines
+#              over a fixed grid; this compares them over the 200 real
+#              paths and the weather of the day, which the grid does not
+#              sample. It notifies and does not gate: it runs after the
+#              merge, not before it.
+#   dispatch   by hand, which is what a release is checked with
 on:
+  push:
+    branches: [main]
   schedule:
     - cron: '0 6 * * *'
   workflow_dispatch:
@@ -118,8 +131,14 @@ jobs:
             --dump dumps \
             | tee parity.md
 
+      # The scheduled run only. `log.tsv` is one line per day, and a day
+      # with three merges in it would otherwise get three lines against
+      # the same weather and stop being a daily record. A push or a
+      # dispatch still runs the whole sweep and still fails; what it does
+      # not do is write the record. Its evidence is kept as an artefact
+      # by the step below.
       - name: Record the day
-        if: always()
+        if: always() && github.event_name == 'schedule'
         run: |
           DAY="$(date -u +%Y-%m-%d)"
           PATHS="$(grep -cv -e '^[[:space:]]*#' -e '^[[:space:]]*$' soak-paths.tsv)"
@@ -164,9 +183,52 @@ jobs:
             || echo "nothing to record"
           git push -q origin soak-results
 
+      # The README badge, and the one rule it obeys: it moves only on a
+      # verdict about the numbers. A clean sweep turns it green, a sweep
+      # with differing fields turns it red, and everything else — NOAA
+      # down, the reference failing to build, the runner dying — leaves
+      # it as it was, because on those days the engine was not measured.
+      #
+      # That is why this step has no `always()`: when an earlier step
+      # fails, this one is skipped and the badge keeps its last state.
+      # The sweep itself cannot skip it, because `continue-on-error`
+      # keeps the job healthy; a sweep that stopped without reporting a
+      # count publishes nothing.
+      - name: Publish the verdict badge
+        run: |
+          differing="$(sed -n 's/^[0-9]* fields compared, \([0-9]*\) differing.*/\1/p' parity.md | tail -1)"
+          day="$(date -u +%Y-%m-%d)"
+
+          if [ "${{ steps.parity.outcome }}" = "success" ]; then
+            tools/write-badge.sh --raw "parity soak" "clean $day" brightgreen out/soak.json
+          elif [ -n "$differing" ] && [ "$differing" -gt 0 ]; then
+            tools/write-badge.sh --raw "parity soak" "$differing fields differ" red out/soak.json
+          else
+            echo "the sweep stopped without a verdict; the badge keeps its last state"
+            exit 0
+          fi
+          tools/publish-badges.sh out 'soak.json'
+
+      # A run that wrote no record would otherwise lose its evidence when
+      # the runner goes away.
+      - name: Keep the evidence when nothing was recorded
+        if: steps.parity.outcome != 'success' && github.event_name != 'schedule'
+        uses: actions/upload-artifact@v7
+        with:
+          name: parity-${{ github.run_id }}
+          path: |
+            parity.md
+            dumps/
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: Fail if the day was not clean
         if: steps.parity.outcome != 'success'
         run: |
           echo "The parity sweep reported a difference or could not run."
-          echo "The deck and both outputs are on the soak-results branch."
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "The deck and both outputs are on the soak-results branch."
+          else
+            echo "The deck and both outputs are attached to this run."
+          fi
           exit 1
