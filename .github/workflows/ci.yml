@@ -58,6 +58,39 @@ jobs:
       # checkout, so it has them.
       - run: cargo fmt --check
       - run: cargo build --all-targets --all-features
+
+      # Ten of the tests read an `itshfbc` tree: eight open antenna files
+      # from it and two copy it. A runner has no tree, so all ten failed
+      # here with a "No such file or directory" panic naming the file and
+      # not the reason. `makeitshfbc` writes the tree and comes from
+      # voacapl, so building the reference is how a runner gets one. The
+      # portcheck job below builds the same tree for its own reasons.
+      # Assigned, not interpolated straight into the echo. `echo "x=$(cmd)"`
+      # succeeds when the command fails, so a broken script here wrote an
+      # empty cache key and said nothing. That happened once, when the
+      # script reached the runner without its executable bit.
+      - name: The voacapl commit, for the cache key
+        id: voacapl
+        run: |
+          commit=$(tools/build-itshfbc.sh --commit)
+          test -n "$commit" || {
+            echo "::error::build-itshfbc.sh --commit printed nothing"
+            exit 1
+          }
+          echo "commit=$commit" >>"$GITHUB_OUTPUT"
+
+      - name: Cache the data tree
+        uses: actions/cache@v4
+        with:
+          path: ~/itshfbc
+          key: itshfbc-${{ runner.os }}-${{ steps.voacapl.outputs.commit }}
+
+      - name: Build the data tree
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran make
+          tools/build-itshfbc.sh
+
       - run: cargo test --all-features
       - run: cargo clippy --all-targets --all-features -- -D warnings
 
