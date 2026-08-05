@@ -1,7 +1,7 @@
 # HFcast Engine
 
 [![CI](https://github.com/jonathanmcsweet/hfcast-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/jonathanmcsweet/hfcast-engine/actions/workflows/ci.yml)
-[![Parity soak](https://github.com/jonathanmcsweet/hfcast-engine/actions/workflows/soak.yml/badge.svg)](https://github.com/jonathanmcsweet/hfcast-engine/actions/workflows/soak.yml)
+[![Parity soak](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/jonathanmcsweet/hfcast-engine/badges/soak.json)](https://github.com/jonathanmcsweet/hfcast-engine/actions/workflows/soak.yml)
 [![Licence](https://img.shields.io/badge/licence-Apache--2.0-blue)](LICENSE)
 [![No dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)](Cargo.toml)
 

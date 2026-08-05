@@ -1,6 +1,6 @@
 [package]
 name = "hfcast"
-version = "0.66.7"
+version = "0.66.8"
 edition = "2021"
 rust-version = "1.87"
 description = "HF radio propagation prediction: a Rust port of VOACAP, verified cell by cell against the Fortran"
@@ -26,6 +26,17 @@ exclude = [
   "tests/**",
   "trace/**",
   "soak-paths.tsv",
+
+  # Repository plumbing. None of it does anything in a dependency, and
+  # what ships is what obliges a version bump — see
+  # `tools/check-version-bump.sh`, which reads this boundary from
+  # `cargo package --list`.
+  ".github/**",
+  ".githooks/**",
+  ".gitignore",
+  ".git-blame-ignore-revs",
+  "AGENTS.md",
+  "CLAUDE.md",
 
   # Cargo finds a binary for every file in `src/bin/`, so all 22 of them
   # would ship and `cargo install hfcast` would build and install all 22.
