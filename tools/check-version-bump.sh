@@ -5,15 +5,8 @@
 #   tools/check-version-bump.sh <base-ref>       # e.g. origin/main
 #
 # One crate, one version, in Cargo.toml. The rule: a change to anything
-# that ships in the published package has to move it, and a change to
-# anything else — workflows, hooks, tools, documentation — does not.
-#
-# What ships is not written here. It is asked of cargo, from the
-# `exclude` list in Cargo.toml, so this check and `cargo publish` can
-# never disagree about where the boundary is. The package is listed at
-# both ends of the comparison: a file added to the package is in the
-# HEAD list, and a file deleted from it is in the base list.
-#
+# that ships in the published package gets a version bump. Other items
+# don't
 # The comparison is "greater than", not "different from", so a version
 # that goes backwards fails as well.
 set -euo pipefail
