@@ -56,8 +56,10 @@ fi
 
 for tool in gfortran make; do
   command -v "$tool" > /dev/null 2>&1 || {
-    echo "build-itshfbc: no $tool. Install it:" >&2
-    echo "    sudo apt-get install -y gfortran make" >&2
+    echo "build-itshfbc: no $tool. Install it, with whichever package" >&2
+    echo "               manager the machine uses:" >&2
+    echo "    brew install gfortran                    # Homebrew" >&2
+    echo "    sudo apt-get install -y gfortran make    # Debian, Ubuntu" >&2
     exit 1
   }
 done
