@@ -185,8 +185,15 @@ fn get<'a>(fields: &'a [String], index: &HashMap<String, usize>, name: &str) -> 
     Some(fields.get(*index.get(name)?)?.as_str())
 }
 
+/// One numeric field, or `None` when the column holds no usable number.
+///
+/// `f64::from_str` accepts `NaN` and `inf`, which no reading is, and a
+/// row that carried one was kept: `stats::median` then stopped the whole
+/// run at its own check, inside a `thread::scope`, so one bad row ended
+/// a month rather than being left out of it.
 fn number(fields: &[String], index: &HashMap<String, usize>, name: &str) -> Option<f64> {
-    get(fields, index, name)?.parse().ok()
+    let value: f64 = get(fields, index, name)?.parse().ok()?;
+    value.is_finite().then_some(value)
 }
 
 pub fn load(dir: &Path) -> io::Result<WsprData> {
@@ -321,6 +328,26 @@ mod tests {
         "\"2E0DLC\",\"EA8BFK\",14,0,238,-18\n",
         "\"2E0DLC\",\"EA8BFK\",14,23,240,-12.5\n",
     );
+
+    #[test]
+    fn a_row_with_no_usable_number_is_left_out() {
+        // `NaN` and `inf` parse as numbers. A row with one was kept, and
+        // `stats::median` then stopped the run at its own check — inside
+        // a `thread::scope`, so one row ended a whole month.
+        let daily = concat!(
+            "\"tx_sign\",\"rx_sign\",\"band\",\"day\",\"hour\",\"reports\",\"snr_median\"\n",
+            "\"2E0DLC\",\"EA8BFK\",14,1,0,10,-18\n",
+            "\"2E0DLC\",\"EA8BFK\",14,1,1,10,NaN\n",
+            "\"2E0DLC\",\"EA8BFK\",14,1,2,10,inf\n",
+            "\"2E0DLC\",\"EA8BFK\",14,1,3,10,-12.5\n",
+        );
+        let rows = parse_daily(daily);
+        let samples = rows
+            .get(&("2E0DLC".to_string(), "EA8BFK".to_string(), 14))
+            .expect("the path");
+        assert_eq!(samples.len(), 2);
+        assert!(samples.iter().all(|s| s.snr_median.is_finite()));
+    }
 
     #[test]
     fn reads_quoted_call_signs_with_punctuation() {
