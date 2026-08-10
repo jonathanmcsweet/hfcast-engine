@@ -1324,7 +1324,12 @@ fn hour_body(
                 nang: s.nang,
                 long: plan.long,
             };
-            freqs = luffy_freq_loop(lp, &ctx, &mut hour_m, &noise_for, &frel, &mut saves);
+            // The block below is the only reader of what the loop
+            // records, and only card method 25 reaches it. Every other
+            // run threw the whole vector away after paying about 78 KB
+            // and forty heap allocations an hour pass to fill it.
+            let trace = s.method == 25;
+            freqs = luffy_freq_loop(lp, &ctx, &mut hour_m, &noise_for, &frel, &mut saves, trace);
         }
         if plans.len() == 2 {
             let sd = sd_last.as_ref().expect("two passes ran");
@@ -1674,7 +1679,11 @@ pub fn run_area(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<AreaPoint>, Str
                 // unaffected: its table was already cut along one
                 // bearing and no longer consults the beam.
                 let (ztaz, _) = dazel0(glat, glon, fixed_lat, fixed_lon);
-                if let Some(first) = s.ants.ants.first_mut() {
+                // The tables are shared between grid points, so writing
+                // one copies them for this point. Only an inverse run
+                // reaches here; a forward run keeps the share.
+                let ants = std::sync::Arc::make_mut(&mut s.ants.ants);
+                if let Some(first) = ants.first_mut() {
                     first.table.beam_main = ztaz;
                 }
             }

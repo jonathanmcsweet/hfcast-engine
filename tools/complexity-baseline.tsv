@@ -27,7 +27,7 @@ src/bin/paritycheck.rs	main	20	114
 src/bin/paritycheck.rs	run_case	19	94
 src/bin/portcheck.rs	main	22	107
 src/bin/porttest.rs	compare_freq_debug	49	238
-src/bin/porttest.rs	main	118	1161
+src/bin/porttest.rs	main	118	1170
 src/bin/porttest.rs	parse_hour_traces	10	43
 src/bin/porttest.rs	parse_redmap_trace	14	33
 src/bin/spacewx.rs	run	16	66
@@ -43,7 +43,7 @@ src/deck.rs	override_cards	18	38
 src/fuzz.rs	pick_antennas	18	47
 src/json.rs	string	19	24
 src/listing.rs	parse_listing	14	86
-src/service.rs	area	30	172
+src/service.rs	area	30	171
 src/service.rs	build_request	19	57
 src/spread.rs	gather	22	110
 src/spread.rs	load_month	23	39
@@ -71,7 +71,7 @@ src/voacap/modes.rs	esmod	10	120
 src/voacap/modes.rs	fdist	23	130
 src/voacap/modes.rs	findf	36	224
 src/voacap/modes.rs	inmuf	37	198
-src/voacap/modes.rs	luffy_freq_loop	18	195
+src/voacap/modes.rs	luffy_freq_loop	18	192
 src/voacap/modes.rs	luffy_luf	21	140
 src/voacap/modes.rs	regmod	11	151
 src/voacap/modes.rs	relbil	28	184
@@ -83,6 +83,6 @@ src/voacap/noise.rs	genois	11	135
 src/voacap/output.rs	render	27	102
 src/voacap/run.rs	hour	7	26
 src/voacap/run.rs	hour_block	14	104
-src/voacap/run.rs	hour_body	20	218
+src/voacap/run.rs	hour_body	20	223
 src/voacap/run.rs	run_luf	8	146
 src/voacap/sigdis.rs	sigdis	10	120

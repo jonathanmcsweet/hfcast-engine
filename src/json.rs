@@ -153,11 +153,21 @@ fn write_string(s: &str, out: &mut String) {
     out.push('"');
 }
 
+/// How deep arrays and objects can nest before the text is refused.
+///
+/// `value` calls `object` and `array`, and each of those calls `value`
+/// again, so the text controls how deep the call stack goes. A stack
+/// overflow stops the process and cannot be caught, so too much depth
+/// must become a parse error before it becomes one. The requests this
+/// reads nest three levels; the limit is far above that.
+const MAX_DEPTH: usize = 64;
+
 pub fn parse(text: &str) -> Result<Json, String> {
     let bytes: Vec<char> = text.chars().collect();
     let mut p = Parser {
         chars: &bytes,
         i: 0,
+        depth: 0,
     };
     p.skip_ws();
     let value = p.value()?;
@@ -171,6 +181,8 @@ pub fn parse(text: &str) -> Result<Json, String> {
 struct Parser<'a> {
     chars: &'a [char],
     i: usize,
+    /// How many arrays and objects are open at this point in the text.
+    depth: usize,
 }
 
 impl Parser<'_> {
@@ -207,10 +219,21 @@ impl Parser<'_> {
         Ok(())
     }
 
+    /// Reads one array or object, one level deeper than the caller.
+    fn nested(&mut self, body: fn(&mut Self) -> Result<Json, String>) -> Result<Json, String> {
+        if self.depth >= MAX_DEPTH {
+            return Err(format!("values are nested more than {MAX_DEPTH} deep"));
+        }
+        self.depth += 1;
+        let value = body(self);
+        self.depth -= 1;
+        value
+    }
+
     fn value(&mut self) -> Result<Json, String> {
         match self.peek() {
-            Some('{') => self.object(),
-            Some('[') => self.array(),
+            Some('{') => self.nested(Self::object),
+            Some('[') => self.nested(Self::array),
             Some('"') => Ok(Json::Str(self.string()?)),
             Some('t') => self.literal("true").map(|()| Json::Bool(true)),
             Some('f') => self.literal("false").map(|()| Json::Bool(false)),
@@ -347,9 +370,18 @@ impl Parser<'_> {
             }
         }
         let text: String = self.chars[start..self.i].iter().collect();
-        text.parse::<f64>()
-            .map(Json::Num)
-            .map_err(|_| format!("{text:?} is not a number"))
+        let value = text
+            .parse::<f64>()
+            .map_err(|_| format!("{text:?} is not a number"))?;
+        // A literal larger than `f64` holds parses as infinity. Nothing
+        // downstream stops it: it becomes NaN in the first calculation
+        // that uses it, and the run then answers with numbers that look
+        // correct. JSON also has no form for infinity, so the value
+        // cannot be written back. Refuse it where it is read.
+        if !value.is_finite() {
+            return Err(format!("{text:?} is too large to be a number"));
+        }
+        Ok(Json::Num(value))
     }
 }
 
@@ -404,6 +436,30 @@ mod tests {
         assert!(parse("{} {}").is_err());
         assert!(parse("[1,2").is_err());
         assert!(parse("{\"a\":}").is_err());
+    }
+
+    #[test]
+    fn refuses_a_number_too_large_for_f64() {
+        // `1e999` parses as infinity. Before this was refused, a run
+        // with it accepted the request and answered with a listing full
+        // of NaN, which reads as a real answer.
+        assert!(parse(r#"{"ssn":1e999}"#).is_err());
+        assert!(parse(r#"{"ssn":-1e999}"#).is_err());
+        assert_eq!(parse(r#"{"ssn":1e308}"#).unwrap().number("ssn"), Ok(1e308));
+    }
+
+    #[test]
+    fn refuses_text_nested_deeper_than_the_limit() {
+        // Deep enough to overflow the stack and stop the process, which
+        // no caller can catch.
+        assert!(parse(&"[".repeat(100_000)).is_err());
+        let well_formed = |n: usize| format!("{}1{}", "[".repeat(n), "]".repeat(n));
+        assert!(parse(&well_formed(MAX_DEPTH)).is_ok());
+        assert!(parse(&well_formed(MAX_DEPTH + 1)).is_err());
+        // The limit applies to objects the same way.
+        let objects = |n: usize| format!("{}1{}", r#"{"a":"#.repeat(n), "}".repeat(n));
+        assert!(parse(&objects(MAX_DEPTH)).is_ok());
+        assert!(parse(&objects(MAX_DEPTH + 1)).is_err());
     }
 
     #[test]

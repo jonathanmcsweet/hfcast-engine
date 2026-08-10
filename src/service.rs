@@ -405,6 +405,43 @@ fn area_freqs(req: &Json) -> Result<Vec<f32>, String> {
     Ok(freqs)
 }
 
+/// The smoothed sunspot number, checked against the range the model can
+/// answer for.
+///
+/// The coefficient maps are held for SSN 0 and SSN 100 and the run mixes
+/// between them, so a number far outside that range gives a result the
+/// mix cannot support. The card also writes the number in five columns.
+/// The highest monthly smoothed sunspot number on record is near 285, so
+/// 400 leaves room above every real value while it still refuses a
+/// number that came from a fault.
+fn ssn(req: &Json) -> Result<f64, String> {
+    let value = req.number("ssn")?;
+    if !(0.0..=400.0).contains(&value) {
+        return Err(format!("\"ssn\" must be from 0 to 400, not {value}"));
+    }
+    Ok(value)
+}
+
+/// The hour of the day, as `AreaInputs` counts it.
+///
+/// The point path runs every hour and never takes one from the caller,
+/// so an area run is the only place an hour is read. Without this check
+/// an hour below zero answered a different map and gave no error, and
+/// one far above 23 stopped the process: the coefficient tables are
+/// indexed by hour and have no bound of their own.
+///
+/// `AreaInputs.hour` counts 1 to 24, the way the input file names the
+/// hours, while every other interface here counts 0 to 23.
+fn hour(req: &Json) -> Result<i32, String> {
+    let value = req.number("hour")?;
+    if !(0.0..=23.0).contains(&value) || value.fract() != 0.0 {
+        return Err(format!(
+            "\"hour\" must be a whole number from 0 to 23, not {value}"
+        ));
+    }
+    Ok(value as i32 + 1)
+}
+
 fn area(tree: &std::path::Path, req: &Json) -> Result<Json, String> {
     let lat_step = req.number("latStep")?;
     let lon_step = req.number("lonStep")?;
@@ -436,6 +473,7 @@ fn area(tree: &std::path::Path, req: &Json) -> Result<Json, String> {
         ),
     };
     let watts = req.number("watts")?;
+    let hour = hour(req)?;
 
     let grid = Grid {
         projection: Projection::LatLon,
@@ -454,10 +492,8 @@ fn area(tree: &std::path::Path, req: &Json) -> Result<Json, String> {
         tx_lat_deg: req.number("fromLat")?,
         tx_lon_deg: req.number("fromLon")?,
         month: req.number("month")? as u32,
-        ssn: req.number("ssn")? as f32,
-        // `AreaInputs.hour` is the hour the input file names, 1 to 24,
-        // while every other interface here counts 0 to 23.
-        hour: req.number("hour")? as i32 + 1,
+        ssn: ssn(req)? as f32,
+        hour,
         freqs_mhz: area_freqs(req)?,
         required_snr_db: req.number("requiredSnrDb")? as f32,
         noise_dbw: req.number("noiseDbw")? as i32,
@@ -638,7 +674,7 @@ fn build_request(req: &Json) -> Result<(Request, Vec<f64>), String> {
         },
         month: req.number("month")? as u32,
         year: req.number("year")? as u32,
-        ssn: req.number("ssn")?,
+        ssn: ssn(req)?,
         power_watts: req.number("watts")?,
         freqs_mhz: freqs.clone(),
         required_snr_db: req.number("requiredSnrDb")?,

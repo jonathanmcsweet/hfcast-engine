@@ -38,6 +38,68 @@ const RUN_TIMEOUT: Duration = Duration::from_secs(60);
 /// How often a running child is checked for completion.
 const POLL_INTERVAL: Duration = Duration::from_millis(20);
 
+/// What a finished child left behind.
+struct Finished {
+    status: std::process::ExitStatus,
+    stdout: String,
+    stderr: String,
+}
+
+/// Waits for a child, reading both of its pipes while it runs.
+///
+/// A pipe holds a fixed amount, about 64 KiB on Linux. A child that
+/// writes more than that stops inside the write and waits for somebody to
+/// read, so a caller that only reads after the child exits waits for a
+/// child that is waiting for the caller. Neither moves, and the poll loop
+/// below then reports a timeout for a program that was working.
+///
+/// Measured with a stand-in engine writing 1.5 MB to stdout: 60.01
+/// seconds and `TimedOut`, against 22.9 ms for one that writes a line.
+///
+/// One thread for each pipe, because reading one of them to the end
+/// waits while the other one fills.
+fn wait_draining(mut child: std::process::Child, deadline: Instant) -> Result<Finished, RunError> {
+    let mut out_pipe = child.stdout.take();
+    let mut err_pipe = child.stderr.take();
+    thread::scope(|scope| {
+        let out = scope.spawn(move || read_pipe(out_pipe.as_mut()));
+        let err = scope.spawn(move || read_pipe(err_pipe.as_mut()));
+        let status = loop {
+            if let Some(status) = child.try_wait()? {
+                break status;
+            }
+            if Instant::now() >= deadline {
+                let _ = child.kill();
+                // Reaped, so the process does not stay as a zombie for
+                // as long as this one lives. A sweep is thousands of
+                // runs.
+                let _ = child.wait();
+                return Err(RunError::TimedOut);
+            }
+            thread::sleep(POLL_INTERVAL);
+        };
+        Ok(Finished {
+            status,
+            // A panicked reader gives no text, which is the same as a
+            // child that printed nothing. There is nothing better to
+            // report here than what was read.
+            stdout: out.join().unwrap_or_default(),
+            stderr: err.join().unwrap_or_default(),
+        })
+    })
+}
+
+/// Everything one pipe holds, as text. Bytes that are not UTF-8 are
+/// replaced: this is a message for a person, not data.
+fn read_pipe(pipe: Option<&mut impl io::Read>) -> String {
+    let Some(pipe) = pipe else {
+        return String::new();
+    };
+    let mut raw = Vec::new();
+    let _ = pipe.read_to_end(&mut raw);
+    String::from_utf8_lossy(&raw).into_owned()
+}
+
 pub fn itshfbc_dir() -> PathBuf {
     env::var_os("HFCAST_ITSHFBC")
         .map(PathBuf::from)
@@ -280,7 +342,7 @@ pub fn run_area(
     let out = dir.join(format!("{name}.vg1"));
     let _ = fs::remove_file(&out);
     let mut command = Command::new(bin);
-    let mut child = command
+    let child = command
         .arg(itshfbc)
         .arg(mode)
         .arg("calc")
@@ -290,23 +352,12 @@ pub fn run_area(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
-    let deadline = Instant::now() + RUN_TIMEOUT;
-    loop {
-        if let Some(status) = child.try_wait()? {
-            if !status.success() {
-                let o = child.wait_with_output()?;
-                return Err(RunError::Failed {
-                    code: status.code(),
-                    output: String::from_utf8_lossy(&o.stderr).into_owned(),
-                });
-            }
-            break;
-        }
-        if Instant::now() > deadline {
-            let _ = child.kill();
-            return Err(RunError::TimedOut);
-        }
-        std::thread::sleep(std::time::Duration::from_millis(20));
+    let done = wait_draining(child, Instant::now() + RUN_TIMEOUT)?;
+    if !done.status.success() {
+        return Err(RunError::Failed {
+            code: done.status.code(),
+            output: done.stderr,
+        });
     }
     Ok(fs::read_to_string(&out)?)
 }
@@ -322,7 +373,7 @@ fn run_to_completion(
     for (key, value) in env {
         command.env(key, value);
     }
-    let mut child = command
+    let child = command
         .arg(itshfbc)
         .arg(input_name)
         .arg(output_name)
@@ -331,33 +382,20 @@ fn run_to_completion(
         .stderr(Stdio::piped())
         .spawn()?;
 
-    let deadline = Instant::now() + RUN_TIMEOUT;
-    loop {
-        match child.try_wait()? {
-            Some(status) => {
-                if status.success() {
-                    return Ok(());
-                }
-                let out = child.wait_with_output()?;
-                let mut text = String::from_utf8_lossy(&out.stderr).into_owned();
-                if text.trim().is_empty() {
-                    text = String::from_utf8_lossy(&out.stdout).into_owned();
-                }
-                return Err(RunError::Failed {
-                    code: status.code(),
-                    output: text,
-                });
-            }
-            None => {
-                if Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return Err(RunError::TimedOut);
-                }
-                thread::sleep(POLL_INTERVAL);
-            }
-        }
+    let done = wait_draining(child, Instant::now() + RUN_TIMEOUT)?;
+    if done.status.success() {
+        return Ok(());
     }
+    // Some faults print to stdout and leave stderr empty.
+    let text = if done.stderr.trim().is_empty() {
+        done.stdout
+    } else {
+        done.stderr
+    };
+    Err(RunError::Failed {
+        code: done.status.code(),
+        output: text,
+    })
 }
 
 /// Applies `f` to every item with at most `limit` running at once, preserving
@@ -396,6 +434,49 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A child that prints more than one pipe holds still finishes.
+    ///
+    /// The pipe holds about 64 KiB. Before both pipes were read while the
+    /// child ran, a child that printed more than that stopped inside its
+    /// own write and the wait ran to its deadline — a timeout reported
+    /// for a program that was working.
+    #[test]
+    fn a_talkative_child_is_not_reported_as_a_timeout() {
+        let child = Command::new("sh")
+            .arg("-c")
+            // 1.5 MB, well past what one pipe holds, on both pipes.
+            .arg("yes hello | head -c 1500000; yes warn | head -c 1500000 >&2")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn sh");
+
+        let started = Instant::now();
+        let done = wait_draining(child, started + Duration::from_secs(20))
+            .expect("the child was reported as failed or timed out");
+
+        assert!(done.status.success());
+        assert_eq!(done.stdout.len(), 1_500_000);
+        assert_eq!(done.stderr.len(), 1_500_000);
+        // Far under the deadline: the point is that it does not wait for
+        // one at all.
+        assert!(started.elapsed() < Duration::from_secs(10));
+    }
+
+    #[test]
+    fn a_child_that_never_ends_times_out_and_is_reaped() {
+        let child = Command::new("sleep")
+            .arg("60")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn sleep");
+        let result = wait_draining(child, Instant::now() + Duration::from_millis(200));
+        assert!(matches!(result, Err(RunError::TimedOut)));
+    }
 
     #[test]
     fn map_limit_preserves_order() {

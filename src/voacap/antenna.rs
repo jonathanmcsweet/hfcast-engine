@@ -29,9 +29,11 @@
 //! number, so `antcheck` reports them as pending instead of passing.
 
 use std::path::Path;
+use std::sync::Arc;
 
 use super::con::{R, R2D};
 use super::model::Model;
+use super::run::f_fixed;
 
 /// Frequencies in a table: 1 to 30 MHz, one row each.
 pub const FREQS: usize = 30;
@@ -132,8 +134,14 @@ pub fn antmodel(jant: i32, gain: R) -> String {
 
 /// Fortran `F5.1`, asterisks on overflow, as `ANTMODEL`'s label writes
 /// an isotrope's gain.
+///
+/// The digits come from [`f_fixed`], which is where every other
+/// fixed-point field in the port is written. It drops the minus sign
+/// from a negative value that rounds to zero, because the reference is
+/// built with `-fno-sign-zero`. A raw `format!` here printed `" -0.0"`
+/// for a gain of -0.04 where the rest of the port printed `"  0.0"`.
 fn f5_1(v: R) -> String {
-    let s = format!("{:5.1}", f64::from(v));
+    let s = f_fixed(v, 5, 1);
     if s.len() > 5 {
         "*****".to_string()
     } else {
@@ -287,7 +295,19 @@ pub struct Installation {
 /// the engine predicts.
 #[derive(Debug, Clone, Default)]
 pub struct AntennaSet {
-    pub ants: Vec<InstalledAntenna>,
+    /// Shared rather than owned, because an area run copies this set at
+    /// every grid point and the tables are the large part of it: a
+    /// `GainTable` is 10,920 bytes and an `AreaGainTable` 65,520, so one
+    /// installed pair per band is about 149 KiB. Over the app's own
+    /// 240 by 144 grid that was 5.28 GB copied to write the three
+    /// numbers below.
+    ///
+    /// The three are outside the share because they are the only parts a
+    /// grid point writes. One more is written on an inverse run — the
+    /// first table's main beam — and that one goes through
+    /// `Arc::make_mut`, so an inverse run still pays the copy. The
+    /// application asks for no inverse runs.
+    pub ants: Arc<Vec<InstalledAntenna>>,
     /// `BTRD` of COMMON /DON/: bearing transmitter to receiver, degrees.
     /// An area antenna is cut along this bearing per path, so the driver
     /// refreshes both of these at every grid point, as `GEOM` does.
@@ -361,7 +381,7 @@ impl AntennaSet {
         for slot in table.eff.iter_mut() {
             *slot = through_f6_2(*slot);
         }
-        self.ants.push(InstalledAntenna {
+        Arc::make_mut(&mut self.ants).push(InstalledAntenna {
             iat,
             xfqs,
             xfqe,
@@ -409,7 +429,7 @@ impl AntennaSet {
         if area_slot >= 2 {
             return Err("an area run holds at most two antennas a band".to_string());
         }
-        self.ants.push(InstalledAntenna {
+        Arc::make_mut(&mut self.ants).push(InstalledAntenna {
             iat,
             xfqs,
             xfqe,
@@ -504,7 +524,7 @@ impl AntennaSet {
     /// 30 (one kilowatt) if none matches.
     pub fn pwrdb(&self, freq: R) -> R {
         let f = freq.clamp(2.0, 30.0);
-        for a in &self.ants {
+        for a in self.ants.iter() {
             if a.iat == 1 && a.xfqs <= f && f <= a.xfqe {
                 return a.pwrdba;
             }
@@ -1548,6 +1568,19 @@ mod tests {
             .unwrap_or_else(|| {
                 PathBuf::from(std::env::var_os("HOME").expect("HOME")).join("itshfbc")
             })
+    }
+
+    #[test]
+    fn an_isotropes_label_drops_the_sign_of_a_gain_that_rounds_to_zero() {
+        // The reference is built with `-fno-sign-zero`, so no field it
+        // writes carries a minus sign in front of zero. This label is
+        // written from the request's own design frequency, which the
+        // caller can set to any value.
+        assert_eq!(antmodel(0, -0.04), "+  0.0 dBi");
+        assert_eq!(antmodel(0, -0.0), "+  0.0 dBi");
+        // A value that rounds away from zero keeps its sign.
+        assert_eq!(antmodel(0, -0.06), "+ -0.1 dBi");
+        assert_eq!(antmodel(0, 2.5), "+  2.5 dBi");
     }
 
     #[test]
