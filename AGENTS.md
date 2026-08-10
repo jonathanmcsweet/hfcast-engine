@@ -63,7 +63,7 @@ git config core.hooksPath .githooks
 ## Documentation
 
 - Keep text descriptions short without excessive details unless necessary to prevent confusion
-- Refrain from using idiomatic language such as "clobber," "belt and suspenders," etc. which may be read differently by different people
+- Refrain from using jargon or idiomatic language such as "clobber," "belt and suspenders," etc. which may be read differently by different people
 
 ## Branches and Commit messages — use Conventional Commits
 

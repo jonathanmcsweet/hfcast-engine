@@ -37,7 +37,9 @@ use crate::listing::{parse_listing, parse_muf_table, MUF_ROW, MUF_SLOT};
 use crate::runner::itshfbc_dir;
 use crate::voacap::area::{Grid, Projection};
 use crate::voacap::con::R;
-use crate::voacap::run::{run_area, AntennaCardSpec, AreaInputs};
+use crate::voacap::run::{
+    run_area, run_area_daily_median, AntennaCardSpec, AreaFreq, AreaInputs, AreaMedian, AreaPoint,
+};
 
 /// The rows the server reads, and the key each becomes in the output.
 ///
@@ -432,7 +434,23 @@ fn ssn(req: &Json) -> Result<f64, String> {
 ///
 /// `AreaInputs.hour` counts 1 to 24, the way the input file names the
 /// hours, while every other interface here counts 0 to 23.
-fn hour(req: &Json) -> Result<i32, String> {
+///
+/// A whole-day run reports for no hour at all. `AreaInputs` still carries
+/// one, because a one-hour run needs the field, so it gets the first hour
+/// of the day and `run_area_daily_median` never reads it. An `"hour"` in
+/// such a request is refused rather than ignored: a caller that sent one
+/// believes the answer is about that hour, and a median over the day is
+/// not.
+fn hour(req: &Json, daily: bool) -> Result<i32, String> {
+    if daily {
+        return match req.get("hour") {
+            None => Ok(1),
+            Some(_) => Err(
+                "\"hour\" cannot be given with \"dailyMedian\": the answer covers the whole day"
+                    .into(),
+            ),
+        };
+    }
     let value = req.number("hour")?;
     if !(0.0..=23.0).contains(&value) || value.fract() != 0.0 {
         return Err(format!(
@@ -473,7 +491,11 @@ fn area(tree: &std::path::Path, req: &Json) -> Result<Json, String> {
         ),
     };
     let watts = req.number("watts")?;
-    let hour = hour(req)?;
+    // A whole-day run answers for no single hour, so it neither needs one
+    // nor may be given one: an hour in the request would read as a
+    // promise the answer does not keep.
+    let daily = req.get("dailyMedian") == Some(&Json::Bool(true));
+    let hour = hour(req, daily)?;
 
     let grid = Grid {
         projection: Projection::LatLon,
@@ -509,109 +531,185 @@ fn area(tree: &std::path::Path, req: &Json) -> Result<Json, String> {
         model: Model::Compatible,
     };
 
+    let steps = GridSteps::of(lat_step, lon_step, grid, &inputs.freqs_mhz);
+
+    if daily {
+        let medians = {
+            let _perf = crate::perf::Step::new(crate::perf::AREA_POINTS);
+            run_area_daily_median(tree, &inputs)?
+        };
+        let _answer = crate::perf::Step::new(crate::perf::ANSWER);
+        return Ok(steps.answer(median_rows(&medians, steps.many())));
+    }
+
     let points = {
         let _perf = crate::perf::Step::new(crate::perf::AREA_POINTS);
         run_area(tree, &inputs)?
     };
     let _answer = crate::perf::Step::new(crate::perf::ANSWER);
+    Ok(steps.answer(area_rows(&points, steps.many())?))
+}
 
-    // Several bands asked for together are answered together: one row
-    // per grid point carrying every band, rather than one row per point
-    // per band. The coordinates are the larger half of a row — 31 bytes
-    // of the 69 a single-band point costs — so repeating them once per
-    // band would spend more on saying where a point is than on the
-    // answer there. Measured over a 3,072-point grid: 212,569 bytes for
-    // one band, 684,671 for eight together, 1,700,552 for eight apart.
-    if inputs.freqs_mhz.len() > 1 {
-        let rows = points
-            .into_iter()
-            .map(|p| {
-                let reliability = p
-                    .per_freq
-                    .iter()
-                    .map(|f| num(f.reliability.clamp(0.0, 1.0)))
-                    .collect();
-                let angles = p
-                    .per_freq
-                    .iter()
-                    .map(|f| f.takeoff_angle_deg.map_or(Json::Null, num))
-                    .collect();
-                obj([
-                    ("lat", num(f64::from(p.lat))),
-                    ("lon", num(unfold(p.lon))),
-                    ("reliability", Json::Arr(reliability)),
-                    ("takeoffAngleDeg", Json::Arr(angles)),
-                ])
-            })
-            .collect();
-        return Ok(obj([
-            ("latStep", num(lat_step)),
-            ("lonStep", num(lon_step)),
-            ("latMin", num(f64::from(grid.ymin))),
-            ("latMax", num(f64::from(grid.ymax))),
-            ("lonMin", num(f64::from(grid.xmin))),
-            ("lonMax", num(f64::from(grid.xmax))),
-            // Echoed so a caller reading the arrays above cannot line
-            // them up against the wrong band.
-            (
-                "freqsMhz",
-                Json::Arr(
-                    inputs
-                        .freqs_mhz
-                        .iter()
-                        .map(|f| num(f64::from(*f)))
-                        .collect(),
-                ),
-            ),
+/// The point rows, in whichever of the two shapes the run has.
+fn area_rows(points: &[AreaPoint], many: bool) -> Result<Vec<Json>, String> {
+    if many {
+        return Ok(many_band_rows(points));
+    }
+    one_band_rows(points)
+}
+
+/// The lattice an area answer describes itself by.
+///
+/// The rectangle echoed back is the grid that ran, not the one asked
+/// for: the request states any rectangle it likes and the points are
+/// the lattice centres inside it, so these are the first and last
+/// point on each axis. A caller drawing cells adds half a step.
+struct GridSteps {
+    lat_step: f64,
+    lon_step: f64,
+    grid: Grid,
+    /// Present only where several bands were asked for together.
+    freqs_mhz: Option<Vec<f64>>,
+}
+
+impl GridSteps {
+    fn of(lat_step: f64, lon_step: f64, grid: Grid, freqs_mhz: &[R]) -> Self {
+        Self {
+            lat_step,
+            lon_step,
+            grid,
+            // Echoed only where there are several, so a caller reading
+            // the arrays cannot line them up against the wrong band. One
+            // band answers with plain numbers and needs no echo.
+            freqs_mhz: (freqs_mhz.len() > 1)
+                .then(|| freqs_mhz.iter().map(|f| f64::from(*f)).collect()),
+        }
+    }
+
+    /// Whether the answer carries one value a point or one a band.
+    fn many(&self) -> bool {
+        self.freqs_mhz.is_some()
+    }
+
+    fn answer(&self, rows: Vec<Json>) -> Json {
+        let mut fields = vec![
+            ("latStep", num(self.lat_step)),
+            ("lonStep", num(self.lon_step)),
+            ("latMin", num(f64::from(self.grid.ymin))),
+            ("latMax", num(f64::from(self.grid.ymax))),
+            ("lonMin", num(f64::from(self.grid.xmin))),
+            ("lonMax", num(f64::from(self.grid.xmax))),
             ("points", Json::Arr(rows)),
-        ]));
+        ];
+        if let Some(freqs) = &self.freqs_mhz {
+            fields.push((
+                "freqsMhz",
+                Json::Arr(freqs.iter().map(|f| num(*f)).collect()),
+            ));
+        }
+        Json::Obj(
+            fields
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v))
+                .collect(),
+        )
     }
+}
 
-    let mut out = Vec::with_capacity(points.len());
-    for p in points {
-        let field = p
-            .fields
-            .get(AREA_RELIABILITY_FIELD)
-            .ok_or("area row is missing its reliability field")?;
-        // The field is the reference's own formatting of the number, and
-        // asterisks are how Fortran reports one too wide for its column.
-        let reliability = field.trim().parse::<f64>().unwrap_or(0.0);
-        // Absent rather than zero when the column did not print a number.
-        // Zero is an angle — a signal leaving along the horizon — so
-        // reporting one where none was computed would be a measurement
-        // rather than a gap, and a map would draw it as a real answer.
-        let takeoff = p
-            .fields
-            .get(AREA_TAKEOFF_FIELD)
-            .and_then(|f| f.trim().parse::<f64>().ok());
-        // Longitudes come back folded into 0..360; the app works in
-        // -180..180 like every other coordinate it handles.
-        let lon = if p.lon > 180.0 {
-            f64::from(p.lon) - 360.0
-        } else {
-            f64::from(p.lon)
-        };
-        out.push(obj([
-            ("lat", num(f64::from(p.lat))),
-            ("lon", num(lon)),
-            ("reliability", num(reliability.clamp(0.0, 1.0))),
-            ("takeoffAngleDeg", takeoff.map_or(Json::Null, num)),
-        ]));
-    }
+/// Several bands asked for together are answered together: one row
+/// per grid point carrying every band, rather than one row per point
+/// per band. The coordinates are the larger half of a row — 31 bytes
+/// of the 69 a single-band point costs — so repeating them once per
+/// band would spend more on saying where a point is than on the
+/// answer there. Measured over a 3,072-point grid: 212,569 bytes for
+/// one band, 684,671 for eight together, 1,700,552 for eight apart.
+fn many_band_rows(points: &[AreaPoint]) -> Vec<Json> {
+    points
+        .iter()
+        .map(|p| {
+            let each =
+                |pick: fn(&AreaFreq) -> Json| Json::Arr(p.per_freq.iter().map(pick).collect());
+            obj([
+                ("lat", num(f64::from(p.lat))),
+                ("lon", num(unfold(p.lon))),
+                ("reliability", each(|f| num(f.reliability.clamp(0.0, 1.0)))),
+                (
+                    "takeoffAngleDeg",
+                    each(|f| f.takeoff_angle_deg.map_or(Json::Null, num)),
+                ),
+                ("snr", each(|f| num(f.snr_db))),
+                (
+                    "snrLowDecile",
+                    each(|f| f.snr_low_decile.map_or(Json::Null, num)),
+                ),
+                (
+                    "snrUpDecile",
+                    each(|f| f.snr_up_decile.map_or(Json::Null, num)),
+                ),
+            ])
+        })
+        .collect()
+}
 
-    // The rectangle echoed back is the grid that ran, not the one asked
-    // for: the request states any rectangle it likes and the points are
-    // the lattice centres inside it, so these are the first and last
-    // point on each axis. A caller drawing cells adds half a step.
-    Ok(obj([
-        ("latStep", num(lat_step)),
-        ("lonStep", num(lon_step)),
-        ("latMin", num(f64::from(grid.ymin))),
-        ("latMax", num(f64::from(grid.ymax))),
-        ("lonMin", num(f64::from(grid.xmin))),
-        ("lonMax", num(f64::from(grid.xmax))),
-        ("points", Json::Arr(out)),
-    ]))
+/// One band, read out of the printed columns the parity harness compares.
+fn one_band_rows(points: &[AreaPoint]) -> Result<Vec<Json>, String> {
+    points
+        .iter()
+        .map(|p| {
+            let field = p
+                .fields
+                .get(AREA_RELIABILITY_FIELD)
+                .ok_or("area row is missing its reliability field")?;
+            // The field is the reference's own formatting of the number,
+            // and asterisks are how Fortran reports one too wide for its
+            // column.
+            let reliability = field.trim().parse::<f64>().unwrap_or(0.0);
+            // Absent rather than zero when the column did not print a
+            // number. Zero is an angle — a signal leaving along the
+            // horizon — so reporting one where none was computed would be
+            // a measurement rather than a gap, and a map would draw it as
+            // a real answer.
+            let takeoff = p
+                .fields
+                .get(AREA_TAKEOFF_FIELD)
+                .and_then(|f| f.trim().parse::<f64>().ok());
+            // The signal level and its spread are not among the printed
+            // columns in the listing's own format, so they come from the
+            // per-band answer beside them. The two agree by construction:
+            // a one-frequency run's `per_freq[0]` is the same `SON` slot
+            // the columns are written from.
+            let band = p.per_freq.first().copied().unwrap_or_default();
+            Ok(obj([
+                ("lat", num(f64::from(p.lat))),
+                ("lon", num(unfold(p.lon))),
+                ("reliability", num(reliability.clamp(0.0, 1.0))),
+                ("takeoffAngleDeg", takeoff.map_or(Json::Null, num)),
+                ("snr", num(band.snr_db)),
+                ("snrLowDecile", band.snr_low_decile.map_or(Json::Null, num)),
+                ("snrUpDecile", band.snr_up_decile.map_or(Json::Null, num)),
+            ]))
+        })
+        .collect()
+}
+
+/// The middle of the day at every point: one number a band, and nothing
+/// else. There is no hour to report a reliability or an angle for.
+fn median_rows(medians: &[AreaMedian], many: bool) -> Vec<Json> {
+    medians
+        .iter()
+        .map(|m| {
+            let middle = if many {
+                Json::Arr(m.median_snr_db.iter().map(|v| num(*v)).collect())
+            } else {
+                num(m.median_snr_db.first().copied().unwrap_or(0.0))
+            };
+            obj([
+                ("lat", num(f64::from(m.lat))),
+                ("lon", num(unfold(m.lon))),
+                ("medianSnr", middle),
+            ])
+        })
+        .collect()
 }
 
 /// The frequency window, as three arrays indexed by hour.
