@@ -122,8 +122,21 @@ fn home() -> PathBuf {
 }
 
 /// Path to the binary `build-variants.sh` produced for a variant.
+///
+/// Made absolute before it is returned. An area run gives the reference
+/// its own isolated tree as the working directory, and on Unix a
+/// relative program name is resolved against that directory rather than
+/// against where the harness was started — so the default relative path
+/// above turned into "no such file or directory" inside a copied tree,
+/// with the binary sitting in the repository the whole time. Every
+/// caller wants the same absolute path, so it is settled here rather
+/// than at each of them.
 pub fn variant_bin(name: &str) -> PathBuf {
-    variants_dir().join(name).join("src/voacapw/voacapl")
+    let path = variants_dir().join(name).join("src/voacapw/voacapl");
+    if path.is_absolute() {
+        return path;
+    }
+    env::current_dir().map_or(path.clone(), |here| here.join(path))
 }
 
 #[derive(Debug)]
