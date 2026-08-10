@@ -248,12 +248,20 @@ fn field(value: &str, width: usize) -> Result<String, DeckError> {
 
 /// Left-justify, truncating text that does not fit. Unlike a numeric field, a
 /// label running long is cosmetic.
+///
+/// The width counts bytes, because a card is a fixed-width record and a field
+/// that is not the full width moves every field after it. A cut in the middle
+/// of a character that takes more than one byte does not give a string, so the
+/// cut moves back to the start of that character and the spaces below fill the
+/// one or two bytes that are left. For text that is all ASCII, which is what
+/// the reference decks hold, this writes the same bytes as before.
 fn text(value: &str, width: usize) -> String {
-    if value.len() > width {
-        value[..width].to_string()
-    } else {
-        format!("{value:<width$}")
+    let mut end = width.min(value.len());
+    while !value.is_char_boundary(end) {
+        end -= 1;
     }
+    let kept = &value[..end];
+    format!("{kept}{}", " ".repeat(width - kept.len()))
 }
 
 /// `35.80N` — 5 columns of number then the hemisphere.

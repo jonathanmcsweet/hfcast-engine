@@ -105,7 +105,19 @@ fn a_batch_of_bands_equals_the_same_bands_run_one_at_a_time() {
             }
             // Exactly equal, not nearly. Both sides read the same
             // printed column, so there is no rounding left to allow for.
-            for key in ["reliability", "takeoffAngleDeg"] {
+            //
+            // The signal level and its two deciles are here for the same
+            // reason as the rest: the map corrects a cell from them, and
+            // a band read out of a batch that disagreed with the same
+            // band run alone would correct one map differently from
+            // another for no reason a reader could see.
+            for key in [
+                "reliability",
+                "takeoffAngleDeg",
+                "snr",
+                "snrLowDecile",
+                "snrUpDecile",
+            ] {
                 assert_eq!(
                     slot(one, key, None),
                     slot(many, key, Some(index)),

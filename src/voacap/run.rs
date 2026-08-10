@@ -1324,7 +1324,12 @@ fn hour_body(
                 nang: s.nang,
                 long: plan.long,
             };
-            freqs = luffy_freq_loop(lp, &ctx, &mut hour_m, &noise_for, &frel, &mut saves);
+            // The block below is the only reader of what the loop
+            // records, and only card method 25 reaches it. Every other
+            // run threw the whole vector away after paying about 78 KB
+            // and forty heap allocations an hour pass to fill it.
+            let trace = s.method == 25;
+            freqs = luffy_freq_loop(lp, &ctx, &mut hour_m, &noise_for, &frel, &mut saves, trace);
         }
         if plans.len() == 2 {
             let sd = sd_last.as_ref().expect("two passes ran");
@@ -1498,6 +1503,24 @@ pub struct AreaFreq {
     pub reliability: f64,
     /// Absent where the run produced no angle to report.
     pub takeoff_angle_deg: Option<f64>,
+    /// Median signal-to-noise ratio, dB.
+    ///
+    /// Whole numbers, because that is what the point-to-point listing's
+    /// `SNR` row prints and the two have to agree. A map cell and a
+    /// band-table cell over the same place are corrected by the same
+    /// arithmetic, and the correction reads this number; a map carrying
+    /// one decimal more than the table would put the two a fraction of a
+    /// decibel apart for no gain.
+    pub snr_db: f64,
+    /// The day-to-day spread below and above `snr_db`, dB.
+    ///
+    /// `SNR LW` and `SNR UP` of the listing, in the listing's own
+    /// format. Absent where the column printed no number. The empirical
+    /// correction needs both: it moves the median and then recomputes
+    /// reliability from the spread around the moved value, and a cell
+    /// without them keeps the engine's own reliability instead.
+    pub snr_low_decile: Option<f64>,
+    pub snr_up_decile: Option<f64>,
 }
 
 /// One grid point's output row: the indices, the coordinates and
@@ -1587,6 +1610,132 @@ fn f6(v: R, decimals: usize) -> String {
     }
 }
 
+/// Everything an area run works out once and then reads at every grid
+/// point.
+///
+/// Held together so the one-hour grid and the whole-day grid set a point
+/// up the same way. They differ only in what they do once the point is
+/// set up, and a second copy of this would be a second place for the two
+/// to drift apart.
+struct AreaPrep<'a> {
+    set: &'a CoefficientSet,
+    ants: AntennaSet,
+    pole: MagneticPole,
+    /// How many of the frequencies asked for are real ones.
+    nf: usize,
+    fixed_lat: R,
+    fixed_lon: R,
+}
+
+impl<'a> AreaPrep<'a> {
+    fn new(itshfbc: &Path, area: &AreaInputs, set: &'a CoefficientSet) -> Result<Self, String> {
+        let nf = area
+            .freqs_mhz
+            .iter()
+            .take_while(|f| **f != 0.0)
+            .count()
+            .max(1);
+        Ok(Self {
+            set,
+            ants: build_area_antennas(itshfbc, area, nf)?,
+            // Where the magnetic pole is does not depend on the grid
+            // point, and finding it opens two files. Read once for the
+            // whole grid.
+            pole: MagneticPole::for_tree_with(itshfbc, area.model),
+            nf,
+            fixed_lat: area.tx_lat_deg as R,
+            fixed_lon: area.tx_lon_deg as R,
+        })
+    }
+
+    /// The grid point at `(ix, iy)`, and the run set up over it.
+    fn at(
+        &self,
+        itshfbc: &Path,
+        area: &AreaInputs,
+        ix: usize,
+        iy: usize,
+    ) -> Result<(R, R, RunInputs, HourSetup<'a>), String> {
+        let (fixed_lat, fixed_lon) = (self.fixed_lat, self.fixed_lon);
+        // The grid point is the receiver in a normal run and the
+        // transmitter in an inverse one. Either way it is the point
+        // the output row names.
+        let (glon, glat) = if area.inverse {
+            area.grid
+                .transmitter(ix, iy, fixed_lat, fixed_lon, area.model)
+        } else {
+            area.grid.receiver(ix, iy, fixed_lat, fixed_lon, area.model)
+        };
+        let (from, to) = if area.inverse {
+            ((glat, glon), (fixed_lat, fixed_lon))
+        } else {
+            ((fixed_lat, fixed_lon), (glat, glon))
+        };
+        let inp = RunInputs {
+            from_lat_deg: f64::from(from.0),
+            from_lon_deg: f64::from(from.1),
+            to_lat_deg: f64::from(to.0),
+            to_lon_deg: f64::from(to.1),
+            month: area.month,
+            ssn: area.ssn,
+            freqs_mhz: area.freqs_mhz.clone(),
+            required_snr_db: area.required_snr_db,
+            noise_dbw: area.noise_dbw,
+            sporadic_e: area.psc[3] != 0.0,
+            // The antennas are built once for the whole grid and
+            // passed to `hour_setup`, so this list stays empty.
+            tx_antennas: Vec::new(),
+            rx_antennas: Vec::new(),
+            method: area.method,
+            fof2: area.fof2,
+            psc: area.psc,
+            // The area driver reads none of these cards.
+            iedp: -1,
+            krun: 0,
+            efvar: Vec::new(),
+            esvar: Vec::new(),
+            edp: None,
+            model: area.model,
+        };
+        let mut s = hour_setup(
+            itshfbc,
+            &inp,
+            self.set,
+            Some(self.pole),
+            Some(self.ants.clone()),
+        )?;
+        // `HFAREA` compares against `GCDLNG` with `.GT.` where the
+        // point-to-point driver uses `.GE.`. It matters only at
+        // exactly 10000 km, but it is a real difference.
+        s.area = true;
+        // `HFAREA` prints through `OUTAREA` and never calls
+        // `OUTBOD`, so an area run never writes the sentinels.
+        s.outbod = false;
+        // `GEOM` runs per grid point, and an area antenna is cut
+        // along the bearings it leaves behind.
+        s.ants.btrd = s.geo.btr * R2D;
+        s.ants.brtd = s.geo.brt * R2D;
+        if area.inverse {
+            // `HFAREA` re-aims the transmit antenna at the fixed
+            // station from each grid point, replacing whatever beam
+            // the card asked for. It writes the first antenna slot,
+            // which is the one the area lookup reads for the
+            // transmitter. A multi-frequency inverse run is
+            // unaffected: its table was already cut along one
+            // bearing and no longer consults the beam.
+            let (ztaz, _) = dazel0(glat, glon, fixed_lat, fixed_lon);
+            // The tables are shared between grid points, so writing
+            // one copies them for this point. Only an inverse run
+            // reaches here; a forward run keeps the share.
+            let ants = std::sync::Arc::make_mut(&mut s.ants.ants);
+            if let Some(first) = ants.first_mut() {
+                first.table.beam_main = ztaz;
+            }
+        }
+        Ok((glat, glon, inp, s))
+    }
+}
+
 /// Runs an area coverage grid: the same one-hour prediction at every grid
 /// point, in `HFAREA`'s own point order.
 ///
@@ -1597,93 +1746,94 @@ fn f6(v: R, decimals: usize) -> String {
 pub fn run_area(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<AreaPoint>, String> {
     let set: CoefficientSet =
         redmap(itshfbc, area.fof2, area.month, area.ssn).map_err(|e| e.to_string())?;
-    let nf = area
-        .freqs_mhz
-        .iter()
-        .take_while(|f| **f != 0.0)
-        .count()
-        .max(1);
-    let ants = build_area_antennas(itshfbc, area, nf)?;
-    // Where the magnetic pole is does not depend on the grid point, and
-    // finding it opens two files. Read once for the whole grid.
-    let pole = MagneticPole::for_tree_with(itshfbc, area.model);
+    let prep = AreaPrep::new(itshfbc, area, &set)?;
     let mut lp = ModeLoopState::default();
     let mut fsecv = [0.0 as R; 3];
     let mut out = Vec::with_capacity(area.grid.nx * area.grid.ny);
-    let (fixed_lat, fixed_lon) = (area.tx_lat_deg as R, area.tx_lon_deg as R);
     for iy in 1..=area.grid.ny {
         for ix in 1..=area.grid.nx {
-            // The grid point is the receiver in a normal run and the
-            // transmitter in an inverse one. Either way it is the point
-            // the output row names.
-            let (glon, glat) = if area.inverse {
-                area.grid
-                    .transmitter(ix, iy, fixed_lat, fixed_lon, area.model)
-            } else {
-                area.grid.receiver(ix, iy, fixed_lat, fixed_lon, area.model)
-            };
-            let (from, to) = if area.inverse {
-                ((glat, glon), (fixed_lat, fixed_lon))
-            } else {
-                ((fixed_lat, fixed_lon), (glat, glon))
-            };
-            let inp = RunInputs {
-                from_lat_deg: f64::from(from.0),
-                from_lon_deg: f64::from(from.1),
-                to_lat_deg: f64::from(to.0),
-                to_lon_deg: f64::from(to.1),
-                month: area.month,
-                ssn: area.ssn,
-                freqs_mhz: area.freqs_mhz.clone(),
-                required_snr_db: area.required_snr_db,
-                noise_dbw: area.noise_dbw,
-                sporadic_e: area.psc[3] != 0.0,
-                // The antennas are built once for the whole grid and
-                // passed to `hour_setup`, so this list stays empty.
-                tx_antennas: Vec::new(),
-                rx_antennas: Vec::new(),
-                method: area.method,
-                fof2: area.fof2,
-                psc: area.psc,
-                // The area driver reads none of these cards.
-                iedp: -1,
-                krun: 0,
-                efvar: Vec::new(),
-                esvar: Vec::new(),
-                edp: None,
-                model: area.model,
-            };
-            let mut s = hour_setup(itshfbc, &inp, &set, Some(pole), Some(ants.clone()))?;
-            // `HFAREA` compares against `GCDLNG` with `.GT.` where the
-            // point-to-point driver uses `.GE.`. It matters only at
-            // exactly 10000 km, but it is a real difference.
-            s.area = true;
-            // `HFAREA` prints through `OUTAREA` and never calls
-            // `OUTBOD`, so an area run never writes the sentinels.
-            s.outbod = false;
-            // `GEOM` runs per grid point, and an area antenna is cut
-            // along the bearings it leaves behind.
-            s.ants.btrd = s.geo.btr * R2D;
-            s.ants.brtd = s.geo.brt * R2D;
-            if area.inverse {
-                // `HFAREA` re-aims the transmit antenna at the fixed
-                // station from each grid point, replacing whatever beam
-                // the card asked for. It writes the first antenna slot,
-                // which is the one the area lookup reads for the
-                // transmitter. A multi-frequency inverse run is
-                // unaffected: its table was already cut along one
-                // bearing and no longer consults the beam.
-                let (ztaz, _) = dazel0(glat, glon, fixed_lat, fixed_lon);
-                if let Some(first) = s.ants.ants.first_mut() {
-                    first.table.beam_main = ztaz;
-                }
-            }
+            let (glat, glon, inp, s) = prep.at(itshfbc, area, ix, iy)?;
             let mut iono = IonoCarry::new(&inp, s.geo.points.len());
             let h = hour_body(&s, area.hour, &mut lp, &mut fsecv, &mut iono);
-            out.push(area_point(&area.grid, ix, iy, glat, glon, &h, nf));
+            out.push(area_point(&area.grid, ix, iy, glat, glon, &h, prep.nf));
         }
     }
     Ok(out)
+}
+
+/// One grid point's median signal-to-noise ratio over a whole day.
+#[derive(Debug, Clone)]
+pub struct AreaMedian {
+    pub lat: R,
+    /// Folded into 0 to 360, as `run_area` reports it.
+    pub lon: R,
+    /// One per frequency asked for, in the order asked, dB.
+    pub median_snr_db: Vec<f64>,
+}
+
+/// The middle of the day's signal at every grid point.
+///
+/// The empirical swing correction shrinks each hour toward the middle of
+/// that place's own day, so a corrected map needs this number and nothing
+/// else from the other 23 hours. Computing it here rather than by asking
+/// for 24 separate grids saves the per-place setup 23 times over: about
+/// 39 percent of an area run is work that does not depend on the hour.
+///
+/// The day starts fresh at every point — its own mode-loop state, its own
+/// `FSECV`, its own ionosphere — the way `run_listing` starts fresh for
+/// each path. A one-hour grid carries that state from point to point
+/// because the Fortran does, but the middle of a day must be a property
+/// of the place alone: carried state would make the same place answer
+/// differently on a coarse lattice than on a fine one, and this number is
+/// computed on one lattice and read on another.
+pub fn run_area_daily_median(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<AreaMedian>, String> {
+    let set: CoefficientSet =
+        redmap(itshfbc, area.fof2, area.month, area.ssn).map_err(|e| e.to_string())?;
+    let prep = AreaPrep::new(itshfbc, area, &set)?;
+    let mut out = Vec::with_capacity(area.grid.nx * area.grid.ny);
+    for iy in 1..=area.grid.ny {
+        for ix in 1..=area.grid.nx {
+            let (glat, glon, inp, s) = prep.at(itshfbc, area, ix, iy)?;
+            let mut lp = ModeLoopState::default();
+            let mut fsecv = [0.0 as R; 3];
+            let mut iono = IonoCarry::new(&inp, s.geo.points.len());
+            let mut day: Vec<Vec<f64>> = vec![Vec::with_capacity(24); prep.nf];
+            // In hour order, and every hour, because the mode loop reads
+            // its own previous hour. Skipping hours would not just cost
+            // accuracy in the median, it would change the hours kept.
+            for jt in 1..=24i32 {
+                let h = hour_body(&s, jt, &mut lp, &mut fsecv, &mut iono);
+                for (band, son) in h.son.iter().take(prep.nf).enumerate() {
+                    day[band].push(freq_answer(son).snr_db);
+                }
+            }
+            out.push(AreaMedian {
+                lat: glat,
+                lon: glon,
+                median_snr_db: day.iter().map(|hours| median_db(hours)).collect(),
+            });
+        }
+    }
+    Ok(out)
+}
+
+/// The middle value, averaging the two middle ones over an even count.
+///
+/// The same rule the application's own correction uses over the band
+/// table's 24 hours, so a map cell and a table cell centre on the same
+/// number rather than on two definitions of "middle".
+fn median_db(values: &[f64]) -> f64 {
+    if values.is_empty() {
+        return 0.0;
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let mid = sorted.len() / 2;
+    if sorted.len().is_multiple_of(2) {
+        (sorted[mid - 1] + sorted[mid]) / 2.0
+    } else {
+        sorted[mid]
+    }
 }
 
 /// The frequency window one band's area antenna answers for.
@@ -1827,6 +1977,15 @@ fn freq_answer(s: &Son) -> AreaFreq {
         // reporting one where none was computed would be a measurement
         // rather than a gap.
         takeoff_angle_deg: through(f6(s.angle, 2)),
+        // Through the point-to-point listing's formats, not the area
+        // row's. The area row prints SNR to one decimal and the listing
+        // prints it whole, and these three values exist so a map can be
+        // corrected by the same arithmetic that corrects the band table
+        // — which reads the listing. Two formats would put the same
+        // place half a decibel apart on the two screens.
+        snr_db: through(i5(s.sndb)).unwrap_or(0.0),
+        snr_low_decile: through(f5_1(s.snrlw)),
+        snr_up_decile: through(f5_1(s.snrup)),
     }
 }
 

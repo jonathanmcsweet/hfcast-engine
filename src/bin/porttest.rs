@@ -1511,8 +1511,17 @@ fn main() -> ExitCode {
                     nang,
                     long: plan.long,
                 };
-                let dbgs =
-                    luffy_freq_loop(&mut lp, &ctx, &mut hour_m, &noise_for, &frel, &mut saves);
+                // Traced: comparing what the loop records against the
+                // reference is the whole of what this binary does.
+                let dbgs = luffy_freq_loop(
+                    &mut lp,
+                    &ctx,
+                    &mut hour_m,
+                    &noise_for,
+                    &frel,
+                    &mut saves,
+                    true,
+                );
                 let expected_pass = if plan.long { 2 } else { 1 };
                 for dbg in dbgs.into_iter().flatten() {
                     compare_freq_debug(CompareFreq {

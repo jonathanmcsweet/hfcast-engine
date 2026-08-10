@@ -2468,6 +2468,54 @@ pub struct FreqDebug {
     pub outall: Option<AllModesOut>,
 }
 
+/// Where one frequency slot records what it did, when anything is going
+/// to read it.
+///
+/// Two things read these. Card method 25 prints them, and `porttest`
+/// compares them against the reference trace. Every other run drops the
+/// whole vector, and filling one slot costs about 6.5 KB and five heap
+/// allocations — about 78 KB for an hour pass, which over the
+/// application's 240 by 144 grid is 2.7 GB that nothing reads.
+///
+/// The value goes through the closure below rather than being built and
+/// then thrown away, so with tracing off the clones never happen.
+enum FreqTrace {
+    Off,
+    On(Box<FreqDebug>),
+}
+
+impl FreqTrace {
+    fn new(collect: bool, khz: i32) -> Self {
+        if !collect {
+            return Self::Off;
+        }
+        Self::On(Box::new(FreqDebug {
+            khz,
+            rfx: Vec::new(),
+            zons: Vec::new(),
+            amd: None,
+            los: None,
+            son: Son::default(),
+            nrel: 0,
+            outall: None,
+        }))
+    }
+
+    /// Records one part of the trace, and does nothing when off.
+    fn record(&mut self, fill: impl FnOnce(&mut FreqDebug)) {
+        if let Self::On(dbg) = self {
+            fill(dbg);
+        }
+    }
+
+    fn finish(self) -> Option<FreqDebug> {
+        match self {
+            Self::Off => None,
+            Self::On(dbg) => Some(*dbg),
+        }
+    }
+}
+
 fn nint_khz(freq: R) -> i32 {
     (freq * 1000.0).round() as i32
 }
@@ -2477,7 +2525,11 @@ fn nint_khz(freq: R) -> i32 {
 /// `findf`/`gmloss`/`seltxr`/`lngpat` chain for the long path, then
 /// `genois`, `relbil`, `serprb` and `mpath` per frequency. `frel` is
 /// the deck's slots 1-11 plus the circuit MUF in slot 12; `noise_for`
-/// evaluates `genois` at a frequency. Returns per-slot intermediates.
+/// evaluates `genois` at a frequency.
+///
+/// Returns per-slot intermediates when `collect` asks for them, and an
+/// vector of empty slots when it does not: they cost about 6.5 KB a slot
+/// and only card method 25 and `porttest` read them. See [`FreqTrace`].
 pub fn luffy_freq_loop(
     lp: &mut ModeLoopState,
     ctx: &PassCtx,
@@ -2485,6 +2537,7 @@ pub fn luffy_freq_loop(
     noise_for: &dyn Fn(R) -> NoiseResult,
     frel: &[R; 12],
     saves: &mut HourSaves,
+    collect: bool,
 ) -> Vec<Option<FreqDebug>> {
     let _perf = crate::perf::Step::new(crate::perf::LUFFY);
     let idx = usize::from(ctx.long);
@@ -2513,16 +2566,7 @@ pub fn luffy_freq_loop(
         let khz = nint_khz(freq);
         lp.all.reset();
         let noise = noise_for(freq);
-        let mut dbg = FreqDebug {
-            khz,
-            rfx: Vec::new(),
-            zons: Vec::new(),
-            amd: None,
-            los: None,
-            son: Son::default(),
-            nrel: 0,
-            outall: None,
-        };
+        let mut dbg = FreqTrace::new(collect, khz);
         if !ctx.long {
             let jm = ctx.jmode;
             // `K`, which is `JMODE` in this pass: the reflectrix and
@@ -2538,7 +2582,7 @@ pub fn luffy_freq_loop(
                 ctx.deck.amind,
                 ctx.nang,
             );
-            dbg.rfx.push(rfx_snapshot(&lp.reflectrix[kc], kc, khz));
+            dbg.record(|d| d.rfx.push(rfx_snapshot(&lp.reflectrix[kc], kc, khz)));
             let fsdead = ((lp.areas[jm].ifob[0][2] as R) / 1000.0).min(3.0);
             let (mut ihsrt, ihstp);
             if lp.reflectrix[kc].dmaxkm <= 0.0 {
@@ -2583,13 +2627,13 @@ pub fn luffy_freq_loop(
                     fsdead,
                 );
                 lp.all.accumulate(&lp.zon, 1, 6);
-                dbg.zons.push((ihop, lp.zon.clone()));
+                dbg.record(|d| d.zons.push((ihop, lp.zon.clone())));
             }
             esmod(&mut lp.zon, ctx, muf, &noise, freq, fsdead);
             esreg(&mut lp.zon);
-            dbg.zons.push((99, lp.zon.clone()));
+            dbg.record(|d| d.zons.push((99, lp.zon.clone())));
             lp.all.accumulate(&lp.zon, 4, 5);
-            dbg.amd = Some(lp.all.clone());
+            dbg.record(|d| d.amd = Some(lp.all.clone()));
         } else {
             for &end in &itxrcp {
                 let k = end - 1;
@@ -2602,33 +2646,35 @@ pub fn luffy_freq_loop(
                     ctx.deck.amind,
                     ctx.nang,
                 );
-                dbg.rfx.push(rfx_snapshot(&lp.reflectrix[k], k, khz));
+                dbg.record(|d| d.rfx.push(rfx_snapshot(&lp.reflectrix[k], k, khz)));
             }
             gmloss(lp, ctx, muf, freq, itxrcp);
             let ltxrgm = seltxr(lp, ctx, itxrcp);
             lngpat(lp, ctx, muf, &noise, freq, itxrcp, ltxrgm);
-            dbg.los = Some(LosSnapshot {
-                ltxrgm,
-                ends: [0, 1].map(|jj: usize| {
-                    let k = itxrcp[jj] - 1;
-                    let rfx = &lp.reflectrix[k];
-                    (
-                        k,
-                        (0..45)
-                            .map(|i| {
-                                [
-                                    rfx.andvx[i],
-                                    rfx.advx[i],
-                                    rfx.aofx[i],
-                                    rfx.grlosx[i],
-                                    rfx.tgainx[i],
-                                ]
-                            })
-                            .collect(),
-                    )
-                }),
+            dbg.record(|d| {
+                d.los = Some(LosSnapshot {
+                    ltxrgm,
+                    ends: [0, 1].map(|jj: usize| {
+                        let k = itxrcp[jj] - 1;
+                        let rfx = &lp.reflectrix[k];
+                        (
+                            k,
+                            (0..45)
+                                .map(|i| {
+                                    [
+                                        rfx.andvx[i],
+                                        rfx.advx[i],
+                                        rfx.aofx[i],
+                                        rfx.grlosx[i],
+                                        rfx.tgainx[i],
+                                    ]
+                                })
+                                .collect(),
+                        )
+                    }),
+                });
             });
-            dbg.amd = Some(lp.all.clone());
+            dbg.record(|d| d.amd = Some(lp.all.clone()));
         }
         // The second GENOIS call recomputes the identical values; reuse.
         relbil(lp, ifx, &noise, &ctx.deck, ctx.ants, freq);
@@ -2640,30 +2686,34 @@ pub fn luffy_freq_loop(
             lp.son[ifx].moder_layer = lp.all.nmode[1];
             lp.son[ifx].angler = lp.all.b[1];
         }
-        dbg.son = lp.son[ifx];
-        dbg.nrel = lp.all.nrel;
-        dbg.outall = Some(AllModesOut {
-            freq,
-            all: lp.all.clone(),
-            son: lp.son[ifx],
-            rcnse: noise.rcnse,
-            du: noise.du,
-            dl: noise.dl,
-            sigm: noise.sigm,
-            sygu: noise.sygu,
-            sygl: noise.sygl,
-            dsl: ctx.sig.dsl,
-            asm: ctx.sig.asm,
-            dsu: ctx.sig.dsu,
-            sls: ctx.sig.sls,
-            ads: ctx.sig.ads,
-            sus: ctx.sig.sus,
-            d90r: lp.d90r,
-            d50r: lp.d50r,
-            d10r: lp.d10r,
-            d90s: lp.d90s,
-            d50s: lp.d50s,
-            d10s: lp.d10s,
+        dbg.record(|d| {
+            d.son = lp.son[ifx];
+            d.nrel = lp.all.nrel;
+        });
+        dbg.record(|d| {
+            d.outall = Some(AllModesOut {
+                freq,
+                all: lp.all.clone(),
+                son: lp.son[ifx],
+                rcnse: noise.rcnse,
+                du: noise.du,
+                dl: noise.dl,
+                sigm: noise.sigm,
+                sygu: noise.sygu,
+                sygl: noise.sygl,
+                dsl: ctx.sig.dsl,
+                asm: ctx.sig.asm,
+                dsu: ctx.sig.dsu,
+                sls: ctx.sig.sls,
+                ads: ctx.sig.ads,
+                sus: ctx.sig.sus,
+                d90r: lp.d90r,
+                d50r: lp.d50r,
+                d10r: lp.d10r,
+                d90s: lp.d90s,
+                d50s: lp.d50s,
+                d10s: lp.d10s,
+            });
         });
         // The MSPEC = 121 save block.
         saves.son[ifx][idx] = lp.son[ifx];
@@ -2676,7 +2726,7 @@ pub fn luffy_freq_loop(
             saves.zangler[ifx] = lp.son[ifx].angler;
             saves.zmoder[ifx] = lp.son[ifx].moder_layer;
         }
-        out.push(Some(dbg));
+        out.push(dbg.finish());
     }
     out
 }

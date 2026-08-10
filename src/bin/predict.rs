@@ -16,10 +16,25 @@ use std::io::{self, Read, Write};
 use hfcast::json::{obj, str_of};
 use std::process::ExitCode;
 
+/// The largest request this reads.
+///
+/// A request is a few hundred bytes. Reading stdin with no limit lets
+/// whatever writes it decide how much memory this process takes, so the
+/// read stops at a size far above any real request.
+const MAX_REQUEST_BYTES: u64 = 1 << 20;
+
 fn main() -> ExitCode {
     let mut input = String::new();
-    if let Err(e) = io::stdin().read_to_string(&mut input) {
+    if let Err(e) = io::stdin()
+        .take(MAX_REQUEST_BYTES + 1)
+        .read_to_string(&mut input)
+    {
         return fail(&format!("could not read stdin: {e}"));
+    }
+    if input.len() as u64 > MAX_REQUEST_BYTES {
+        return fail(&format!(
+            "the request is longer than {MAX_REQUEST_BYTES} bytes"
+        ));
     }
     // Temporary: step timers, off unless asked for. See `src/perf.rs`.
     let timing = std::env::var_os("HFCAST_PERF").is_some();
