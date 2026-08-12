@@ -31,6 +31,7 @@ pub mod compare;
 pub mod deck;
 pub mod fuzz;
 pub mod geomag;
+pub mod giro;
 pub mod irtam;
 pub mod itu;
 pub mod json;
