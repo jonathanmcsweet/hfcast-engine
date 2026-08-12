@@ -40,6 +40,7 @@ pub mod listing;
 pub mod perf;
 pub mod runner;
 pub mod service;
+pub mod sonde;
 pub mod spread;
 pub mod stats;
 pub mod sweep;

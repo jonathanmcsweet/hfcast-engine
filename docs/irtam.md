@@ -85,3 +85,6 @@ What could change the answer, in order of promise:
 - **Better ground truth.** WSPR daily medians cap how much skill any model
   can show. Validation against ionosonde-measured MUFs would separate
   "IRTAM adds little" from "WSPR cannot see what it adds".
+  **Now measured** — see [ionosonde.md](ionosonde.md): against ionosonde
+  truth the same IRTAM input scores +0.745 day-to-day where WSPR saw
+  +0.1. It was the ruler.
