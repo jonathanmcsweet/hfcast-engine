@@ -119,6 +119,13 @@ month. Findings, in order of consequence:
    the low band at the identity permanently — that exclusion is itself
    a measured result.
 
+   In the NVIS table the full deployable pipeline (`essn+st+dud`)
+   holds the essn+dudeney level: MUF MAE ticks down about 0.01 MHz in
+   the held-out months and the band-call rates do not move at month
+   scale, because storm hours are a minority of cells. The storm
+   table's value lives in the storm-hour splits above, not in monthly
+   call totals.
+
 ## Caveats
 
 - **IRTAM assimilates these same stations.** Its columns are mechanism

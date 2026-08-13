@@ -517,9 +517,13 @@ impl BandCalls {
 }
 
 /// One (station, day, hour) with both foF2 and hmF2 present, for NVIS
-/// arithmetic.
+/// arithmetic. The identity fields let a report condition a cell on its
+/// own storm state.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NvisCell {
+    pub station: String,
+    pub day: u8,
+    pub hour: u8,
     pub observed_fof2: f64,
     pub observed_hmf2: f64,
     pub climatology_fof2: f64,
@@ -550,6 +554,9 @@ pub fn nvis_cells(samples: &[Sample]) -> Vec<NvisCell> {
         .filter_map(|(key, f)| {
             let h = hmf2.get(key)?;
             Some(NvisCell {
+                station: key.0.clone(),
+                day: key.1,
+                hour: key.2,
                 observed_fof2: f.observed,
                 observed_hmf2: h.observed,
                 climatology_fof2: f.climatology,

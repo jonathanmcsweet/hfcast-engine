@@ -464,13 +464,37 @@ fn report(
         );
     }
 
-    report_nvis(samples);
+    report_nvis(month, samples, table, stations);
+}
+
+/// The storm ratio for one NVIS cell, or 1.0 where the state is
+/// unknown — the same rule as `essn_storm_value`, over the cell's own
+/// place and hour.
+fn cell_storm_ratio(
+    cell: &sonde::NvisCell,
+    month: &str,
+    table: Option<&GeomagTable>,
+    stations: &BTreeMap<String, StationMeta>,
+) -> f64 {
+    let bin = stations
+        .get(&cell.station)
+        .zip(year_month(month))
+        .and_then(|(meta, (year, mm))| {
+            let kp = table?.kp_max_lookback(year, mm, cell.day, cell.hour, 24)?;
+            Some(stormfit::bin(mm, meta.lat, meta.lon, cell.hour, kp))
+        });
+    stormfit::correction(&stormfit::FITTED, bin)
 }
 
 /// NVIS: MUF(d) error and band calls at each scored ground range. The
 /// measured MUF uses measured foF2 and measured hmF2; each model uses its
 /// own foF2 with its own (here: climatology) hmF2.
-fn report_nvis(samples: &[Sample]) {
+fn report_nvis(
+    month: &str,
+    samples: &[Sample],
+    table: Option<&GeomagTable>,
+    stations: &BTreeMap<String, StationMeta>,
+) {
     let cells = nvis_cells(samples);
     if cells.is_empty() {
         println!("\n### NVIS: no hours with both foF2 and hmF2 measured");
@@ -488,83 +512,117 @@ fn report_nvis(samples: &[Sample]) {
             .iter()
             .map(|c| c.observed_fof2 * secant_factor(range, c.observed_hmf2))
             .collect();
-        let models: [(&str, Vec<Option<f64>>); 5] = [
-            (
-                "climatology",
-                cells
-                    .iter()
-                    .map(|c| Some(c.climatology_fof2 * secant_factor(range, c.climatology_hmf2)))
-                    .collect(),
-            ),
-            (
-                // The height fix alone: same foF2, corrected formula.
-                "clim+dudeney",
-                cells
-                    .iter()
-                    .map(|c| {
-                        c.dudeney_hmf2
-                            .map(|h| c.climatology_fof2 * secant_factor(range, h))
-                    })
-                    .collect(),
-            ),
-            (
-                // The daily frequency alone, over the shipped height.
-                "irtam-foF2",
-                cells
-                    .iter()
-                    .map(|c| {
-                        c.irtam_fof2
-                            .map(|f| f * secant_factor(range, c.climatology_hmf2))
-                    })
-                    .collect(),
-            ),
-            (
-                // The deployable offline pair: holdout index over the
-                // corrected height form.
-                "essn+dudeney",
-                cells
-                    .iter()
-                    .map(|c| {
-                        c.essn_fof2.map(|f| {
-                            f * secant_factor(range, c.dudeney_hmf2.unwrap_or(c.climatology_hmf2))
-                        })
-                    })
-                    .collect(),
-            ),
-            (
-                // Both assimilated maps together.
-                "irtam-both",
-                cells
-                    .iter()
-                    .map(|c| {
-                        c.irtam_fof2
-                            .zip(c.irtam_hmf2)
-                            .map(|(f, h)| f * secant_factor(range, h))
-                    })
-                    .collect(),
-            ),
-        ];
-        for (label, predicted) in models {
-            let muf_pairs: Vec<(f64, f64)> = predicted
+        for (label, predicted) in nvis_models(&cells, range, month, table, stations) {
+            nvis_row(range, label, &predicted, &observed);
+        }
+    }
+}
+
+/// The model columns of the NVIS table at one ground range.
+fn nvis_models(
+    cells: &[sonde::NvisCell],
+    range: f64,
+    month: &str,
+    table: Option<&GeomagTable>,
+    stations: &BTreeMap<String, StationMeta>,
+) -> [(&'static str, Vec<Option<f64>>); 6] {
+    [
+        (
+            "climatology",
+            cells
                 .iter()
-                .zip(&observed)
-                .filter_map(|(p, o)| Some(((*p)?, *o)))
-                .collect();
-            let mut calls = BandCalls::default();
-            for ((p, o), band) in muf_pairs
+                .map(|c| Some(c.climatology_fof2 * secant_factor(range, c.climatology_hmf2)))
+                .collect(),
+        ),
+        (
+            // The height fix alone: same foF2, corrected formula.
+            "clim+dudeney",
+            cells
                 .iter()
-                .flat_map(|pair| NVIS_BANDS_MHZ.iter().map(move |b| (pair, b)))
-                .map(|((p, o), b)| ((*p, *o), *b))
-            {
-                calls.count(o, p, band);
-            }
-            match errors(&muf_pairs) {
-                Some((bias, mae, rms)) => println!(
-                    "| {range:4.0}k | {label:<12} | {bias:+7.3} | {mae:6.3} | {rms:6.3} | {:15.1}% |",
-                    calls.accuracy() * 100.0
-                ),
-                None => println!("| {range:4.0}k | {label:<12} |       - |      - |      - |                - |"),
-            }
+                .map(|c| {
+                    c.dudeney_hmf2
+                        .map(|h| c.climatology_fof2 * secant_factor(range, h))
+                })
+                .collect(),
+        ),
+        (
+            // The daily frequency alone, over the shipped height.
+            "irtam-foF2",
+            cells
+                .iter()
+                .map(|c| {
+                    c.irtam_fof2
+                        .map(|f| f * secant_factor(range, c.climatology_hmf2))
+                })
+                .collect(),
+        ),
+        (
+            // The deployable offline pair: holdout index over the
+            // corrected height form.
+            "essn+dudeney",
+            cells
+                .iter()
+                .map(|c| {
+                    c.essn_fof2.map(|f| {
+                        f * secant_factor(range, c.dudeney_hmf2.unwrap_or(c.climatology_hmf2))
+                    })
+                })
+                .collect(),
+        ),
+        (
+            // The full deployable pipeline: what the nowcast point
+            // API answers under daily conditioning with the storm
+            // state known.
+            "essn+st+dud",
+            cells
+                .iter()
+                .map(|c| {
+                    c.essn_fof2.map(|f| {
+                        f * cell_storm_ratio(c, month, table, stations)
+                            * secant_factor(range, c.dudeney_hmf2.unwrap_or(c.climatology_hmf2))
+                    })
+                })
+                .collect(),
+        ),
+        (
+            // Both assimilated maps together.
+            "irtam-both",
+            cells
+                .iter()
+                .map(|c| {
+                    c.irtam_fof2
+                        .zip(c.irtam_hmf2)
+                        .map(|(f, h)| f * secant_factor(range, h))
+                })
+                .collect(),
+        ),
+    ]
+}
+
+/// One printed NVIS row: MUF errors and the band-call rate.
+fn nvis_row(range: f64, label: &str, predicted: &[Option<f64>], observed: &[f64]) {
+    let muf_pairs: Vec<(f64, f64)> = predicted
+        .iter()
+        .zip(observed)
+        .filter_map(|(p, o)| Some(((*p)?, *o)))
+        .collect();
+    let mut calls = BandCalls::default();
+    for ((p, o), band) in muf_pairs
+        .iter()
+        .flat_map(|pair| NVIS_BANDS_MHZ.iter().map(move |b| (pair, b)))
+        .map(|((p, o), b)| ((*p, *o), *b))
+    {
+        calls.count(o, p, band);
+    }
+    match errors(&muf_pairs) {
+        Some((bias, mae, rms)) => println!(
+            "| {range:4.0}k | {label:<12} | {bias:+7.3} | {mae:6.3} | {rms:6.3} | {:15.1}% |",
+            calls.accuracy() * 100.0
+        ),
+        None => {
+            println!(
+                "| {range:4.0}k | {label:<12} |       - |      - |      - |                - |"
+            );
         }
     }
 }
