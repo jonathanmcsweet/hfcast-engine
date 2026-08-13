@@ -47,6 +47,14 @@ pub type PathKey = (String, String, i32);
 /// Deliberately a table rather than a fetch: R12 for a past month never
 /// changes once published, and a validation run should not depend on a
 /// network service being up or on which day it was run.
+///
+/// Months at the end marked predicted are for the live loop
+/// (`tools/live-check.sh`): R12 is a 13-month smooth, so the current
+/// month cannot have an observed value yet. SWPC's predicted value
+/// stands in and is replaced when the observed one lands. The daily
+/// index fit does not depend on this number (foF2 is linear in the
+/// index, so the fit finds its own level); only the climatology
+/// column's own score reads it.
 pub const SMOOTHED_SSN: &[(&str, f64)] = &[
     ("2015-03", 82.1),
     ("2019-06", 3.7),
@@ -59,6 +67,8 @@ pub const SMOOTHED_SSN: &[(&str, f64)] = &[
     ("2025-06", 124.7),
     ("2025-07", 122.5),
     ("2025-08", 118.4),
+    // Predicted (SWPC predicted-solar-cycle, fetched 2026-08-13).
+    ("2026-08", 95.4),
 ];
 
 pub fn smoothed_ssn(month: &str) -> Option<f64> {

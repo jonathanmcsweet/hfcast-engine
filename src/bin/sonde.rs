@@ -17,6 +17,9 @@
 //! and prints the held-out verdict.
 //! `--engine nowcast` replays the nowcast point API over the cached
 //! cells and fails if it disagrees with the research columns.
+//! `--ledger` prints one CSV line per month: the most recent day with
+//! samples, scored on its own rows — the live loop's trend line
+//! (`tools/live-check.sh`, `docs/live.md`).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -212,6 +215,59 @@ fn run_fit_storm(
     }
     fit_storm_report(&fit_samples);
     ExitCode::SUCCESS
+}
+
+/// The `--ledger` mode: the trend line the live loop appends per run.
+fn run_ledger(args: &Args) -> ExitCode {
+    println!(
+        "month,day,n_fof2,essn_bias,essn_mae,clim_bias,clim_mae,\
+         essn_index,n_fmin,edge_bias,edge_mae"
+    );
+    let mut all = true;
+    if !over_months(args, &mut |month, samples| match ledger_line(samples) {
+        Some(line) => println!("{month},{line}"),
+        None => all = false,
+    }) || !all
+    {
+        return ExitCode::FAILURE;
+    }
+    ExitCode::SUCCESS
+}
+
+/// Scores the most recent day with samples on its own rows. During a
+/// live day the day is partial and its numbers firm up run by run —
+/// the ledger records the scored day, so repeated lines for one day
+/// are the day filling in, not a fault.
+fn ledger_line(samples: &[Sample]) -> Option<String> {
+    let day = samples.iter().map(|s| s.day).max()?;
+    let rows: Vec<&Sample> = samples.iter().filter(|s| s.day == day).collect();
+    let against = |characteristic: &str, pick: &dyn Fn(&Sample) -> Option<f64>| {
+        let pairs: Vec<(f64, f64)> = rows
+            .iter()
+            .filter(|s| s.characteristic == characteristic)
+            .filter_map(|s| Some((pick(s)?, s.observed)))
+            .collect();
+        (pairs.len(), errors(&pairs))
+    };
+    let two = |stats: Option<(f64, f64, f64)>| match stats {
+        Some((bias, mae, _)) => format!("{bias:+.3},{mae:.3}"),
+        None => ",".to_string(),
+    };
+    let (n_fof2, essn) = against("foF2", &|s| s.essn);
+    let (_, clim) = against("foF2", &|s| Some(s.climatology));
+    let (n_fmin, edge) = against("fmin", &|s| s.essn.map(|e| e / nowcast::EDGE_FMIN_RATIO));
+    let mut indexes: Vec<f64> = rows.iter().filter_map(|s| s.essn_index).collect();
+    let index = if indexes.is_empty() {
+        String::new()
+    } else {
+        format!("{:.1}", hfcast::stats::median_in_place(&mut indexes))
+    };
+    Some(format!(
+        "{day},{n_fof2},{},{},{index},{n_fmin},{}",
+        two(essn),
+        two(clim),
+        two(edge)
+    ))
 }
 
 /// The `--fit-edge` mode: gather the months, fit, print the verdict.
@@ -843,6 +899,7 @@ struct Args {
     check_only: bool,
     fit_storm: bool,
     fit_edge: bool,
+    ledger: bool,
     engine: String,
 }
 
@@ -855,6 +912,7 @@ fn parse_args() -> Args {
         check_only: false,
         fit_storm: false,
         fit_edge: false,
+        ledger: false,
         engine: "parity".to_string(),
     };
     while let Some(arg) = args.next() {
@@ -868,6 +926,7 @@ fn parse_args() -> Args {
             "--check" => parsed.check_only = true,
             "--fit-storm" => parsed.fit_storm = true,
             "--fit-edge" => parsed.fit_edge = true,
+            "--ledger" => parsed.ledger = true,
             "--engine" => {
                 if let Some(name) = args.next() {
                     parsed.engine = name;
@@ -899,8 +958,9 @@ fn main() -> ExitCode {
     let args = parse_args();
     if args.months.is_empty() || !matches!(args.engine.as_str(), "parity" | "nowcast") {
         eprintln!(
-            "usage: sonde [--check] [--fit-storm] [--fit-edge] [--engine parity|nowcast] \
-             [--kp data/kp_daily.txt] [--stations tools/giro-stations.tsv] data/YYYY-MM ..."
+            "usage: sonde [--check] [--fit-storm] [--fit-edge] [--ledger] \
+             [--engine parity|nowcast] [--kp data/kp_daily.txt] \
+             [--stations tools/giro-stations.tsv] data/YYYY-MM ..."
         );
         return ExitCode::FAILURE;
     }
@@ -926,12 +986,8 @@ fn main() -> ExitCode {
         }
     };
 
-    if args.fit_storm {
-        return run_fit_storm(&args, table.as_ref(), &station_meta);
-    }
-
-    if args.fit_edge {
-        return run_fit_edge(&args);
+    if let Some(code) = fit_mode(&args, table.as_ref(), &station_meta) {
+        return code;
     }
 
     if args.engine == "nowcast" {
@@ -952,4 +1008,23 @@ fn main() -> ExitCode {
     } else {
         ExitCode::FAILURE
     }
+}
+
+/// The fit and ledger modes, in flag order. None means the ordinary
+/// report (or the nowcast replay) runs instead.
+fn fit_mode(
+    args: &Args,
+    table: Option<&GeomagTable>,
+    station_meta: &BTreeMap<String, StationMeta>,
+) -> Option<ExitCode> {
+    if args.fit_storm {
+        return Some(run_fit_storm(args, table, station_meta));
+    }
+    if args.fit_edge {
+        return Some(run_fit_edge(args));
+    }
+    if args.ledger {
+        return Some(run_ledger(args));
+    }
+    None
 }
