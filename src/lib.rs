@@ -44,6 +44,7 @@ pub mod service;
 pub mod sonde;
 pub mod spread;
 pub mod stats;
+pub mod stormfit;
 pub mod sweep;
 pub mod voacap;
 pub mod wspr;

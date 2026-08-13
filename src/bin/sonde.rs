@@ -10,16 +10,20 @@
 //! --bin sonde -- --kp data/kp_daily.txt data/2025-06 ...`
 //!
 //! `--check <dir>` prints what a bundle holds and runs nothing.
+//! `--fit-storm` fits the storm ratio table (`src/stormfit.rs`) from the
+//! given months and prints it as Rust source instead of a report.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use hfcast::geomag::{self, GeomagTable};
+use hfcast::giro::{self, StationMeta};
 use hfcast::sonde::{
     self, day_to_day, errors, nvis_cells, secant_factor, BandCalls, Sample, NVIS_BANDS_MHZ,
     NVIS_RANGES_KM, STORM_KP,
 };
+use hfcast::stormfit;
 
 fn check(dir: &Path) {
     let name = dir.file_name().and_then(|n| n.to_str()).unwrap_or("?");
@@ -95,19 +99,120 @@ fn storminess(table: Option<&GeomagTable>, month: &str, s: &Sample) -> Option<bo
     Some(kp >= STORM_KP)
 }
 
-fn report(month: &str, samples: &[Sample], table: Option<&GeomagTable>) {
-    let stations: BTreeSet<&str> = samples.iter().map(|s| s.station.as_str()).collect();
+/// One month's (bin, observed/predicted) storm-fit samples: every foF2
+/// sample that has an essn prediction and a known trailing-24-hour Kp.
+fn storm_samples(
+    month: &str,
+    samples: &[Sample],
+    table: &GeomagTable,
+    stations: &BTreeMap<String, StationMeta>,
+) -> Vec<(usize, f64)> {
+    let Some((year, mm)) = year_month(month) else {
+        return Vec::new();
+    };
+    samples
+        .iter()
+        .filter(|s| s.characteristic == "foF2")
+        .filter_map(|s| {
+            let predicted = s.essn.filter(|value| *value > 0.0)?;
+            let meta = stations.get(&s.station)?;
+            let kp = table.kp_max_lookback(year, mm, s.day, s.hour, 24)?;
+            Some((
+                stormfit::bin(mm, meta.lat, meta.lon, s.hour, kp),
+                s.observed / predicted,
+            ))
+        })
+        .collect()
+}
+
+/// Prints the fitted table as Rust source for `stormfit::FITTED`, then a
+/// summary of the fitted bins for the docs. Grouping: one line per
+/// (class, band, season), its four local-time quarters left to right.
+fn fit_storm_report(samples: &[(usize, f64)]) {
+    let (ratios, counts) = stormfit::fit(samples);
+    let kp_names = ["quiet", "active", "storm", "severe"];
+    let lat_names = ["low", "mid", "high"];
+    let season_names = ["summer", "equinox", "winter"];
+    println!("pub const FITTED: [f64; N_BINS] = [");
+    // Loops print in table order; the grouping is the output format.
+    for (kp, kp_name) in kp_names.iter().enumerate() {
+        for (lat, lat_name) in lat_names.iter().enumerate() {
+            for (season, season_name) in season_names.iter().enumerate() {
+                let base =
+                    ((kp * stormfit::N_LAT + lat) * stormfit::N_SEASON + season) * stormfit::N_LT;
+                let quarters: Vec<String> = (0..stormfit::N_LT)
+                    .map(|lt| format!("{:.4},", ratios[base + lt]))
+                    .collect();
+                println!(
+                    "    {} // {kp_name} {lat_name} {season_name}",
+                    quarters.join(" ")
+                );
+            }
+        }
+    }
+    println!("];");
+    println!(
+        "\n{} samples. Bins with fewer than {} own samples borrow the \
+         season pool; quiet bins stay 1.0 by construction:\n",
+        samples.len(),
+        stormfit::MIN_BIN
+    );
+    println!("| class  | band | season  | LT quarter | ratio |    n |");
+    println!("| ------ | ---- | ------- | ---------- | ----: | ---: |");
+    let lt_names = ["00-06", "06-12", "12-18", "18-24"];
+    for b in 0..stormfit::N_BINS {
+        let kp = b / (stormfit::N_LT * stormfit::N_SEASON * stormfit::N_LAT);
+        if kp == 0 || (ratios[b] == 1.0 && counts[b] == 0) {
+            continue;
+        }
+        let lat = (b / (stormfit::N_LT * stormfit::N_SEASON)) % stormfit::N_LAT;
+        let season = (b / stormfit::N_LT) % stormfit::N_SEASON;
+        println!(
+            "| {:<6} | {:<4} | {:<7} | {:<10} | {:.3} | {:4} |",
+            kp_names[kp],
+            lat_names[lat],
+            season_names[season],
+            lt_names[b % stormfit::N_LT],
+            ratios[b],
+            counts[b]
+        );
+    }
+}
+
+fn report(
+    month: &str,
+    samples: &[Sample],
+    table: Option<&GeomagTable>,
+    stations: &BTreeMap<String, StationMeta>,
+) {
+    let station_codes: BTreeSet<&str> = samples.iter().map(|s| s.station.as_str()).collect();
     println!("\n## {month}\n");
     println!(
         "{} samples from {} stations: {}",
         samples.len(),
-        stations.len(),
-        stations.into_iter().collect::<Vec<_>>().join(" ")
+        station_codes.len(),
+        station_codes.into_iter().collect::<Vec<_>>().join(" ")
     );
 
     let climatology: &dyn Fn(&Sample) -> Option<f64> = &|s| Some(s.climatology);
     let irtam: &dyn Fn(&Sample) -> Option<f64> = &|s| s.irtam;
     let all: &dyn Fn(&Sample) -> bool = &|_| true;
+    // The essn prediction times the embedded storm ratio. The ratio is
+    // fitted to foF2 and multiplies MUFD identically, since MUFD is the
+    // foF2 line times the factor line. Unknown storm state (no Kp file,
+    // missing lookback days) leaves the prediction alone — exactly what
+    // a deployed device would do.
+    let essn_storm: &dyn Fn(&Sample) -> Option<f64> = &|s| {
+        let predicted = s.essn?;
+        let bin = stations
+            .get(&s.station)
+            .zip(year_month(month))
+            .and_then(|(meta, (year, mm))| {
+                let kp = table?.kp_max_lookback(year, mm, s.day, s.hour, 24)?;
+                Some(stormfit::bin(mm, meta.lat, meta.lon, s.hour, kp))
+            });
+        Some(predicted * stormfit::correction(&stormfit::FITTED, bin))
+    };
 
     // Loops, not maps: these iterate to print, and the report reads in
     // this order.
@@ -123,6 +228,10 @@ fn report(month: &str, samples: &[Sample], table: Option<&GeomagTable>) {
         let essn: &dyn Fn(&Sample) -> Option<f64> = &|s| s.essn;
         if matches!(characteristic, "foF2" | "MUFD") {
             error_row("essn (holdout)", &pairs(samples, characteristic, essn, all));
+            error_row(
+                "essn+storm",
+                &pairs(samples, characteristic, essn_storm, all),
+            );
         }
         if characteristic == "hmF2" {
             let dudeney: &dyn Fn(&Sample) -> Option<f64> = &|s| s.dudeney;
@@ -142,6 +251,11 @@ fn report(month: &str, samples: &[Sample], table: Option<&GeomagTable>) {
                 if matches!(characteristic, "foF2" | "MUFD") {
                     let essn_label = label.replace("climatology", "essn");
                     error_row(&essn_label, &pairs(samples, characteristic, essn, keep));
+                    let storm_label = label.replace("climatology", "essn+storm");
+                    error_row(
+                        &storm_label,
+                        &pairs(samples, characteristic, essn_storm, keep),
+                    );
                 }
             }
         }
@@ -153,9 +267,15 @@ fn report(month: &str, samples: &[Sample], table: Option<&GeomagTable>) {
         let (clim_corr, pairs_n) = day_to_day(&of_char, climatology);
         let (irtam_corr, _) = day_to_day(&of_char, irtam);
         let (essn_corr, _) = day_to_day(&of_char, essn);
+        let storm_note = if matches!(characteristic, "foF2" | "MUFD") {
+            let (storm_corr, _) = day_to_day(&of_char, essn_storm);
+            format!(", essn+storm {storm_corr:+.3}")
+        } else {
+            String::new()
+        };
         println!(
             "\nday-to-day: climatology {clim_corr:+.3} (guard: must be +0.000), \
-             irtam {irtam_corr:+.3}, essn {essn_corr:+.3}, {pairs_n} day pairs"
+             irtam {irtam_corr:+.3}, essn {essn_corr:+.3}{storm_note}, {pairs_n} day pairs"
         );
     }
 
@@ -264,54 +384,106 @@ fn report_nvis(samples: &[Sample]) {
     }
 }
 
-fn main() -> ExitCode {
+struct Args {
+    kp: Option<PathBuf>,
+    stations: PathBuf,
+    months: Vec<PathBuf>,
+    check_only: bool,
+    fit_storm: bool,
+}
+
+fn parse_args() -> Args {
     let mut args = std::env::args().skip(1).peekable();
-    let mut kp: Option<PathBuf> = None;
-    let mut stations = PathBuf::from("tools/giro-stations.tsv");
-    let mut months: Vec<PathBuf> = Vec::new();
-    let mut check_only = false;
+    let mut parsed = Args {
+        kp: None,
+        stations: PathBuf::from("tools/giro-stations.tsv"),
+        months: Vec::new(),
+        check_only: false,
+        fit_storm: false,
+    };
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--kp" => kp = args.next().map(PathBuf::from),
+            "--kp" => parsed.kp = args.next().map(PathBuf::from),
             "--stations" => {
                 if let Some(path) = args.next() {
-                    stations = PathBuf::from(path);
+                    parsed.stations = PathBuf::from(path);
                 }
             }
-            "--check" => check_only = true,
-            _ => months.push(PathBuf::from(arg)),
+            "--check" => parsed.check_only = true,
+            "--fit-storm" => parsed.fit_storm = true,
+            _ => parsed.months.push(PathBuf::from(arg)),
         }
     }
-    if months.is_empty() {
+    parsed
+}
+
+/// Gathers every month and hands each to `consume`, stopping on the
+/// first bundle that cannot be read. True when every bundle gathered.
+fn over_months(args: &Args, consume: &mut dyn FnMut(&str, &[Sample])) -> bool {
+    // A loop for the early return with its error line.
+    for month_dir in &args.months {
+        match sonde::gather(month_dir, &args.stations, Path::new("data/cache")) {
+            Ok((month, samples)) => consume(&month, &samples),
+            Err(e) => {
+                eprintln!("{}: {e}", month_dir.display());
+                return false;
+            }
+        }
+    }
+    true
+}
+
+fn main() -> ExitCode {
+    let args = parse_args();
+    if args.months.is_empty() {
         eprintln!(
-            "usage: sonde [--check] [--kp data/kp_daily.txt] \
+            "usage: sonde [--check] [--fit-storm] [--kp data/kp_daily.txt] \
              [--stations tools/giro-stations.tsv] data/YYYY-MM ..."
         );
         return ExitCode::FAILURE;
     }
-    if check_only {
-        for month in &months {
+    if args.check_only {
+        for month in &args.months {
             check(month);
         }
         return ExitCode::SUCCESS;
     }
 
-    let table = kp.as_deref().map(|path| match geomag::load(path) {
+    let table = args.kp.as_deref().map(|path| match geomag::load(path) {
         Ok(table) => table,
         Err(e) => {
             eprintln!("no Kp table from {}: {e}", path.display());
             GeomagTable::default()
         }
     });
-
-    for month_dir in &months {
-        match sonde::gather(month_dir, &stations, Path::new("data/cache")) {
-            Ok((month, samples)) => report(&month, &samples, table.as_ref()),
-            Err(e) => {
-                eprintln!("{}: {e}", month_dir.display());
-                return ExitCode::FAILURE;
-            }
+    let station_meta: BTreeMap<String, StationMeta> = match giro::load_stations(&args.stations) {
+        Ok(list) => list.into_iter().map(|m| (m.ursi.clone(), m)).collect(),
+        Err(e) => {
+            eprintln!("no stations from {}: {e}", args.stations.display());
+            return ExitCode::FAILURE;
         }
+    };
+
+    if args.fit_storm {
+        let Some(table) = table.as_ref().filter(|t| !t.is_empty()) else {
+            eprintln!("--fit-storm needs --kp with a readable file");
+            return ExitCode::FAILURE;
+        };
+        let mut fit_samples = Vec::new();
+        if !over_months(&args, &mut |month, samples| {
+            fit_samples.extend(storm_samples(month, samples, table, &station_meta));
+        }) {
+            return ExitCode::FAILURE;
+        }
+        fit_storm_report(&fit_samples);
+        return ExitCode::SUCCESS;
     }
-    ExitCode::SUCCESS
+
+    if over_months(&args, &mut |month, samples| {
+        report(month, samples, table.as_ref(), &station_meta);
+    }) {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
