@@ -317,6 +317,44 @@ fn station_samples(
         .collect()
 }
 
+/// The month's all-station daily index series, fitted from the bundle's
+/// GIRO soundings: what a deployed device with the sounding feed really
+/// has per day. Two engine runs per station (the two map planes); days
+/// with too few usable solutions are absent, as `essn::essn_by_day`
+/// leaves them.
+pub fn essn_series(month_dir: &Path, stations_tsv: &Path) -> Result<BTreeMap<u8, f64>, String> {
+    let month = month_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or("month directory has no name")?;
+    let month_number: u32 = month
+        .split_once('-')
+        .and_then(|(_, m)| m.parse().ok())
+        .ok_or(format!("{month} is not YYYY-MM"))?;
+    let stations = giro::load_stations(stations_tsv).map_err(|e| e.to_string())?;
+    let observed = giro::load_month(month_dir, &stations);
+    if observed.is_empty() {
+        return Err(format!("{month}: no GIRO data; run tools/fetch-giro.sh"));
+    }
+    let mut solutions = Vec::new();
+    // A loop for the error path: one station failing to predict is a
+    // real fault, not a station to skip.
+    for station in &observed {
+        let probe = |ssn: f64| {
+            crate::nowcast::api::probe_hours(
+                &data::embedded_root(),
+                station.meta.lat,
+                station.meta.lon,
+                month_number,
+                ssn,
+            )
+        };
+        let (plane0, plane100) = (probe(0.0)?, probe(100.0)?);
+        solutions.extend(fof2_solutions(station, &plane0, &plane100));
+    }
+    Ok(essn::essn_by_day(&solutions))
+}
+
 /// The day-informed column value: the IRTAM hmF2 evaluation for the
 /// height rows, the day's IRTAM foF2 run for the rest. None where the
 /// day had no readable map.

@@ -280,6 +280,95 @@ pub fn load_daily(dir: &Path) -> io::Result<HashMap<PathKey, Vec<DailySample>>> 
     Ok(parse_daily(&fs::read_to_string(dir.join("daily.csv"))?))
 }
 
+// ---- link-level scoring ----------------------------------------------
+//
+// The conventions of docs/irtam.md, shared so every daily-model study
+// scores the same way: absolute error after one offset per path (the
+// station's antennas and local noise are unknown but constant), and
+// day-to-day deviations from each path-hour's own monthly median (where
+// a model that never varies by day scores exactly zero).
+
+/// One scored model value against one observed path-day-hour.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Scored {
+    /// Path identity: an index into the month's path list.
+    pub path: usize,
+    pub day: u8,
+    pub hour: u8,
+    pub observed: f64,
+    pub predicted: f64,
+}
+
+/// Median absolute error after removing one offset per path, dB.
+pub fn offset_adjusted_mae(samples: &[Scored]) -> f64 {
+    let mut by_path: HashMap<usize, Vec<f64>> = HashMap::new();
+    for s in samples {
+        by_path
+            .entry(s.path)
+            .or_default()
+            .push(s.observed - s.predicted);
+    }
+    let offsets: HashMap<usize, f64> = by_path
+        .into_iter()
+        .map(|(p, mut residuals)| (p, crate::stats::median_in_place(&mut residuals)))
+        .collect();
+    let mut errors: Vec<f64> = samples
+        .iter()
+        .map(|s| (s.observed - s.predicted - offsets[&s.path]).abs())
+        .collect();
+    crate::stats::median_in_place(&mut errors)
+}
+
+/// One deviation pair: how far the day sat from its path-hour's monthly
+/// median, observed and as the model predicted.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DeviationPair {
+    pub path: usize,
+    pub day: u8,
+    pub hour: u8,
+    pub observed: f64,
+    pub predicted: f64,
+}
+
+/// Deviations of observation and model from their own per-path-hour
+/// monthly medians, over path-hours with at least five scored days.
+pub fn deviations(samples: &[Scored]) -> Vec<DeviationPair> {
+    let mut obs_by_hour: HashMap<(usize, u8), Vec<f64>> = HashMap::new();
+    let mut pred_by_hour: HashMap<(usize, u8), Vec<f64>> = HashMap::new();
+    for s in samples {
+        obs_by_hour
+            .entry((s.path, s.hour))
+            .or_default()
+            .push(s.observed);
+        pred_by_hour
+            .entry((s.path, s.hour))
+            .or_default()
+            .push(s.predicted);
+    }
+    let centre = |m: &HashMap<(usize, u8), Vec<f64>>| -> HashMap<(usize, u8), f64> {
+        m.iter()
+            .filter(|(_, v)| v.len() >= 5)
+            .map(|(k, v)| (*k, crate::stats::median(v)))
+            .collect()
+    };
+    let obs_centre = centre(&obs_by_hour);
+    let pred_centre = centre(&pred_by_hour);
+    samples
+        .iter()
+        .filter_map(|s| {
+            let key = (s.path, s.hour);
+            let (oc, pc) = (obs_centre.get(&key)?, pred_centre.get(&key)?);
+            Some(DeviationPair {
+                path: s.path,
+                day: s.day,
+                hour: s.hour,
+                observed: s.observed - oc,
+                predicted: s.predicted - pc,
+            })
+        })
+        .collect()
+}
+
 pub fn parse_hourly(text: &str) -> HashMap<PathKey, HourlySnr> {
     let mut out: HashMap<PathKey, HourlySnr> = HashMap::new();
     let mut lines = text.lines();
