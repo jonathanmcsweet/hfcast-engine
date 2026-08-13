@@ -1,7 +1,7 @@
 
 ## 2015-03
 
-34559 samples from 21 stations: AL945 AT138 AU930 BC840 DB049 EB040 EG931 FF051 GR13L HE13N JI91J JR055 LM42B MHJ45 MO155 PA836 PQ052 PRJ18 RO041 SAA0K WP937
+40672 samples from 21 stations: AL945 AT138 AU930 BC840 DB049 EB040 EG931 FF051 GR13L HE13N JI91J JR055 LM42B MHJ45 MO155 PA836 PQ052 PRJ18 RO041 SAA0K WP937
 
 ### foF2 (model - observed)
 
@@ -68,6 +68,24 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.00
 
 day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.000, 6748 day pairs
 
+### fmin (model - observed)
+
+| model                    |    bias |    MAE |    RMS |     n |
+| ------------------------ | ------: | -----: | -----: | ----: |
+| climatology              |  +2.644 |  2.646 |  2.731 |  6113 |
+| irtam                    |       - |      - |      - |     0 |
+| essn (holdout)           |  +2.783 |  2.784 |  2.880 |  5954 |
+| climatology - offsets    |  +0.000 |  0.639 |  1.202 |  6113 |
+| essn - offsets           |  +0.000 |  0.676 |  1.231 |  5954 |
+| climatology, quiet       |  +2.661 |  2.666 |  2.743 |  4815 |
+| irtam, quiet             |       - |      - |      - |     0 |
+| essn, quiet              |  +2.874 |  2.876 |  2.963 |  4744 |
+| climatology, storm       |  +2.574 |  2.574 |  2.687 |  1298 |
+| irtam, storm             |       - |      - |      - |     0 |
+| essn, storm              |  +2.345 |  2.345 |  2.532 |  1210 |
+
+day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.015, 6113 day pairs
+
 ### NVIS MUF(d) from foF2 x secant (n = 13883)
 
 | range | model        |    bias |    MAE |    RMS | band calls right |
@@ -93,7 +111,7 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.00
 
 ## 2019-06
 
-37055 samples from 22 stations: AL945 AT138 AU930 BC840 DB049 EB040 EG931 FF051 GR13L HE13N JI91J JR055 LM42B MHJ45 MO155 PA836 PQ052 PRJ18 RO041 SAA0K SO148 WP937
+40549 samples from 22 stations: AL945 AT138 AU930 BC840 DB049 EB040 EG931 FF051 GR13L HE13N JI91J JR055 LM42B MHJ45 MO155 PA836 PQ052 PRJ18 RO041 SAA0K SO148 WP937
 
 ### foF2 (model - observed)
 
@@ -160,6 +178,24 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.00
 
 day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.000, 8887 day pairs
 
+### fmin (model - observed)
+
+| model                    |    bias |    MAE |    RMS |     n |
+| ------------------------ | ------: | -----: | -----: | ----: |
+| climatology              |  +0.715 |  0.839 |  1.244 |  3494 |
+| irtam                    |       - |      - |      - |     0 |
+| essn (holdout)           |  +0.674 |  0.824 |  1.177 |  3292 |
+| climatology - offsets    |  +0.000 |  0.431 |  0.783 |  3494 |
+| essn - offsets           |  +0.000 |  0.441 |  0.760 |  3292 |
+| climatology, quiet       |  +0.721 |  0.840 |  1.246 |  3328 |
+| irtam, quiet             |       - |      - |      - |     0 |
+| essn, quiet              |  +0.674 |  0.825 |  1.179 |  3135 |
+| climatology, storm       |  +0.675 |  0.835 |  1.210 |   163 |
+| irtam, storm             |       - |      - |      - |     0 |
+| essn, storm              |  +0.666 |  0.796 |  1.152 |   154 |
+
+day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.000, 3494 day pairs
+
 ### NVIS MUF(d) from foF2 x secant (n = 14079)
 
 | range | model        |    bias |    MAE |    RMS | band calls right |
@@ -185,7 +221,7 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.00
 
 ## 2019-12
 
-37581 samples from 22 stations: AL945 AT138 AU930 BC840 DB049 EB040 EG931 FF051 GR13L HE13N JI91J JR055 LM42B MHJ45 MO155 PA836 PQ052 PRJ18 RO041 SAA0K SO148 WP937
+40758 samples from 22 stations: AL945 AT138 AU930 BC840 DB049 EB040 EG931 FF051 GR13L HE13N JI91J JR055 LM42B MHJ45 MO155 PA836 PQ052 PRJ18 RO041 SAA0K SO148 WP937
 
 ### foF2 (model - observed)
 
@@ -252,6 +288,24 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.00
 
 day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.000, 6642 day pairs
 
+### fmin (model - observed)
+
+| model                    |    bias |    MAE |    RMS |     n |
+| ------------------------ | ------: | -----: | -----: | ----: |
+| climatology              |  +1.506 |  1.569 |  1.838 |  3177 |
+| irtam                    |       - |      - |      - |     0 |
+| essn (holdout)           |  +1.537 |  1.572 |  1.844 |  3075 |
+| climatology - offsets    |  +0.000 |  0.628 |  1.098 |  3177 |
+| essn - offsets           |  +0.000 |  0.597 |  1.095 |  3075 |
+| climatology, quiet       |  +1.506 |  1.569 |  1.838 |  3177 |
+| irtam, quiet             |       - |      - |      - |     0 |
+| essn, quiet              |  +1.537 |  1.572 |  1.844 |  3075 |
+| climatology, storm       |       - |      - |      - |     0 |
+| irtam, storm             |       - |      - |      - |     0 |
+| essn, storm              |       - |      - |      - |     0 |
+
+day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn -0.030, 3177 day pairs
+
 ### NVIS MUF(d) from foF2 x secant (n = 15463)
 
 | range | model        |    bias |    MAE |    RMS | band calls right |
@@ -277,7 +331,7 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.00
 
 ## 2022-09
 
-29218 samples from 18 stations: AL945 AT138 AU930 BC840 DB049 EB040 EG931 FF051 GR13L HE13N JR055 LM42B MHJ45 PA836 PQ052 RO041 SO148 WP937
+33972 samples from 18 stations: AL945 AT138 AU930 BC840 DB049 EB040 EG931 FF051 GR13L HE13N JR055 LM42B MHJ45 PA836 PQ052 RO041 SO148 WP937
 
 ### foF2 (model - observed)
 
@@ -344,6 +398,24 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.00
 
 day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.000, 5957 day pairs
 
+### fmin (model - observed)
+
+| model                    |    bias |    MAE |    RMS |     n |
+| ------------------------ | ------: | -----: | -----: | ----: |
+| climatology              |  +2.388 |  2.401 |  2.493 |  4754 |
+| irtam                    |       - |      - |      - |     0 |
+| essn (holdout)           |  +1.746 |  1.788 |  2.127 |  4199 |
+| climatology - offsets    |  +0.000 |  0.652 |  1.215 |  4754 |
+| essn - offsets           |  +0.000 |  0.829 |  1.191 |  4199 |
+| climatology, quiet       |  +2.381 |  2.392 |  2.493 |  4023 |
+| irtam, quiet             |       - |      - |      - |     0 |
+| essn, quiet              |  +1.897 |  1.915 |  2.176 |  3642 |
+| climatology, storm       |  +2.432 |  2.432 |  2.500 |   726 |
+| irtam, storm             |       - |      - |      - |     0 |
+| essn, storm              |  +1.138 |  1.174 |  1.773 |   555 |
+
+day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.044, 4754 day pairs
+
 ### NVIS MUF(d) from foF2 x secant (n = 11621)
 
 | range | model        |    bias |    MAE |    RMS | band calls right |
@@ -369,7 +441,7 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.00
 
 ## 2024-12
 
-22396 samples from 14 stations: AL945 AT138 DB049 EB040 EG931 FF051 GR13L HE13N JR055 LM42B MHJ45 PA836 PQ052 SO148
+26816 samples from 14 stations: AL945 AT138 DB049 EB040 EG931 FF051 GR13L HE13N JR055 LM42B MHJ45 PA836 PQ052 SO148
 
 ### foF2 (model - observed)
 
@@ -436,6 +508,24 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.00
 
 day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.000, 3336 day pairs
 
+### fmin (model - observed)
+
+| model                    |    bias |    MAE |    RMS |     n |
+| ------------------------ | ------: | -----: | -----: | ----: |
+| climatology              |  +1.778 |  1.790 |  2.311 |  4420 |
+| irtam                    |       - |      - |      - |     0 |
+| essn (holdout)           |  +1.529 |  1.595 |  1.969 |  4113 |
+| climatology - offsets    |  +0.000 |  0.911 |  1.231 |  4420 |
+| essn - offsets           |  +0.000 |  0.739 |  1.096 |  4113 |
+| climatology, quiet       |  +1.771 |  1.788 |  2.308 |  4259 |
+| irtam, quiet             |       - |      - |      - |     0 |
+| essn, quiet              |  +1.529 |  1.593 |  1.969 |  3963 |
+| climatology, storm       |  +1.850 |  1.988 |  2.391 |   161 |
+| irtam, storm             |       - |      - |      - |     0 |
+| essn, storm              |  +1.611 |  1.705 |  1.971 |   150 |
+
+day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.012, 4416 day pairs
+
 ### NVIS MUF(d) from foF2 x secant (n = 9519)
 
 | range | model        |    bias |    MAE |    RMS | band calls right |
@@ -461,7 +551,7 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.00
 
 ## 2025-03
 
-24275 samples from 14 stations: AL945 AT138 DB049 EB040 EG931 FF051 GR13L HE13N JR055 LM42B MHJ45 PA836 PQ052 SO148
+28907 samples from 14 stations: AL945 AT138 DB049 EB040 EG931 FF051 GR13L HE13N JR055 LM42B MHJ45 PA836 PQ052 SO148
 
 ### foF2 (model - observed)
 
@@ -528,6 +618,24 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.00
 
 day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.000, 4802 day pairs
 
+### fmin (model - observed)
+
+| model                    |    bias |    MAE |    RMS |     n |
+| ------------------------ | ------: | -----: | -----: | ----: |
+| climatology              |  +2.929 |  2.929 |  3.067 |  4632 |
+| irtam                    |       - |      - |      - |     0 |
+| essn (holdout)           |  +2.888 |  2.888 |  2.980 |  4347 |
+| climatology - offsets    |  +0.000 |  0.850 |  1.469 |  4632 |
+| essn - offsets           |  +0.000 |  0.785 |  1.368 |  4347 |
+| climatology, quiet       |  +2.946 |  2.946 |  3.081 |  3620 |
+| irtam, quiet             |       - |      - |      - |     0 |
+| essn, quiet              |  +2.937 |  2.937 |  3.023 |  3449 |
+| climatology, storm       |  +2.891 |  2.891 |  3.017 |  1012 |
+| irtam, storm             |       - |      - |      - |     0 |
+| essn, storm              |  +2.692 |  2.692 |  2.809 |   898 |
+
+day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.011, 4611 day pairs
+
 ### NVIS MUF(d) from foF2 x secant (n = 9720)
 
 | range | model        |    bias |    MAE |    RMS | band calls right |
@@ -553,7 +661,7 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.00
 
 ## 2025-06
 
-26396 samples from 15 stations: AL945 AT138 DB049 EB040 EG931 FF051 GR13L HE13N JI91J JR055 LM42B MHJ45 PA836 PQ052 SO148
+32228 samples from 15 stations: AL945 AT138 DB049 EB040 EG931 FF051 GR13L HE13N JI91J JR055 LM42B MHJ45 PA836 PQ052 SO148
 
 ### foF2 (model - observed)
 
@@ -620,6 +728,24 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.00
 
 day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.000, 6139 day pairs
 
+### fmin (model - observed)
+
+| model                    |    bias |    MAE |    RMS |     n |
+| ------------------------ | ------: | -----: | -----: | ----: |
+| climatology              |  +1.222 |  1.292 |  1.898 |  5832 |
+| irtam                    |       - |      - |      - |     0 |
+| essn (holdout)           |  +0.870 |  0.990 |  1.502 |  4498 |
+| climatology - offsets    |  +0.000 |  0.763 |  1.196 |  5832 |
+| essn - offsets           |  +0.000 |  0.507 |  1.024 |  4498 |
+| climatology, quiet       |  +1.267 |  1.303 |  1.901 |  4364 |
+| irtam, quiet             |       - |      - |      - |     0 |
+| essn, quiet              |  +0.941 |  1.034 |  1.541 |  3592 |
+| climatology, storm       |  +1.085 |  1.172 |  1.893 |  1464 |
+| irtam, storm             |       - |      - |      - |     0 |
+| essn, storm              |  +0.609 |  0.836 |  1.338 |   904 |
+
+day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.037, 5832 day pairs
+
 ### NVIS MUF(d) from foF2 x secant (n = 10126)
 
 | range | model        |    bias |    MAE |    RMS | band calls right |
@@ -645,7 +771,7 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.00
 
 ## 2025-07
 
-26026 samples from 15 stations: AL945 AT138 DB049 EB040 EG931 FF051 GR13L HE13N JI91J JR055 LM42B MHJ45 PA836 PQ052 SO148
+31360 samples from 15 stations: AL945 AT138 DB049 EB040 EG931 FF051 GR13L HE13N JI91J JR055 LM42B MHJ45 PA836 PQ052 SO148
 
 ### foF2 (model - observed)
 
@@ -711,6 +837,24 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.00
 | irtam, storm             |  +0.135 |  0.231 |  0.360 |   359 |
 
 day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.000, 5961 day pairs
+
+### fmin (model - observed)
+
+| model                    |    bias |    MAE |    RMS |     n |
+| ------------------------ | ------: | -----: | -----: | ----: |
+| climatology              |  +1.406 |  1.445 |  2.005 |  5334 |
+| irtam                    |       - |      - |      - |     0 |
+| essn (holdout)           |  +1.050 |  1.130 |  1.634 |  4548 |
+| climatology - offsets    |  +0.000 |  0.649 |  1.217 |  5334 |
+| essn - offsets           |  +0.000 |  0.556 |  1.065 |  4548 |
+| climatology, quiet       |  +1.393 |  1.434 |  1.999 |  5025 |
+| irtam, quiet             |       - |      - |      - |     0 |
+| essn, quiet              |  +1.051 |  1.138 |  1.641 |  4322 |
+| climatology, storm       |  +1.482 |  1.496 |  2.112 |   309 |
+| irtam, storm             |       - |      - |      - |     0 |
+| essn, storm              |  +1.009 |  1.045 |  1.496 |   226 |
+
+day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.031, 5334 day pairs
 
 ### NVIS MUF(d) from foF2 x secant (n = 10025)
 

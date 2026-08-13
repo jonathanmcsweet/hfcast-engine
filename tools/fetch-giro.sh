@@ -3,8 +3,11 @@
 # FastChar, per station and characteristic, into data/<YYYY-MM>/giro/.
 #
 # Stations come from tools/giro-stations.tsv. Characteristics are foF2,
-# foE, hmF2 and MUFD (MUF for a 3000 km hop). See src/giro.rs for the
-# format and the confidence rules.
+# foE, hmF2, MUFD (MUF for a 3000 km hop) and fmin (the ionogram's
+# lowest returned frequency — the absorption proxy the NVIS lower edge
+# scores against). See src/giro.rs for the format and the confidence
+# rules. MUFD has never been served (see docs/roadmap.md); it stays in
+# the list so a service-side change would surface by itself.
 #
 # GIRO is a research service. This script identifies itself, spaces its
 # requests, fetches archive months once and keeps them (the past does not
@@ -36,7 +39,7 @@ while IFS=$'\t' read -r ursi _name _lat _lon; do
   case "$ursi" in ''|'#'*) continue ;; esac
   stations=$((stations + 1))
   mkdir -p "${out}/${ursi}"
-  for char in foF2 foE hmF2 MUFD; do
+  for char in foF2 foE hmF2 MUFD fmin; do
     dest="${out}/${ursi}/${char}.txt"
     if [ -s "$dest" ]; then
       files=$((files + 1))

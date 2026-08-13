@@ -39,6 +39,22 @@ values per hour. Two model columns so far:
   (2019-06, 2019-12, 2024-12, 2025-03, 2025-06, 2025-07) and scored on
   the two held-out storm months (2015-03, 2022-09). Quiet bins and
   low-latitude bins are the identity by construction.
+- **absorption edge** (fmin rows) — the lower edge of the usable
+  window, against the ionogram's fmin. The model is the engine's own
+  SNR-versus-frequency curve over the probe path
+  (`nowcast::api::probe_edge`): the lowest frequency within 6 dB of
+  the hour's plateau, interpolated on a ten-rung ladder from 2 to
+  10.3 MHz. Relative to the plateau rather than absolute, the way
+  fmin is relative to the sounder's own echo strength; the remaining
+  per-station constants motivate the offset-removed rows in the fmin
+  table. Hours whose whole ladder sits within the drop have no edge —
+  the usual night state, where observed fmin is the instrument floor.
+  The engine's LUF task cannot serve here: its scan floors at 2 MHz,
+  its usable-budget window on a 111 km path is about 4 dB wide, and
+  outside it the answer flips sign and tracks the best frequency near
+  the MUF — a different edge (measured 2026-08-13). The essn variant
+  runs the same probe at the day's holdout index, floored at zero as
+  the conditioning floors it.
 
 Predicted foF2 is put back on the ionosonde's convention before the
 comparison: the engine's F2 working frequency is the extraordinary wave
@@ -126,6 +142,21 @@ month. Findings, in order of consequence:
    table's value lives in the storm-hour splits above, not in monthly
    call totals.
 
+6. **The absorption edge tracks fmin's shape and its storm response;
+   its level needs calibration** (fmin rows, added 2026-08-13). With
+   each station's constant removed, the probe edge sits 0.43 to
+   0.91 MHz from observed fmin — a fraction of fmin's own day-night
+   swing, so the diurnal shape is real. The raw offset is large and
+   moves month to month (+0.7 to +2.6 MHz), which is the probe's
+   fixed link budget and the sounder's threshold — per-station
+   calibration territory, not model error. The day-conditioned edge
+   is where the signal concentrates: in the severe storm month the
+   storm-hour bias falls from +2.43 to +1.14 MHz, and the day-to-day
+   correlations, though small (up to +0.044), are largest in the
+   storm months. Day-level absorption skill beyond the diurnal shape
+   is thin on quiet months — consistent with absorption being driven
+   by the solar zenith angle first and activity second.
+
 ## Caveats
 
 - **IRTAM assimilates these same stations.** Its columns are mechanism
@@ -149,3 +180,11 @@ days and at low latitudes, a measured gain on severe storm days at mid
 latitudes. The daily-modeling measurements are done; the conditioning
 (essn, Kp, the storm table) now has a proven shape for the nowcast
 pipeline to consume.
+
+For the lower edge, the probe-edge seam is sound — shape and storm
+response verified against fmin — but its level is a per-station
+constant away from the truth, so it does not ship as a deployable
+window edge yet. The calibration phase, which fits per-station and
+per-path constants anyway, is the natural place to close that gap;
+the N2b physics pass can also expose absorption directly and shed the
+probe's link-budget scaffolding.

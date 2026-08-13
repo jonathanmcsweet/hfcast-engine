@@ -160,13 +160,76 @@ pub fn gather(
         .flat_map(|(station, t)| fof2_solutions(station, &t.plane0, &t.plane100))
         .collect();
 
+    // Third pass: each station's leave-it-out day indexes, then the
+    // absorption-edge tables those indexes condition. The edge is not
+    // linear in the sunspot number, so unlike foF2 it takes one engine
+    // run per fitted day rather than two planes.
+    let indexes: Vec<BTreeMap<u8, Option<f64>>> = observed
+        .iter()
+        .map(|station| holdout_indexes(&solutions, &station.meta.ursi))
+        .collect();
+    let mut edges = Vec::new();
+    // A loop for the error path, as above.
+    for (station, index_by_day) in observed.iter().zip(&indexes) {
+        edges.push(station_edge(station, month_number, ssn, index_by_day)?);
+    }
+
     let samples: Vec<Sample> = observed
         .iter()
         .zip(&tables)
-        .flat_map(|(station, t)| station_samples(station, t, &solutions))
+        .zip(indexes.iter().zip(&edges))
+        .flat_map(|((station, t), (index_by_day, edge))| {
+            station_samples(station, t, index_by_day, edge)
+        })
         .collect();
     save_cache(&cache, &samples);
     Ok((month, samples))
+}
+
+/// The day's leave-this-station-out index, once per day.
+fn holdout_indexes(solutions: &[essn::Solution], station: &str) -> BTreeMap<u8, Option<f64>> {
+    (1..=31u8)
+        .map(|day| (day, essn::essn_excluding(solutions, day, station)))
+        .collect()
+}
+
+/// The engine's lower-edge tables for one station: the absorption
+/// edge over the probe path at the smoothed number, and at each fitted
+/// day's index. The day runs floor the index at zero — the deployable
+/// rule: the engine's absorption never runs below the map's
+/// zero-sunspot plane (`docs/essn-wspr.md`).
+struct StationEdge {
+    climatology: Vec<Option<f64>>,
+    by_day: BTreeMap<u8, Vec<Option<f64>>>,
+}
+
+fn station_edge(
+    station: &giro::StationMonth,
+    month_number: u32,
+    ssn: f64,
+    index_by_day: &BTreeMap<u8, Option<f64>>,
+) -> Result<StationEdge, String> {
+    let probe = |at_ssn: f64| {
+        crate::nowcast::api::probe_edge(
+            &data::embedded_root(),
+            station.meta.lat,
+            station.meta.lon,
+            month_number,
+            at_ssn,
+        )
+    };
+    let climatology = probe(ssn)?;
+    let mut by_day = BTreeMap::new();
+    // A loop per fitted day: each iteration is an engine run.
+    for (day, index) in index_by_day {
+        if let Some(index) = index {
+            by_day.insert(*day, probe(index.max(0.0))?);
+        }
+    }
+    Ok(StationEdge {
+        climatology,
+        by_day,
+    })
 }
 
 /// Every predicted table one station needs: climatology at the smoothed
@@ -262,25 +325,15 @@ fn fof2_solutions(
         .collect()
 }
 
-/// Joins one station's observations with the predicted hours.
+/// Joins one station's observations with the predicted hours. The fmin
+/// rows read the absorption-edge tables where every other
+/// characteristic reads the layer tables.
 fn station_samples(
     station: &giro::StationMonth,
     tables: &StationTables,
-    solutions: &[essn::Solution],
+    index_by_day: &BTreeMap<u8, Option<f64>>,
+    edge: &StationEdge,
 ) -> Vec<Sample> {
-    // The day's leave-this-station-out index, once per day rather than
-    // once per sample.
-    let index_by_day: BTreeMap<u8, Option<f64>> = (1..=31u8)
-        .map(|day| {
-            (
-                day,
-                essn::essn_excluding(solutions, day, &station.meta.ursi),
-            )
-        })
-        .collect();
-    // Borrowed once so the move closures below copy the reference, not
-    // the map.
-    let index_by_day = &index_by_day;
     station
         .chars
         .iter()
@@ -290,16 +343,27 @@ fn station_samples(
                 (0..24u8).filter_map(move |hour| {
                     let observed = giro::at_hour(readings, day, hour)?;
                     let slot = predicted_chars(&tables.climatology[usize::from(hour)]);
+                    let (climatology, essn) = if name == "fmin" {
+                        (
+                            edge.climatology[usize::from(hour)]?,
+                            edge.by_day.get(&day).and_then(|h| h[usize::from(hour)]),
+                        )
+                    } else {
+                        (
+                            value_of(&slot, name)?,
+                            index.and_then(|value| essn_value(tables, name, hour, value)),
+                        )
+                    };
                     Some(Sample {
                         station: station.meta.ursi.clone(),
                         day,
                         hour,
                         characteristic: name.clone(),
                         observed,
-                        climatology: value_of(&slot, name)?,
+                        climatology,
                         irtam: irtam_of(tables, name, day, hour),
                         dudeney: (name == "hmF2").then(|| dudeney_of(&slot)).flatten(),
-                        essn: index.and_then(|value| essn_value(tables, name, hour, value)),
+                        essn,
                         essn_index: index,
                     })
                 })

@@ -110,6 +110,41 @@ fn pairs(
         .collect()
 }
 
+/// The pairs of one characteristic with each station's constant offset
+/// removed: per station, the median (predicted - observed) is
+/// subtracted from every prediction. For fmin this is the score that
+/// matters — the probe's link budget and the sounder's threshold are
+/// unknown but constant, so the level is theirs and the residual is
+/// the model's. The same argument the WSPR paths use.
+fn offset_adjusted_pairs(
+    samples: &[Sample],
+    characteristic: &str,
+    pick: &dyn Fn(&Sample) -> Option<f64>,
+) -> Vec<(f64, f64)> {
+    let mut by_station: BTreeMap<&str, Vec<(f64, f64)>> = BTreeMap::new();
+    for s in samples
+        .iter()
+        .filter(|s| s.characteristic == characteristic)
+    {
+        if let Some(predicted) = pick(s) {
+            by_station
+                .entry(s.station.as_str())
+                .or_default()
+                .push((predicted, s.observed));
+        }
+    }
+    by_station
+        .into_values()
+        .flat_map(|rows| {
+            let mut diffs: Vec<f64> = rows.iter().map(|(p, o)| p - o).collect();
+            let offset = hfcast::stats::median_in_place(&mut diffs);
+            rows.into_iter()
+                .map(move |(p, o)| (p - offset, o))
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
 /// Whether the sample's day-hour sits at or above the storm threshold,
 /// judged over the trailing 24 hours. None when the Kp file lacks the day.
 fn storminess(table: Option<&GeomagTable>, month: &str, s: &Sample) -> Option<bool> {
@@ -409,78 +444,139 @@ fn report(
         station_codes.into_iter().collect::<Vec<_>>().join(" ")
     );
 
-    let climatology: &dyn Fn(&Sample) -> Option<f64> = &|s| Some(s.climatology);
-    let irtam: &dyn Fn(&Sample) -> Option<f64> = &|s| s.irtam;
-    let all: &dyn Fn(&Sample) -> bool = &|_| true;
-    let essn_storm: &dyn Fn(&Sample) -> Option<f64> =
-        &|s| essn_storm_value(s, month, table, stations);
-
     // Loops, not maps: these iterate to print, and the report reads in
-    // this order.
-    for characteristic in ["foF2", "hmF2", "MUFD", "foE"] {
+    // this order. The fmin section is the lower edge: observed fmin
+    // against the engine's absorption edge over the probe path. Both
+    // carry constant system factors (the probe's link budget, the
+    // sounder's threshold), so its bias column is an offset to read
+    // past, and the shape and day columns are the score. The storm
+    // rows stay foF2-family: the embedded ratio is a foF2 correction
+    // and has no claim on absorption.
+    for characteristic in ["foF2", "hmF2", "MUFD", "foE", "fmin"] {
         println!("\n### {characteristic} (model - observed)\n");
         println!("| model                    |    bias |    MAE |    RMS |     n |");
         println!("| ------------------------ | ------: | -----: | -----: | ----: |");
-        error_row(
-            "climatology",
-            &pairs(samples, characteristic, climatology, all),
-        );
-        error_row("irtam", &pairs(samples, characteristic, irtam, all));
-        let essn: &dyn Fn(&Sample) -> Option<f64> = &|s| s.essn;
-        if matches!(characteristic, "foF2" | "MUFD") {
-            error_row("essn (holdout)", &pairs(samples, characteristic, essn, all));
-            error_row(
-                "essn+storm",
-                &pairs(samples, characteristic, essn_storm, all),
-            );
-        }
-        if characteristic == "hmF2" {
-            let dudeney: &dyn Fn(&Sample) -> Option<f64> = &|s| s.dudeney;
-            error_row(
-                "climatology+dudeney",
-                &pairs(samples, characteristic, dudeney, all),
-            );
-        }
-        if table.is_some() {
-            for (label, want_storm) in [("climatology, quiet", false), ("climatology, storm", true)]
-            {
-                let keep: &dyn Fn(&Sample) -> bool =
-                    &|s| storminess(table, month, s) == Some(want_storm);
-                error_row(label, &pairs(samples, characteristic, climatology, keep));
-                let irtam_label = label.replace("climatology", "irtam");
-                error_row(&irtam_label, &pairs(samples, characteristic, irtam, keep));
-                if matches!(characteristic, "foF2" | "MUFD") {
-                    let essn_label = label.replace("climatology", "essn");
-                    error_row(&essn_label, &pairs(samples, characteristic, essn, keep));
-                    let storm_label = label.replace("climatology", "essn+storm");
-                    error_row(
-                        &storm_label,
-                        &pairs(samples, characteristic, essn_storm, keep),
-                    );
-                }
-            }
-        }
-
-        let of_char: Vec<&Sample> = samples
-            .iter()
-            .filter(|s| s.characteristic == characteristic)
-            .collect();
-        let (clim_corr, pairs_n) = day_to_day(&of_char, climatology);
-        let (irtam_corr, _) = day_to_day(&of_char, irtam);
-        let (essn_corr, _) = day_to_day(&of_char, essn);
-        let storm_note = if matches!(characteristic, "foF2" | "MUFD") {
-            let (storm_corr, _) = day_to_day(&of_char, essn_storm);
-            format!(", essn+storm {storm_corr:+.3}")
-        } else {
-            String::new()
-        };
-        println!(
-            "\nday-to-day: climatology {clim_corr:+.3} (guard: must be +0.000), \
-             irtam {irtam_corr:+.3}, essn {essn_corr:+.3}{storm_note}, {pairs_n} day pairs"
-        );
+        characteristic_rows(month, samples, characteristic, table, stations);
+        storm_split_rows(month, samples, characteristic, table, stations);
+        day_to_day_line(month, samples, characteristic, table, stations);
     }
 
     report_nvis(month, samples, table, stations);
+}
+
+/// The whole-month error rows of one characteristic's table.
+fn characteristic_rows(
+    month: &str,
+    samples: &[Sample],
+    characteristic: &str,
+    table: Option<&GeomagTable>,
+    stations: &BTreeMap<String, StationMeta>,
+) {
+    let climatology: &dyn Fn(&Sample) -> Option<f64> = &|s| Some(s.climatology);
+    let irtam: &dyn Fn(&Sample) -> Option<f64> = &|s| s.irtam;
+    let essn: &dyn Fn(&Sample) -> Option<f64> = &|s| s.essn;
+    let all: &dyn Fn(&Sample) -> bool = &|_| true;
+    error_row(
+        "climatology",
+        &pairs(samples, characteristic, climatology, all),
+    );
+    error_row("irtam", &pairs(samples, characteristic, irtam, all));
+    if matches!(characteristic, "foF2" | "MUFD" | "fmin") {
+        error_row("essn (holdout)", &pairs(samples, characteristic, essn, all));
+    }
+    if matches!(characteristic, "foF2" | "MUFD") {
+        let essn_storm: &dyn Fn(&Sample) -> Option<f64> =
+            &|s| essn_storm_value(s, month, table, stations);
+        error_row(
+            "essn+storm",
+            &pairs(samples, characteristic, essn_storm, all),
+        );
+    }
+    if characteristic == "fmin" {
+        error_row(
+            "climatology - offsets",
+            &offset_adjusted_pairs(samples, characteristic, climatology),
+        );
+        error_row(
+            "essn - offsets",
+            &offset_adjusted_pairs(samples, characteristic, essn),
+        );
+    }
+    if characteristic == "hmF2" {
+        let dudeney: &dyn Fn(&Sample) -> Option<f64> = &|s| s.dudeney;
+        error_row(
+            "climatology+dudeney",
+            &pairs(samples, characteristic, dudeney, all),
+        );
+    }
+}
+
+/// The quiet/storm split rows, when a Kp table is loaded.
+fn storm_split_rows(
+    month: &str,
+    samples: &[Sample],
+    characteristic: &str,
+    table: Option<&GeomagTable>,
+    stations: &BTreeMap<String, StationMeta>,
+) {
+    if table.is_none() {
+        return;
+    }
+    let climatology: &dyn Fn(&Sample) -> Option<f64> = &|s| Some(s.climatology);
+    let irtam: &dyn Fn(&Sample) -> Option<f64> = &|s| s.irtam;
+    let essn: &dyn Fn(&Sample) -> Option<f64> = &|s| s.essn;
+    for (label, want_storm) in [("climatology, quiet", false), ("climatology, storm", true)] {
+        let keep: &dyn Fn(&Sample) -> bool = &|s| storminess(table, month, s) == Some(want_storm);
+        error_row(label, &pairs(samples, characteristic, climatology, keep));
+        let irtam_label = label.replace("climatology", "irtam");
+        error_row(&irtam_label, &pairs(samples, characteristic, irtam, keep));
+        if matches!(characteristic, "foF2" | "MUFD" | "fmin") {
+            let essn_label = label.replace("climatology", "essn");
+            error_row(&essn_label, &pairs(samples, characteristic, essn, keep));
+        }
+        if matches!(characteristic, "foF2" | "MUFD") {
+            let essn_storm: &dyn Fn(&Sample) -> Option<f64> =
+                &|s| essn_storm_value(s, month, table, stations);
+            let storm_label = label.replace("climatology", "essn+storm");
+            error_row(
+                &storm_label,
+                &pairs(samples, characteristic, essn_storm, keep),
+            );
+        }
+    }
+}
+
+/// The day-to-day correlation line under one characteristic's table,
+/// with the climatology zero guard.
+fn day_to_day_line(
+    month: &str,
+    samples: &[Sample],
+    characteristic: &str,
+    table: Option<&GeomagTable>,
+    stations: &BTreeMap<String, StationMeta>,
+) {
+    let climatology: &dyn Fn(&Sample) -> Option<f64> = &|s| Some(s.climatology);
+    let irtam: &dyn Fn(&Sample) -> Option<f64> = &|s| s.irtam;
+    let essn: &dyn Fn(&Sample) -> Option<f64> = &|s| s.essn;
+    let of_char: Vec<&Sample> = samples
+        .iter()
+        .filter(|s| s.characteristic == characteristic)
+        .collect();
+    let (clim_corr, pairs_n) = day_to_day(&of_char, climatology);
+    let (irtam_corr, _) = day_to_day(&of_char, irtam);
+    let (essn_corr, _) = day_to_day(&of_char, essn);
+    let storm_note = if matches!(characteristic, "foF2" | "MUFD") {
+        let essn_storm: &dyn Fn(&Sample) -> Option<f64> =
+            &|s| essn_storm_value(s, month, table, stations);
+        let (storm_corr, _) = day_to_day(&of_char, essn_storm);
+        format!(", essn+storm {storm_corr:+.3}")
+    } else {
+        String::new()
+    };
+    println!(
+        "\nday-to-day: climatology {clim_corr:+.3} (guard: must be +0.000), \
+         irtam {irtam_corr:+.3}, essn {essn_corr:+.3}{storm_note}, {pairs_n} day pairs"
+    );
 }
 
 /// The storm ratio for one NVIS cell, or 1.0 where the state is

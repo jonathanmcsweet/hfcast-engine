@@ -210,6 +210,65 @@ pub fn probe_hours(
         .collect()
 }
 
+/// The frequency ladder the absorption-edge probe sweeps, MHz. Twelve
+/// is the engine's frequency-slot limit; the steps are near-geometric
+/// so each carries a similar share of the absorption's 1/f-squared
+/// growth.
+pub const EDGE_LADDER_MHZ: [f64; 10] = [2.0, 2.4, 2.9, 3.5, 4.2, 5.0, 6.0, 7.2, 8.6, 10.3];
+
+/// How far below the hour's own SNR plateau the edge sits. Relative to
+/// the plateau rather than absolute, the way a sounder's fmin is
+/// relative to its own echo strength — so a station's level (noise
+/// floor, path constants) cancels and only the shape is read. The
+/// engine's LUF task cannot serve here: its scan floors at 2 MHz and
+/// when no frequency meets the requirement its answer flips to the
+/// best frequency near the MUF — a different edge (measured
+/// 2026-08-13, `docs/ionosonde.md`).
+pub const EDGE_DROP_DB: f64 = 6.0;
+
+/// The engine's absorption edge per UT hour over the probe path: the
+/// lowest frequency at which predicted SNR is within [`EDGE_DROP_DB`]
+/// of the hour's plateau, interpolated on [`EDGE_LADDER_MHZ`]. The
+/// ionogram counterpart is fmin. None where the whole ladder sits
+/// within the drop (no edge above 2 MHz — the usual night state, where
+/// a sounder's fmin is its instrument floor too).
+pub fn probe_edge(
+    root: &Path,
+    lat_deg: f64,
+    lon_deg: f64,
+    month: u32,
+    ssn: f64,
+) -> Result<Vec<Option<f64>>, String> {
+    let mut req = probe_request(lat_deg, lon_deg, month, ssn);
+    req.freqs_mhz = EDGE_LADDER_MHZ.to_vec();
+    let Report::Systems(prediction) = predict(root, &req, Task::Systems)? else {
+        return Err("Systems task answered with a different report".to_string());
+    };
+    let mut by_hour = vec![None; 24];
+    // Indexing keeps the 24-to-0 hour fold in one place, as above.
+    for hour in &prediction.hours {
+        let snr: Vec<f64> = (0..EDGE_LADDER_MHZ.len())
+            .map(|i| f64::from(hour.son[i].sndb))
+            .collect();
+        by_hour[(hour.gmt as usize) % 24] = edge_crossing(&snr);
+    }
+    Ok(by_hour)
+}
+
+/// Where the SNR curve rises through plateau minus the drop, scanning
+/// up the ladder. None when the first rung is already inside the drop.
+fn edge_crossing(snr: &[f64]) -> Option<f64> {
+    let plateau = snr.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let edge = plateau - EDGE_DROP_DB;
+    if snr[0] >= edge {
+        return None;
+    }
+    let i = snr.iter().position(|s| *s >= edge)?;
+    let (f_low, f_high) = (EDGE_LADDER_MHZ[i - 1], EDGE_LADDER_MHZ[i]);
+    let (s_low, s_high) = (snr[i - 1], snr[i]);
+    Some(f_low + (f_high - f_low) * (edge - s_low) / (s_high - s_low))
+}
+
 /// All 24 hours of one conditioned day over a point.
 pub fn day(
     root: &Path,
@@ -415,6 +474,24 @@ mod tests {
                     mid[hour].fof2_mhz
                 );
             }
+        }
+
+        #[test]
+        fn the_probe_edge_has_the_absorption_shape() {
+            // D-region absorption is a daylight phenomenon: at local
+            // noon the edge sits mid-band; at local midnight the whole
+            // ladder is within the drop and there is no edge, the way
+            // a night ionogram's fmin is the instrument's floor.
+            let edge = probe_edge(&data::embedded_root(), JULIUSRUH.0, JULIUSRUH.1, 6, 80.0)
+                .expect("the embedded root answers");
+            assert_eq!(edge.len(), 24);
+            for value in edge.iter().flatten() {
+                assert!((2.0..10.3).contains(value), "off the ladder: {value}");
+            }
+            // Local noon at 13.4 E is near 11 UT; local midnight near 23 UT.
+            let noon = edge[11].expect("a daytime edge");
+            assert!((2.0..7.0).contains(&noon), "noon edge {noon}");
+            assert_eq!(edge[23], None);
         }
 
         #[test]

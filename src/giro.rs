@@ -33,7 +33,9 @@ pub const WINDOW_MINUTES: i64 = 30;
 
 /// The characteristics `tools/fetch-giro.sh` downloads, by DIDBase name.
 /// MUFD is MUF(3000): the maximum usable frequency for a 3000 km hop.
-pub const CHARACTERISTICS: [&str; 4] = ["foF2", "foE", "hmF2", "MUFD"];
+/// fmin is the ionogram's lowest returned frequency — the standard
+/// absorption proxy, and the truth source for the NVIS lower edge.
+pub const CHARACTERISTICS: [&str; 5] = ["foF2", "foE", "hmF2", "MUFD", "fmin"];
 
 /// One station from `tools/giro-stations.tsv`.
 #[derive(Debug, Clone, PartialEq)]
