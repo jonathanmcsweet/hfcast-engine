@@ -25,7 +25,7 @@ much cheaper, with GPU offload where a device has one.
 | GPU technology | wgpu, in a sibling workspace crate, so the core crate keeps zero dependencies. wgpu runs on Linux (Vulkan; lavapipe for machines with no GPU), on Android (Vulkan), and on Metal if an iOS build ever exists. A CPU path always remains. |
 | Datasets to store | GIRO daily ionosonde characteristics, archived IRTAM coefficient maps, Kp/F10.7/SSN indices, WSPR aggregates, RBN history. PSKReporter is collected forward (see below). |
 | First milestone | Data and the validation harness first. Every later change is judged by that ruler. |
-| PSKReporter collection | A scheduled GitHub Actions collector in a separate small data repository, reading the public MQTT feed and storing path-hour aggregates. |
+| PSKReporter collection | A scheduled GitHub Actions collector in a separate small data repository, reading the public MQTT feed and storing path-hour aggregates. Superseded 2026-08-13: CEDAR Madrigal instrument 8308 (HamSCI) holds daily spot-level history — SNR and both endpoints' coordinates, merged from WSPRNet, PSKReporter and RBN, 2009 to about a month behind the present — so history is fetchable and no collector repository is built now. Madrigal is the source when the calibration phase needs these datasets; PSKReporter's own query interface (24 hours back, scoped queries) covers freshness for a fixed path list if that gap ever matters. |
 
 ## Why the parity engine cannot become more accurate
 
