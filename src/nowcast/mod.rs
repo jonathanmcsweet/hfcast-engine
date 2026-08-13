@@ -25,3 +25,4 @@
 //! physics with a batch-shaped form; the API and the ruler stay.
 
 pub mod api;
+pub mod grid;

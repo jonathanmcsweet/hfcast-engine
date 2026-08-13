@@ -1617,7 +1617,7 @@ fn f6(v: R, decimals: usize) -> String {
 /// up the same way. They differ only in what they do once the point is
 /// set up, and a second copy of this would be a second place for the two
 /// to drift apart.
-struct AreaPrep<'a> {
+pub(crate) struct AreaPrep<'a> {
     set: &'a CoefficientSet,
     ants: AntennaSet,
     pole: MagneticPole,
@@ -1628,7 +1628,11 @@ struct AreaPrep<'a> {
 }
 
 impl<'a> AreaPrep<'a> {
-    fn new(itshfbc: &Path, area: &AreaInputs, set: &'a CoefficientSet) -> Result<Self, String> {
+    pub(crate) fn new(
+        itshfbc: &Path,
+        area: &AreaInputs,
+        set: &'a CoefficientSet,
+    ) -> Result<Self, String> {
         let nf = area
             .freqs_mhz
             .iter()
@@ -1646,6 +1650,11 @@ impl<'a> AreaPrep<'a> {
             fixed_lat: area.tx_lat_deg as R,
             fixed_lon: area.tx_lon_deg as R,
         })
+    }
+
+    /// How many of the frequencies asked for are real ones.
+    pub(crate) fn nf(&self) -> usize {
+        self.nf
     }
 
     /// The grid point at `(ix, iy)`, and the run set up over it.
@@ -1815,6 +1824,32 @@ pub fn run_area_daily_median(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<Ar
         }
     }
     Ok(out)
+}
+
+/// One grid point computed with fresh state — its own mode-loop state,
+/// its own `FSECV`, its own ionosphere — so the answer is a function of
+/// the place and hour alone. This is what `run_area_daily_median` does
+/// per point, and what `run_area`'s first point does before the COMMON
+/// carry begins. The nowcast grid driver uses it for every point, which
+/// is what makes its output independent of lattice shape, visit order
+/// and thread count.
+pub(crate) fn area_point_fresh(
+    itshfbc: &Path,
+    area: &AreaInputs,
+    prep: &AreaPrep<'_>,
+    ix: usize,
+    iy: usize,
+) -> Result<(R, R, Vec<AreaFreq>), String> {
+    let (glat, glon, inp, s) = prep.at(itshfbc, area, ix, iy)?;
+    let mut lp = ModeLoopState::default();
+    let mut fsecv = [0.0 as R; 3];
+    let mut iono = IonoCarry::new(&inp, s.geo.points.len());
+    let h = hour_body(&s, area.hour, &mut lp, &mut fsecv, &mut iono);
+    Ok((
+        glat,
+        glon,
+        h.son.iter().take(prep.nf).map(freq_answer).collect(),
+    ))
 }
 
 /// The middle value, averaging the two middle ones over an even count.

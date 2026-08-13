@@ -58,10 +58,46 @@ exists for are an order larger (a wrong storm bin: ~0.25 MHz on storm
 hours; a shifted hour: ~1 MHz), so the mode fails the build well
 before a real plumbing error could hide.
 
+## The grid driver
+
+`nowcast::grid::predict_grid` runs one coverage lattice with threads
+inside the engine: one shared read-only coefficient set and area setup,
+workers claiming rows off a shared cursor, output as structure-of-arrays
+`f32` planes (reliability, SNR, takeoff angle). Two properties are
+tests, not intentions:
+
+- **Thread counts cannot move the answer.** Every point is computed
+  with fresh state — a pure function of the place and hour — and the
+  planes are assembled by row index. One thread and three threads
+  produce bit-identical planes.
+- **The parity anchor holds.** The parity area driver carries COMMON
+  state from point to point because the Fortran does. Its first point
+  has no carry yet and must match the fresh-state driver exactly; over
+  a test lattice, the carry moved reliability by at most 0.011 and SNR
+  by at most 2 dB — the class of spread the -ffast-math study measured,
+  not signal.
+
+Measured with `gridbench` on the application's fine-globe lattice
+(34,560 points, one band, 16-core container, 2026-08-13):
+
+| driver | wall |
+| --- | ---: |
+| parity `run_area`, serial | 1088 ms |
+| `predict_grid`, 1 thread | 1038 ms |
+| `predict_grid`, 4 threads | 266 ms (3.9x) |
+| `predict_grid`, 8 threads | 142 ms (7.3x) |
+
+The scaling is near linear to eight threads — the engine parallelizes;
+the application's strip sharding and JSON rendering were the loss. The
+per-point physics is unchanged (`portcheck`: 23,040 cells, zero drift
+after the seam).
+
 ## What replaces the skeleton
 
-The inner physics will be re-formed for batches (structure-of-arrays,
-threads inside the engine, then GPU kernels — see the roadmap). The
+The inner physics will be re-formed for batches next (the
+structure-of-arrays ionosphere pass — the measured 47% — then the
+packed HFB1 answer format, then GPU kernels; see the roadmap). The
 API, the conditioning, and the two rulers stay: the ionosonde harness
-for accuracy, and this verification mode as the equivalence envelope
-between the research columns and whatever computes the answers next.
+for accuracy, and the verification mode plus the grid tests as the
+equivalence envelope between the research columns and whatever
+computes the answers next.
