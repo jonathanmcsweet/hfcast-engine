@@ -10,6 +10,12 @@
 //! The WSPR paths are independent of the fit: the index comes from
 //! ionosondes, the truth from radio links.
 //!
+//! The daily run applies the same floor `Conditioning::Daily` does: an
+//! index below zero runs the engine at zero — below the map's lower
+//! plane there is no measured state for the other channels to
+//! extrapolate into — with a synthesized coefficient overlay
+//! (`irtam::ccir_at`) pinning foF2 alone to the fitted line.
+//!
 //! The decisive metric is day-to-day: correlation between predicted and
 //! observed deviations from each path-hour's monthly median, where
 //! climatology scores exactly zero by construction. Absolute error is
@@ -29,10 +35,10 @@ use std::process::ExitCode;
 
 use hfcast::api::{predict, FoF2Model, Ionosphere, Model, Report, Request, Site, Task};
 use hfcast::geomag::{self, GeomagTable};
-use hfcast::sonde;
 use hfcast::stats::{correlation, median_in_place};
 use hfcast::voacap::data;
 use hfcast::wspr::{self, deviations, offset_adjusted_mae, Scored, WsprPath};
+use hfcast::{irtam, sonde};
 
 const MIN_SPOTS_PER_DAY: u32 = 4;
 /// Below this a predicted ratio is a dead-path sentinel, not a prediction.
@@ -80,8 +86,8 @@ fn path_request(path: &WsprPath, month: u32, ssn: f64) -> Request {
 
 /// Predicted SNR per UT hour for the request's one frequency. VOACAP's
 /// hour 24 is the day's midnight and lands in slot 0.
-fn snr_hours(req: &Request) -> Result<[Option<f64>; 24], String> {
-    let Report::Systems(prediction) = predict(&data::embedded_root(), req, Task::Systems)? else {
+fn snr_hours(root: &Path, req: &Request) -> Result<[Option<f64>; 24], String> {
+    let Report::Systems(prediction) = predict(root, req, Task::Systems)? else {
         return Err("Systems task answered with a different report".to_string());
     };
     let mut snr = [None::<f64>; 24];
@@ -114,6 +120,7 @@ fn gather(dir: &Path, stations: &Path, cache_dir: &Path) -> Result<(String, Vec<
     if index_by_day.is_empty() {
         return Err(format!("{}: no fitted days", data.month));
     }
+    let runs = day_runs(&index_by_day, &data.month, month_number, cache_dir)?;
 
     let mut samples = Vec::new();
     // A loop per path: every iteration runs the engine, and the first
@@ -133,7 +140,7 @@ fn gather(dir: &Path, stations: &Path, cache_dir: &Path) -> Result<(String, Vec<
             index,
             month_number,
             ssn,
-            &index_by_day,
+            &runs,
             &observed,
         )?);
     }
@@ -148,6 +155,30 @@ fn gather(dir: &Path, stations: &Path, cache_dir: &Path) -> Result<(String, Vec<
     Ok((data.month, samples))
 }
 
+/// The engine run behind each fitted day: the index itself at or above
+/// the map's lower plane; below it, the run floors at zero and a
+/// synthesized coefficient overlay pins foF2 to the fitted line — the
+/// same floor `Conditioning::Daily` applies (`src/nowcast/api.rs`).
+fn day_runs(
+    index_by_day: &BTreeMap<u8, f64>,
+    month: &str,
+    month_number: u32,
+    cache_dir: &Path,
+) -> Result<BTreeMap<u8, (PathBuf, f64)>, String> {
+    index_by_day
+        .iter()
+        .map(|(day, essn)| {
+            if *essn >= 0.0 {
+                return Ok((*day, (data::embedded_root(), *essn)));
+            }
+            let map = irtam::ccir_at(&data::embedded_root(), month_number, *essn)?;
+            let dir = cache_dir.join(format!("essnv-overlay-{month}-{day:02}"));
+            let root = irtam::overlay_with(&map, &dir)?;
+            Ok((*day, (root, 0.0)))
+        })
+        .collect()
+}
+
 /// One path's scored triples: the climatology run once, then one run
 /// per fitted day that has observations.
 fn path_samples(
@@ -155,17 +186,20 @@ fn path_samples(
     index: usize,
     month_number: u32,
     ssn: f64,
-    index_by_day: &BTreeMap<u8, f64>,
+    runs: &BTreeMap<u8, (PathBuf, f64)>,
     observed: &HashMap<(u8, u8), f64>,
 ) -> Result<Vec<Sample>, String> {
-    let climatology = snr_hours(&path_request(path, month_number, ssn))?;
+    let climatology = snr_hours(
+        &data::embedded_root(),
+        &path_request(path, month_number, ssn),
+    )?;
     let mut samples = Vec::new();
     // A loop per fitted day: each iteration is an engine run.
-    for (day, essn) in index_by_day {
+    for (day, (root, run_ssn)) in runs {
         if !observed.keys().any(|(d, _)| d == day) {
             continue;
         }
-        let daily_snr = snr_hours(&path_request(path, month_number, *essn))?;
+        let daily_snr = snr_hours(root, &path_request(path, month_number, *run_ssn))?;
         for hour in 0..24u8 {
             let (Some(&obs), Some(clim), Some(daily_value)) = (
                 observed.get(&(*day, hour)),

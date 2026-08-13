@@ -29,6 +29,11 @@ The conditioning input is the day knob:
   per UT hour. Where Kp is known, foF2 is multiplied by the embedded
   storm ratio (`src/stormfit.rs`); a missing hour gets the identity,
   which is exactly what a device without the feed can honestly do.
+  An index below zero is floored for every channel except foF2, which
+  follows the fitted line wherever the fit put it: below the map's
+  zero-sunspot plane there is no measured state for foE, absorption or
+  noise to extrapolate into, and the link study measured that
+  extrapolation as the whole solar-minimum cost (`docs/essn-wspr.md`).
 
 Both conditionings were scored held-out against ionosonde truth before
 this API existed; the numbers live in `docs/ionosonde.md`. The skeleton

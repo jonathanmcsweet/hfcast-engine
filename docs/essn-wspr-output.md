@@ -28,17 +28,17 @@ Absolute error, one offset per path (median absolute error, dB):
 | model | error |
 | --- | --: |
 | climatology | 3.64 |
-| essn | 3.71 |
+| essn | 3.68 |
 
 Day-to-day deviations from each path-hour's monthly median
 (climatology guard: +0.000, must be +0.000 — a model that never varies by day cannot correlate):
 
 | condition | day-hours | correlation | predicted size (dB) | observed size (dB) |
 | --- | --: | --: | --: | --: |
-| all days | 66972 | +0.018 | 0.10 | 2.50 |
-| quiet (Kp < 3) | 60967 | +0.020 | 0.11 | 2.50 |
-| unsettled (3-5) | 3345 | -0.001 | 0.06 | 2.50 |
-| storm (Kp >= 5) | 2660 | -0.003 | 0.06 | 2.50 |
+| all days | 66972 | +0.025 | 0.02 | 2.50 |
+| quiet (Kp < 3) | 60967 | +0.028 | 0.02 | 2.50 |
+| unsettled (3-5) | 3345 | -0.015 | 0.01 | 2.50 |
+| storm (Kp >= 5) | 2660 | -0.001 | 0.01 | 2.50 |
 
 ## 2019-12 (57682 path-day-hours)
 
@@ -54,9 +54,9 @@ Day-to-day deviations from each path-hour's monthly median
 
 | condition | day-hours | correlation | predicted size (dB) | observed size (dB) |
 | --- | --: | --: | --: | --: |
-| all days | 56704 | +0.018 | 0.08 | 2.00 |
-| quiet (Kp < 3) | 52553 | +0.017 | 0.07 | 2.00 |
-| unsettled (3-5) | 4151 | +0.023 | 0.25 | 2.00 |
+| all days | 56704 | +0.021 | 0.07 | 2.00 |
+| quiet (Kp < 3) | 52553 | +0.020 | 0.06 | 2.00 |
+| unsettled (3-5) | 4151 | +0.026 | 0.25 | 2.00 |
 | storm (Kp >= 5) | 0 | n/a | 0.00 | 0.00 |
 
 ## 2022-09 (69804 path-day-hours)

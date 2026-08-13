@@ -134,6 +134,38 @@ pub fn daw_file(map: &IrtamMap) -> Vec<u8> {
     file
 }
 
+/// The engine's own CCIR foF2 map, blended at a fixed index: the two
+/// `.daw` planes read and interpolated by `redmap` exactly as a run
+/// would. Written back through [`daw_file`], it pins foF2 at that index
+/// while the rest of the run follows the run's own sunspot number —
+/// the seam the daily-conditioning studies use to move foF2 alone.
+pub fn ccir_at(itshfbc: &Path, month: u32, ssn: f64) -> Result<IrtamMap, String> {
+    use crate::voacap::coefficients::{redmap, FoF2Model};
+    let set = redmap(
+        itshfbc,
+        FoF2Model::Ccir,
+        month,
+        ssn as crate::voacap::con::R,
+    )
+    .map_err(|e| e.to_string())?;
+    let coeffs = set
+        .f2cof
+        .iter()
+        .flat_map(|spatial| spatial.iter().map(|value| f64::from(*value)))
+        .collect();
+    Ok(IrtamMap { coeffs })
+}
+
+/// A data root whose foF2 coefficients are this map's: `dir` gains one
+/// synthesized `coeffs/fof2CCIR.daw` and shadows the base root through
+/// the overlay form.
+pub fn overlay_with(map: &IrtamMap, dir: &Path) -> Result<std::path::PathBuf, String> {
+    let coeffs = dir.join("coeffs");
+    std::fs::create_dir_all(&coeffs).map_err(|e| e.to_string())?;
+    std::fs::write(coeffs.join("fof2CCIR.daw"), daw_file(map)).map_err(|e| e.to_string())?;
+    Ok(crate::voacap::data::overlay_root(dir))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

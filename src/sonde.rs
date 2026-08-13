@@ -20,7 +20,7 @@
 //! failure guard `irtam_validate` uses.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::nowcast::api::LayerHour;
 use crate::voacap::data;
@@ -104,15 +104,6 @@ fn irtam_days(
             parse(&text).ok().map(|map| (day, map))
         })
         .collect()
-}
-
-/// A root whose foF2 coefficients are this map's, via the overlay form.
-/// The directory holds one synthesized `coeffs/fof2CCIR.daw`.
-fn overlay_for(map: &irtam::IrtamMap, dir: &Path) -> Result<PathBuf, String> {
-    let coeffs = dir.join("coeffs");
-    std::fs::create_dir_all(&coeffs).map_err(|e| e.to_string())?;
-    std::fs::write(coeffs.join("fof2CCIR.daw"), irtam::daw_file(map)).map_err(|e| e.to_string())?;
-    Ok(data::overlay_root(dir))
 }
 
 /// Gathers every sample for one month bundle. Slow (hundreds of engine
@@ -214,7 +205,7 @@ fn station_tables(
         .iter()
         .map(|(day, map)| {
             let dir = cache_dir.join(format!("sonde-overlay-{month}-{day:02}"));
-            overlay_for(map, &dir).and_then(|root| probe(&root, ssn).map(|h| (*day, h)))
+            irtam::overlay_with(map, &dir).and_then(|root| probe(&root, ssn).map(|h| (*day, h)))
         })
         .collect::<Result<_, _>>()?;
     // The hmF2 map goes through the same foF2 slot: the engine's own
@@ -226,7 +217,7 @@ fn station_tables(
         .iter()
         .map(|(day, map)| {
             let dir = cache_dir.join(format!("sonde-overlay-hmf2-{month}-{day:02}"));
-            overlay_for(map, &dir).and_then(|root| {
+            irtam::overlay_with(map, &dir).and_then(|root| {
                 probe(&root, ssn).map(|hours| {
                     let heights = hours.iter().map(|layer| layer.f2z - layer.fh2).collect();
                     (*day, heights)

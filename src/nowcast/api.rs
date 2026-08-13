@@ -9,11 +9,13 @@
 //! The conditioning input is the day knob the parity engine does not
 //! have. [`Conditioning::Climatology`] is the engine as shipped, at the
 //! month's smoothed sunspot number. [`Conditioning::Daily`] runs at a
-//! fitted daily index (`src/essn.rs`) and, when the trailing-24-hour
-//! Kp maximum is known, multiplies foF2 by the embedded storm ratio
-//! (`src/stormfit.rs`). Both were scored held-out against ionosonde
-//! truth before this API existed; the numbers are in
-//! `docs/ionosonde.md`.
+//! fitted daily index (`src/essn.rs`) — floored at zero for every
+//! channel except foF2, which follows the fitted line wherever the fit
+//! put it — and, when the trailing-24-hour Kp maximum is known,
+//! multiplies foF2 by the embedded storm ratio (`src/stormfit.rs`).
+//! Both were scored held-out against ionosonde truth before this API
+//! existed; the numbers are in `docs/ionosonde.md`, and the floor's
+//! link-level justification is in `docs/essn-wspr.md`.
 
 use std::path::Path;
 
@@ -62,8 +64,22 @@ impl Conditioning {
         }
     }
 
-    /// The sunspot number the engine runs at.
+    /// The sunspot number the engine runs at. A daily index below zero
+    /// is floored: below the map's lower plane there is no measured
+    /// state for foE, absorption, noise or heights to extrapolate into,
+    /// and the link study measured that extrapolation as the whole
+    /// solar-minimum cost (`docs/essn-wspr.md`). Only foF2 follows the
+    /// fitted line below zero ([`day`]), because the fit inverts that
+    /// same line.
     fn ssn(&self) -> f64 {
+        match self {
+            Self::Climatology { ssn } => *ssn,
+            Self::Daily { essn, .. } => essn.max(0.0),
+        }
+    }
+
+    /// The index foF2 follows — the fitted value, unfloored.
+    fn fof2_ssn(&self) -> f64 {
         match self {
             Self::Climatology { ssn } => *ssn,
             Self::Daily { essn, .. } => *essn,
@@ -203,11 +219,25 @@ pub fn day(
     conditioning: &Conditioning,
 ) -> Result<Vec<PointAnswer>, String> {
     let hours = probe_hours(root, lat_deg, lon_deg, month, conditioning.ssn())?;
+    // Below the floor, foF2 alone follows the fitted index: one more
+    // probe at the unfloored value, read for its foF2 only.
+    let fof2_hours = if conditioning.fof2_ssn() < conditioning.ssn() {
+        Some(probe_hours(
+            root,
+            lat_deg,
+            lon_deg,
+            month,
+            conditioning.fof2_ssn(),
+        )?)
+    } else {
+        None
+    };
     Ok(hours
         .iter()
         .enumerate()
         .map(|(hour, layer)| {
-            let fof2 = layer.f2z - layer.fh2;
+            let fof2_layer = fof2_hours.as_deref().map_or(layer, |h| &h[hour]);
+            let fof2 = fof2_layer.f2z - fof2_layer.fh2;
             let ratio = conditioning.storm_ratio(month, lat_deg, lon_deg, hour as u8);
             PointAnswer {
                 fof2_mhz: fof2 * ratio,
@@ -384,6 +414,29 @@ mod tests {
                     "hour {hour}: {} vs {expected}",
                     mid[hour].fof2_mhz
                 );
+            }
+        }
+
+        #[test]
+        fn below_the_floor_only_fof2_follows_the_index() {
+            // At an index of -20, foE, M(3000)F2 and the run behind the
+            // height must be the index-zero run's, while foF2 keeps
+            // following the fitted line below it.
+            let below = june_day(&Conditioning::daily(-20.0, None));
+            let floor = june_day(&Conditioning::daily(0.0, None));
+            let above = june_day(&Conditioning::daily(20.0, None));
+            for hour in 0..24 {
+                assert_eq!(below[hour].foe_mhz, floor[hour].foe_mhz);
+                assert_eq!(below[hour].m3000, floor[hour].m3000);
+                // The line through 0 and +20 extended to -20, within
+                // f32 rounding.
+                let expected = 2.0 * floor[hour].fof2_mhz - above[hour].fof2_mhz;
+                assert!(
+                    (below[hour].fof2_mhz - expected).abs() < 5e-3,
+                    "hour {hour}: {} vs {expected}",
+                    below[hour].fof2_mhz
+                );
+                assert!(below[hour].fof2_mhz < floor[hour].fof2_mhz);
             }
         }
 

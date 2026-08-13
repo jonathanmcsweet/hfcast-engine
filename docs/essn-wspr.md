@@ -23,6 +23,12 @@ but constant. The day-to-day metric is the deviation correlation from
 each path-hour's monthly median, where climatology scores exactly
 zero by construction — the guard printed with every table.
 
+A fitted index below zero is floored for the run: the engine goes no
+lower than the map's own zero-sunspot plane, and a synthesized
+coefficient overlay (`irtam::ccir_at`) pins foF2 alone to the fitted
+line. This is the same rule `Conditioning::Daily` applies, and the
+section below is what measured it in.
+
 ## What the eight months say (525,000 path-day-hours)
 
 Offset-adjusted median absolute error, dB, and the day-to-day
@@ -32,8 +38,8 @@ month):
 | month | clim MAE | essn MAE | day corr | storm-day corr |
 | --- | ---: | ---: | ---: | ---: |
 | 2015-03 | 3.59 | 3.57 | +0.091 | +0.158 |
-| 2019-06 | 3.64 | 3.71 | +0.018 | -0.003 |
-| 2019-12 | 3.87 | 3.90 | +0.018 | (no storm days) |
+| 2019-06 | 3.64 | 3.68 | +0.025 | -0.001 |
+| 2019-12 | 3.87 | 3.90 | +0.021 | (no storm days) |
 | 2022-09 | 4.37 | 4.20 | +0.078 | +0.166 |
 | 2024-12 | 3.58 | 3.57 | +0.027 | +0.051 |
 | 2025-03 | 3.85 | 3.81 | +0.056 | +0.066 |
@@ -48,11 +54,20 @@ Findings:
    2.5 dB, most of it not ionospheric. This is the same signal the
    ionosonde harness saw (bias removed, MAE down), surviving into the
    quantity the application actually forecasts.
-2. **At solar minimum the index costs a little.** Both 2019 months are
-   0.03 to 0.07 dB worse: with foF2 barely responding to the sunspot
-   number, the fitted index adds fit noise and no information. A
-   deployed nowcast should shrink the index toward the smoothed value
-   when the network's slope information is weak (roadmap).
+2. **The solar-minimum cost was the engine below its map, not the
+   fit.** The first run of this study (0.79.0) found both 2019 months
+   0.03 to 0.07 dB worse and blamed fit noise. Diagnosed 2026-08-13:
+   the solar-minimum fit is the best-sampled of all eight months (up
+   to 496 samples per day, standard error 0.7 index units), and
+   shrinking its day-to-day movement recovered nothing — the cost sat
+   in the persistent offset, which ran the whole engine at an index
+   near -17, below the map's zero-sunspot plane, where foE, absorption
+   and noise have no measured state to extrapolate into. The floor
+   (foF2 follows the fitted line, every other channel stops at zero)
+   removed half the 2019-06 cost and raised its day correlation from
+   +0.018 to +0.025 while leaving every non-negative index untouched
+   — the regenerated cache for an active month is byte-identical. The
+   remaining 0.03 dB is at the ruler's own resolution.
 3. **Day-level link skill is small and lives on storm days**, +0.15 to
    +0.17 where storms happened, near zero on quiet months — consistent
    with `docs/daily.md`, which measured the ceiling for any daily
@@ -62,9 +77,13 @@ Findings:
 
 ## The decision this supports
 
-Ship the daily conditioning for the active half of the solar cycle and
-storm days — where operators most need it and where every ruler now
-agrees it helps — and add the solar-minimum shrinkage before calling
-the conditioning finished. Link-level SNR error is dominated by
-station factors the engine cannot know; the calibration phase (WSPR
-and RBN offsets) remains the tool for that layer.
+Ship the daily conditioning with the floor, for the whole solar cycle:
+active months and storm days carry the gains, and at solar minimum the
+floor holds the cost to the ruler's resolution while the foF2
+correction — the part ionosondes verify directly — stays whole. The
+floor has no fitted constant, so there is nothing to overfit and
+nothing to re-tune; both solar-minimum months in the archive are fit
+months, which a fitted constant would have had to worry about.
+Link-level SNR error is dominated by station factors the engine cannot
+know; the calibration phase (WSPR and RBN offsets) remains the tool
+for that layer.
