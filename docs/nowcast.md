@@ -121,6 +121,19 @@ derived from the header, not stored. The encoder and decoder round-trip
 bit-exactly including NaN; the JNI and application side of the crossing
 is parked with the rest of the app work.
 
+## The lower edge
+
+`nowcast::api::lower_edge` answers the usable window's floor per UT
+hour on the ionogram's fmin convention: the absorption-edge probe
+(`probe_edge` — a Systems run over a ten-rung ladder, the lowest
+frequency within 6 dB of the hour's own SNR plateau) at the
+conditioning's floored index, divided by the fitted level
+`EDGE_FMIN_RATIO`. `None` is a real answer: the whole ladder sits
+within the drop — the night state, where a sounder's fmin is its
+instrument floor too. The fit, the held-out verdict (0.79 and
+1.11 MHz MAE) and the known March residual are in
+`docs/ionosonde.md`; the fit reruns with `sonde --fit-edge`.
+
 ## The service selector
 
 The JSON service (`src/service.rs`, the whole application boundary)

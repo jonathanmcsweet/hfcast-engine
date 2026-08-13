@@ -54,7 +54,14 @@ values per hour. Two model columns so far:
   outside it the answer flips sign and tracks the best frequency near
   the MUF — a different edge (measured 2026-08-13). The essn variant
   runs the same probe at the day's holdout index, floored at zero as
-  the conditioning floors it.
+  the conditioning floors it. The level between the probe edge and the
+  ionogram convention is one fitted multiplicative constant
+  (`nowcast::api::EDGE_FMIN_RATIO`, 1.6138): the median of edge over
+  fmin across the six fit months, fitted by `sonde --fit-edge` with
+  the two storm months held out. Multiplicative because a fixed
+  decibel budget crosses the absorption wall at a fixed frequency
+  ratio; the additive form was measured and transfers worse
+  (held-out MAE 1.13 and 1.64 MHz against 0.79 and 1.11).
 
 Predicted foF2 is put back on the ionosonde's convention before the
 comparison: the engine's F2 working frequency is the extraordinary wave
@@ -143,19 +150,34 @@ month. Findings, in order of consequence:
    call totals.
 
 6. **The absorption edge tracks fmin's shape and its storm response;
-   its level needs calibration** (fmin rows, added 2026-08-13). With
-   each station's constant removed, the probe edge sits 0.43 to
-   0.91 MHz from observed fmin — a fraction of fmin's own day-night
-   swing, so the diurnal shape is real. The raw offset is large and
-   moves month to month (+0.7 to +2.6 MHz), which is the probe's
-   fixed link budget and the sounder's threshold — per-station
-   calibration territory, not model error. The day-conditioned edge
-   is where the signal concentrates: in the severe storm month the
-   storm-hour bias falls from +2.43 to +1.14 MHz, and the day-to-day
-   correlations, though small (up to +0.044), are largest in the
-   storm months. Day-level absorption skill beyond the diurnal shape
-   is thin on quiet months — consistent with absorption being driven
-   by the solar zenith angle first and activity second.
+   one fitted ratio closes most of its level** (fmin rows, added
+   2026-08-13). With each station's constant removed, the probe edge
+   sits 0.43 to 0.91 MHz from observed fmin — a fraction of fmin's
+   own day-night swing, so the diurnal shape is real. The raw offset
+   is large and moves month to month (+0.7 to +2.6 MHz). The
+   day-conditioned edge is where the signal concentrates: in the
+   severe storm month the storm-hour bias falls from +2.43 to
+   +1.14 MHz, and the day-to-day correlations, though small (up to
+   +0.044), are largest in the storm months. Day-level absorption
+   skill beyond the diurnal shape is thin on quiet months —
+   consistent with absorption being driven by the solar zenith angle
+   first and activity second.
+
+   The level calibration (`sonde --fit-edge`, 2026-08-13): the fitted
+   ratio 1.6138 brings the held-out months from +1.71/1.80 and
+   +2.51/2.55 bias/MAE to +0.13/0.79 and +0.71/1.11 — the moderate
+   storm month lands inside the within-month offset-removed band
+   (0.43 to 0.91 MHz), the severe one just above it. Two forms were
+   tried against the same held-out months: per-station constants
+   fitted on the fit months transfer WORSE than the one global ratio
+   (MAE 1.17 and 1.69 against 1.13 and 1.64 for the additive global
+   form), so the station-to-station part of the offset is not stable
+   across months and is not worth carrying. What remains after the
+   ratio is a residual that moves with the month — within 0.35 MHz of
+   zero in six of eight months, about +0.7 MHz in the two March
+   months (2025-03 in the fit, 2015-03 held out) — an equinox-shaped
+   structure that a season term could carry once more months exist to
+   fit it honestly.
 
 ## Caveats
 
@@ -181,10 +203,13 @@ latitudes. The daily-modeling measurements are done; the conditioning
 (essn, Kp, the storm table) now has a proven shape for the nowcast
 pipeline to consume.
 
-For the lower edge, the probe-edge seam is sound — shape and storm
-response verified against fmin — but its level is a per-station
-constant away from the truth, so it does not ship as a deployable
-window edge yet. The calibration phase, which fits per-station and
-per-path constants anyway, is the natural place to close that gap;
-the N2b physics pass can also expose absorption directly and shed the
-probe's link-budget scaffolding.
+For the lower edge: ship it on the ionogram convention.
+`nowcast::api::lower_edge` answers the usable window's floor per hour —
+the probe edge at the conditioning's floored index, divided by the
+fitted `EDGE_FMIN_RATIO`. The held-out months put its error at 0.79
+and 1.11 MHz MAE with the bias near zero outside the equinox months —
+honest numbers for a window floor whose observed truth swings several
+megahertz between night and noon. The known residual (about +0.7 MHz
+in March months) is documented above and stays open until enough
+months exist to fit a season term without memorizing the two that
+showed it.

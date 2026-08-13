@@ -12,6 +12,9 @@
 //! `--check <dir>` prints what a bundle holds and runs nothing.
 //! `--fit-storm` fits the storm ratio table (`src/stormfit.rs`) from the
 //! given months and prints it as Rust source instead of a report.
+//! `--fit-edge` fits the absorption-edge level (`EDGE_FMIN_RATIO`) on
+//! the given months, leaving the held-out storm months out of the fit,
+//! and prints the held-out verdict.
 //! `--engine nowcast` replays the nowcast point API over the cached
 //! cells and fails if it disagrees with the research columns.
 
@@ -177,6 +180,100 @@ fn storm_samples(
             ))
         })
         .collect()
+}
+
+/// The held-out storm months: never in a fit, always in the verdict.
+const HELD_OUT: [&str; 2] = ["2015-03", "2022-09"];
+
+/// One month's fmin pairs: (observed fmin, day-conditioned probe edge).
+fn edge_pairs(samples: &[Sample]) -> Vec<(f64, f64)> {
+    samples
+        .iter()
+        .filter(|s| s.characteristic == "fmin" && s.observed > 0.0)
+        .filter_map(|s| s.essn.map(|edge| (s.observed, edge)))
+        .collect()
+}
+
+/// The `--fit-storm` mode: gather the months, fit, print the table.
+fn run_fit_storm(
+    args: &Args,
+    table: Option<&GeomagTable>,
+    station_meta: &BTreeMap<String, StationMeta>,
+) -> ExitCode {
+    let Some(table) = table.filter(|t| !t.is_empty()) else {
+        eprintln!("--fit-storm needs --kp with a readable file");
+        return ExitCode::FAILURE;
+    };
+    let mut fit_samples = Vec::new();
+    if !over_months(args, &mut |month, samples| {
+        fit_samples.extend(storm_samples(month, samples, table, station_meta));
+    }) {
+        return ExitCode::FAILURE;
+    }
+    fit_storm_report(&fit_samples);
+    ExitCode::SUCCESS
+}
+
+/// The `--fit-edge` mode: gather the months, fit, print the verdict.
+fn run_fit_edge(args: &Args) -> ExitCode {
+    let mut months: Vec<(String, Vec<(f64, f64)>)> = Vec::new();
+    if !over_months(args, &mut |month, samples| {
+        months.push((month.to_string(), edge_pairs(samples)));
+    }) {
+        return ExitCode::FAILURE;
+    }
+    fit_edge_report(&months);
+    ExitCode::SUCCESS
+}
+
+/// Fits the absorption-edge level on the months that are not held out
+/// and prints every month's raw and level-corrected error, so the
+/// held-out rows are the deployable verdict. The fit is the median of
+/// probe-edge over observed fmin — one multiplicative constant,
+/// printed for `nowcast::api::EDGE_FMIN_RATIO`.
+fn fit_edge_report(months: &[(String, Vec<(f64, f64)>)]) {
+    let mut ratios: Vec<f64> = months
+        .iter()
+        .filter(|(name, _)| !HELD_OUT.contains(&name.as_str()))
+        .flat_map(|(_, pairs)| pairs.iter().map(|(obs, edge)| edge / obs))
+        .collect();
+    if ratios.is_empty() {
+        println!("no fmin pairs outside the held-out months; nothing to fit");
+        return;
+    }
+    let ratio = hfcast::stats::median_in_place(&mut ratios);
+    println!(
+        "EDGE_FMIN_RATIO: {ratio:.4} (median edge/fmin, {} pairs)",
+        ratios.len()
+    );
+    println!();
+    println!("| month | n | raw bias / MAE | corrected bias / MAE |");
+    println!("| --- | ---: | --- | --- |");
+    for (name, pairs) in months {
+        let held = if HELD_OUT.contains(&name.as_str()) {
+            " (held out)"
+        } else {
+            ""
+        };
+        let n = pairs.len() as f64;
+        let (mut rb, mut ra, mut cb, mut ca) = (0.0, 0.0, 0.0, 0.0);
+        for (obs, edge) in pairs {
+            let raw = edge - obs;
+            let corrected = edge / ratio - obs;
+            rb += raw;
+            ra += raw.abs();
+            cb += corrected;
+            ca += corrected.abs();
+        }
+        println!(
+            "| {name}{held} | {} | {:+.2} / {:.2} | {:+.2} / {:.2} |",
+            pairs.len(),
+            rb / n,
+            ra / n,
+            cb / n,
+            ca / n
+        );
+    }
 }
 
 /// Prints the fitted table as Rust source for `stormfit::FITTED`, then a
@@ -745,6 +842,7 @@ struct Args {
     months: Vec<PathBuf>,
     check_only: bool,
     fit_storm: bool,
+    fit_edge: bool,
     engine: String,
 }
 
@@ -756,6 +854,7 @@ fn parse_args() -> Args {
         months: Vec::new(),
         check_only: false,
         fit_storm: false,
+        fit_edge: false,
         engine: "parity".to_string(),
     };
     while let Some(arg) = args.next() {
@@ -768,6 +867,7 @@ fn parse_args() -> Args {
             }
             "--check" => parsed.check_only = true,
             "--fit-storm" => parsed.fit_storm = true,
+            "--fit-edge" => parsed.fit_edge = true,
             "--engine" => {
                 if let Some(name) = args.next() {
                     parsed.engine = name;
@@ -799,7 +899,7 @@ fn main() -> ExitCode {
     let args = parse_args();
     if args.months.is_empty() || !matches!(args.engine.as_str(), "parity" | "nowcast") {
         eprintln!(
-            "usage: sonde [--check] [--fit-storm] [--engine parity|nowcast] \
+            "usage: sonde [--check] [--fit-storm] [--fit-edge] [--engine parity|nowcast] \
              [--kp data/kp_daily.txt] [--stations tools/giro-stations.tsv] data/YYYY-MM ..."
         );
         return ExitCode::FAILURE;
@@ -827,18 +927,11 @@ fn main() -> ExitCode {
     };
 
     if args.fit_storm {
-        let Some(table) = table.as_ref().filter(|t| !t.is_empty()) else {
-            eprintln!("--fit-storm needs --kp with a readable file");
-            return ExitCode::FAILURE;
-        };
-        let mut fit_samples = Vec::new();
-        if !over_months(&args, &mut |month, samples| {
-            fit_samples.extend(storm_samples(month, samples, table, &station_meta));
-        }) {
-            return ExitCode::FAILURE;
-        }
-        fit_storm_report(&fit_samples);
-        return ExitCode::SUCCESS;
+        return run_fit_storm(&args, table.as_ref(), &station_meta);
+    }
+
+    if args.fit_edge {
+        return run_fit_edge(&args);
     }
 
     if args.engine == "nowcast" {

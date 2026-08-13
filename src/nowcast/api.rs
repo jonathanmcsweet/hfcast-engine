@@ -255,6 +255,38 @@ pub fn probe_edge(
     Ok(by_hour)
 }
 
+/// The fitted level between the probe edge and the ionogram's fmin
+/// convention: the probe edge sits this factor above observed fmin.
+///
+/// Fitted 2026-08-13 as the median of probe-edge over fmin across the
+/// six fit months' fmin samples (`sonde --fit-edge`; the held-out
+/// verdict is in `docs/ionosonde.md`). Multiplicative rather than
+/// additive because a fixed decibel budget crosses the absorption
+/// wall at a fixed frequency ratio, and the additive form measured
+/// worse on the held-out months.
+pub const EDGE_FMIN_RATIO: f64 = 1.6138;
+
+/// The usable window's lower edge per UT hour over the probe path, on
+/// the ionogram's fmin convention: [`probe_edge`] at the conditioning's
+/// index (floored, as every engine channel is), divided by the fitted
+/// [`EDGE_FMIN_RATIO`]. None keeps its probe meaning — no edge above
+/// the ladder's floor, the usual night state.
+pub fn lower_edge(
+    root: &Path,
+    lat_deg: f64,
+    lon_deg: f64,
+    month: u32,
+    conditioning: &Conditioning,
+) -> Result<Vec<Option<f64>>, String> {
+    let edges = probe_edge(root, lat_deg, lon_deg, month, conditioning.ssn())?;
+    Ok(edges.into_iter().map(on_fmin_convention).collect())
+}
+
+/// One probe edge onto the ionogram convention.
+fn on_fmin_convention(edge: Option<f64>) -> Option<f64> {
+    edge.map(|e| e / EDGE_FMIN_RATIO)
+}
+
 /// Where the SNR curve rises through plateau minus the drop, scanning
 /// up the ladder. None when the first rung is already inside the drop.
 fn edge_crossing(snr: &[f64]) -> Option<f64> {
@@ -492,6 +524,14 @@ mod tests {
             let noon = edge[11].expect("a daytime edge");
             assert!((2.0..7.0).contains(&noon), "noon edge {noon}");
             assert_eq!(edge[23], None);
+        }
+
+        #[test]
+        fn the_lower_edge_is_the_probe_on_the_ionogram_convention() {
+            assert_eq!(on_fmin_convention(None), None);
+            let mapped =
+                on_fmin_convention(Some(EDGE_FMIN_RATIO * 2.5)).expect("an edge comes through");
+            assert!((mapped - 2.5).abs() < 1e-12, "mapped {mapped}");
         }
 
         #[test]
