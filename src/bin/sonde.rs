@@ -109,6 +109,8 @@ fn report(month: &str, samples: &[Sample], table: Option<&GeomagTable>) {
     let irtam: &dyn Fn(&Sample) -> Option<f64> = &|s| s.irtam;
     let all: &dyn Fn(&Sample) -> bool = &|_| true;
 
+    // Loops, not maps: these iterate to print, and the report reads in
+    // this order.
     for characteristic in ["foF2", "hmF2", "MUFD", "foE"] {
         println!("\n### {characteristic} (model - observed)\n");
         println!("| model                    |    bias |    MAE |    RMS |     n |");
@@ -166,6 +168,7 @@ fn report_nvis(samples: &[Sample]) {
     );
     println!("| range | model        |    bias |    MAE |    RMS | band calls right |");
     println!("| ----: | ------------ | ------: | -----: | -----: | ---------------: |");
+    // A loop for ordered printing, as above.
     for range in NVIS_RANGES_KM {
         let observed: Vec<f64> = cells
             .iter()

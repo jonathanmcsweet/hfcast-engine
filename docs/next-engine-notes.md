@@ -145,26 +145,9 @@ is ionosonde-grade ground truth — which is the first milestone.
   complexity gate, and bumps the version when it changes what the
   package ships.
 
-## Open items recorded here so they are not lost
+## Open items
 
-- The engine repository's own roadmap file (kept outside git) was
-  absent from the checkout that produced this record. Its section
-  "Beating VOACAP on level" should be folded into the maintainer's
-  tracking against this record.
-- ~~Confirm the IRTAM hmF2 archive is symmetric with foF2~~ — confirmed
-  2026-08-12: probes for 2015-03-17 and 2019-06-15 hmF2 files answered
-  200.
-- Check whether HamSCI's Madrigal exports carry PSKReporter-derived
-  aggregates for the eight validation months.
-- ~~One live verification fetch before bulk use~~ — done 2026-08-12:
-  FastChar served a two-day archive range for JR055 (480 lines, about
-  one sounding per six minutes), so month ranges are practical and
-  DIDBGetValues stays the fallback.
-- RBN raw dailies carry no positions: the columns are callsign,
-  prefix, continent, frequency, band, dx call, dx prefix, dx continent,
-  mode, SNR, date, speed, tx mode (verified on 2015-03-17, 1.4 MB
-  zipped). Path aggregation in the WSPR shape needs a skimmer location
-  list for the spotter side and prefix centroids for the dx side.
-  RBN's own archive is permanent, so the fetch and reducer wait for the
-  calibration phase that will consume them, with this gap as the first
-  design question.
+Open work lives in `docs/roadmap.md` (working tree only, per the
+repository's tracking rules), with completions in
+`docs/roadmap-progress.md`. This record stays as the program's fixed
+findings and decisions; it does not track progress.

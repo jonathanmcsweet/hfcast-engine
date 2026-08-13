@@ -44,37 +44,46 @@ NVIS is scored as its own class: MUF at ground ranges of 0, 300 and
 band-call question the app's user actually asks — was 80/60/40/30 m
 usable this hour — as hit, miss and false-alarm rates.
 
-## What one month says (2025-06, 15 stations, 26,396 samples)
+## What the eight months say (237,506 samples, 14-22 stations each)
 
-| quantity | climatology | with the day's IRTAM maps |
-| --- | --- | --- |
-| foF2 bias / MAE | +0.74 / 0.91 MHz | **-0.01 / 0.36 MHz** |
-| foF2 storm-day bias | +1.22 MHz | +0.09 MHz |
-| foF2 day-to-day correlation | +0.000 (guard) | **+0.745** |
-| hmF2 bias / MAE | +61.5 / 62.2 km | **+3.5 / 14.9 km** |
-| hmF2 day-to-day correlation | +0.000 (guard) | +0.533 |
-| NVIS band calls right, overhead | 86.6% | 94.4% |
-| NVIS MUF(600 km) MAE | 0.96 MHz | **0.54 MHz** (both maps) |
+foF2, model minus observed, and the NVIS band calls at 600 km:
 
-Four findings, in order of consequence:
+| month | clim bias / MAE (MHz) | irtam MAE | day-to-day (irtam) | calls, clim → both maps |
+| --- | --- | --- | --- | --- |
+| 2015-03 | -0.26 / 0.71 | 0.34 | +0.794 | 92.7% → 96.0% |
+| 2019-06 | +0.38 / 0.49 | 0.28 | +0.493 | 89.9% → 93.2% |
+| 2019-12 | +0.07 / 0.54 | 0.30 | +0.572 | 88.2% → 93.4% |
+| 2022-09 | +0.53 / 0.69 | 0.36 | +0.730 | 91.5% → 95.0% |
+| 2024-12 | +0.86 / 0.96 | 0.39 | +0.757 | 92.0% → 95.6% |
+| 2025-03 | +0.34 / 0.70 | 0.40 | +0.795 | 93.4% → 95.8% |
+| 2025-06 | +0.74 / 0.91 | 0.36 | +0.745 | 89.8% → 94.2% |
+| 2025-07 | +0.59 / 0.75 | 0.32 | +0.751 | 91.3% → 94.7% |
+
+The climatology day-to-day guard printed +0.000 in every table of every
+month. Findings, in order of consequence:
 
 1. **The WSPR ruler was the limit, as suspected.** The same IRTAM input
-   that scored +0.1 day-to-day against WSPR medians scores +0.745
-   against ionosonde truth. The assimilated map does know what the
-   ionosphere did that day; WSPR could not see it. (One caveat below.)
-2. **Climatology ran high in 2025-06.** +0.74 MHz median foF2 bias at
-   these stations, rising to +1.22 MHz on storm days. This is the
-   error a per-day effective index and a storm mode exist to remove.
-3. **The +61 km height bias decomposes.** The corrected Dudeney form
-   over climatology's own inputs removes about 19 km (bias +42 km);
-   the rest is the M(3000)F2 input itself. IRTAM's assimilated height
-   map removes nearly all of it (+3.5 km). An engine that wants honest
-   heights needs both the corrected form and a better height input.
+   that scored about +0.1 day-to-day against WSPR medians scores +0.49
+   to +0.80 against ionosonde truth, in every month, weakest at solar
+   minimum where daily variance is smallest. The assimilated map does
+   know what the ionosphere did that day; WSPR could not see it.
+   (One caveat below.)
+2. **Climatology's foF2 bias moves month by month** — from -0.26 to
+   +0.86 MHz across the eight months, largest near the cycle 25
+   maximum, and larger still on storm days (2025-06: +1.22 MHz). A
+   fixed monthly map cannot remove a bias that moves; a per-day
+   effective index and a storm mode can, and they are the next phase.
+3. **The +61 km height bias decomposes** (2025-06). Dudeney's corrected
+   form over climatology's own inputs removes about 19 km; the rest is
+   the M(3000)F2 input itself. IRTAM's height map removes nearly all
+   of it (+3.5 km bias, MAE 14.9 km). Honest heights need both the
+   corrected form and a better height input.
 4. **The height matters exactly where geometry says.** At range zero
    the height models are indistinguishable (the secant is 1); at
    600 km, correct daily foF2 over the too-high climatology height
-   under-calls the band (-0.84 MHz bias), and adding the assimilated
-   height brings the error to -0.10 MHz and band calls to 94.2%.
+   under-calls the band, and the assimilated height restores it.
+   With both maps the band calls sit between 93% and 96% at every
+   range in every month.
 
 ## Caveats
 
@@ -82,8 +91,6 @@ Four findings, in order of consequence:
   proofs and upper bounds, not deployed-skill claims. Deployable skill
   needs the leave-one-station-out effective-index fit, which is the next
   phase's work.
-- One month so far. The other seven validation months score the same
-  way once their bundles are fetched.
 - MUFD came back empty from FastChar for every station; the MUF column
   waits for a DIDBGetValues fetch. The secant-derived NVIS MUF stands in
   meanwhile and is conversion-free at range zero.
