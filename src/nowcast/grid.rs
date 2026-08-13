@@ -89,10 +89,14 @@ pub fn predict_grid(itshfbc: &Path, req: &GridRequest) -> Result<GridPlanes, Str
     }
     .min(ny.max(1));
 
+    // The diurnal series depends on the maps and the hour, never on
+    // the grid point, so the whole lattice reads one evaluation.
+    let ab = prep.ab_at(area.hour as R);
+
     let cursor = AtomicUsize::new(0);
     let mut rows: Vec<(usize, Result<Vec<PointAnswer>, String>)> = std::thread::scope(|scope| {
         let handles: Vec<_> = (0..workers)
-            .map(|_| scope.spawn(|| work(itshfbc, area, &prep, &cursor, ny)))
+            .map(|_| scope.spawn(|| work(itshfbc, area, &prep, &ab, &cursor, ny)))
             .collect();
         handles
             .into_iter()
@@ -109,6 +113,7 @@ fn work(
     itshfbc: &Path,
     area: &AreaInputs,
     prep: &AreaPrep<'_>,
+    ab: &[R; 318],
     cursor: &AtomicUsize,
     ny: usize,
 ) -> Vec<(usize, Result<Vec<PointAnswer>, String>)> {
@@ -120,7 +125,7 @@ fn work(
         if row >= ny {
             break;
         }
-        mine.push((row, compute_row(itshfbc, area, prep, row)));
+        mine.push((row, compute_row(itshfbc, area, prep, ab, row)));
     }
     mine
 }
@@ -130,11 +135,12 @@ fn compute_row(
     itshfbc: &Path,
     area: &AreaInputs,
     prep: &AreaPrep<'_>,
+    ab: &[R; 318],
     row: usize,
 ) -> Result<Vec<PointAnswer>, String> {
     (1..=area.grid.nx)
         .map(|ix| {
-            let (lat, lon, freqs) = area_point_fresh(itshfbc, area, prep, ix, row + 1)?;
+            let (lat, lon, freqs) = area_point_fresh(itshfbc, area, prep, ix, row + 1, Some(ab))?;
             Ok(PointAnswer { lat, lon, freqs })
         })
         .collect()

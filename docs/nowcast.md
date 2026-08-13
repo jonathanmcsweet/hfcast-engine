@@ -82,20 +82,32 @@ tests, not intentions:
   by at most 2 dB — the class of spread the -ffast-math study measured,
   not signal.
 
+The driver shares everything a grid point cannot change. Beyond the
+coefficient set, the antennas and the magnetic pole (shared since the
+driver landed), the whole lattice now reads one `COFION` flattening of
+the maps and one `VIRTIM` evaluation of the diurnal series — both are
+functions of the maps and the hour alone, and both were previously
+recomputed at every point. The per-point values are bit-identical
+either way; `portcheck` (23,040 cells) stays zero-drift.
+
 Measured with `gridbench` on the application's fine-globe lattice
 (34,560 points, one band, 16-core container, 2026-08-13):
 
 | driver | wall |
 | --- | ---: |
 | parity `run_area`, serial | 1088 ms |
-| `predict_grid`, 1 thread | 1038 ms |
-| `predict_grid`, 4 threads | 266 ms (3.9x) |
-| `predict_grid`, 8 threads | 142 ms (7.3x) |
+| `predict_grid`, 1 thread | 970 ms |
+| `predict_grid`, 4 threads | 249 ms (3.9x) |
+| `predict_grid`, 8 threads | 131 ms (7.4x) |
 
 The scaling is near linear to eight threads — the engine parallelizes;
-the application's strip sharding and JSON rendering were the loss. The
-per-point physics is unchanged (`portcheck`: 23,040 cells, zero drift
-after the seam).
+the application's strip sharding and JSON rendering were the loss.
+With `HFCAST_PERF` set, `gridbench` prints the per-stage table
+(`--parity 0` scopes it to the nowcast driver). Where the remaining
+time goes, single thread: the 30-point ionogram and its profile walks
+(`genion`/`gethp`) 34%, the systems frequency loop 28%, the per-point
+layer parameters (`versy` geography) 18%, per-point setup (geometry,
+magnetic field, ground constants) about 10%.
 
 ## The packed answer
 
@@ -127,12 +139,26 @@ as a user preference. The storm ratio stays at the characteristics
 level where it was fitted and scored; no seam carries a per-place,
 per-hour foF2 ratio into a listing run yet.
 
-## What replaces the skeleton
+## One physics, by decision
 
-The inner physics will be re-formed for batches next (the
-structure-of-arrays ionosphere pass — the measured 47% — then the
-packed HFB1 answer format, then GPU kernels; see the roadmap). The
-API, the conditioning, and the two rulers stay: the ionosonde harness
-for accuracy, and the verification mode plus the grid tests as the
-equivalence envelope between the research columns and whatever
-computes the answers next.
+The original batch plan imagined the nowcast pipeline growing its own
+structure-of-arrays physics, equivalent to the parity engine within a
+tolerance envelope. That plan is closed (2026-08-13, measured): the
+pipeline computes through the parity engine's own functions, restructured
+only in ways that cannot move a bit — shared evaluations of
+position-independent work, and block layouts of independent arithmetic.
+Two reasons, in order:
+
+1. The service now proves `"engine":"nowcast"` at an index at or above
+   zero answers exactly as the parity engine at that number. A CPU pass
+   that drifted within a tolerance would break that proof and put two
+   sets of physics behind one API.
+2. The measured headroom did not justify the fork. After the shared
+   evaluations, the fine globe runs 970 ms single-thread / 131 ms at
+   eight threads, and the remainder is pointwise physics that is
+   memory- and branch-bound, not arithmetic-bound — restructuring it
+   without moving bits was measured at zero gain. The batch plan's
+   80 ms target assumed arithmetic the vectorizer could recover;
+   there is none to recover. That memory-bound remainder is the
+   strongest case the GPU phase has: wide offload, not CPU lanes, is
+   where the next factor lives.
