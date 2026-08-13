@@ -51,8 +51,13 @@ pub struct Sample {
     pub characteristic: String,
     pub observed: f64,
     pub climatology: f64,
-    /// None where the day had no readable IRTAM map.
+    /// The day-informed value: IRTAM foF2 for the frequency rows, IRTAM
+    /// hmF2 for the height rows. None where the day had no readable map.
     pub irtam: Option<f64>,
+    /// Height rows only: climatology's M(3000)F2 through the corrected
+    /// Dudeney form instead of the engine's plain `1490/M - 176`. This
+    /// column separates "the formula runs high" from "the map runs high".
+    pub dudeney: Option<f64>,
 }
 
 /// The engine request for one station's probe path. Values other than the
@@ -131,14 +136,19 @@ fn predict_hours(root: &Path, req: &Request) -> Result<Vec<[(&'static str, f64);
         .collect()
 }
 
-/// The IRTAM foF2 maps present in the bundle, one per day.
-fn irtam_days(month_dir: &Path, month: &str) -> BTreeMap<u8, irtam::IrtamMap> {
+/// The IRTAM maps of one characteristic present in the bundle, per day.
+fn irtam_days(
+    month_dir: &Path,
+    month: &str,
+    characteristic: &str,
+    parse: fn(&str) -> Result<irtam::IrtamMap, String>,
+) -> BTreeMap<u8, irtam::IrtamMap> {
     let (year, mm) = month.split_once('-').unwrap_or((month, ""));
     (1..=31)
         .filter_map(|day| {
-            let name = format!("IRTAM_foF2_COEFFS_{year}{mm}{day:02}_234500.ASC");
+            let name = format!("IRTAM_{characteristic}_COEFFS_{year}{mm}{day:02}_234500.ASC");
             let text = std::fs::read_to_string(month_dir.join("irtam").join(name)).ok()?;
-            irtam::parse_asc(&text).ok().map(|map| (day, map))
+            parse(&text).ok().map(|map| (day, map))
         })
         .collect()
 }
@@ -179,16 +189,17 @@ pub fn gather(
     if observed.is_empty() {
         return Err(format!("{month}: no GIRO data; run tools/fetch-giro.sh"));
     }
-    let maps = irtam_days(month_dir, &month);
+    let fof2_maps = irtam_days(month_dir, &month, "foF2", irtam::parse_asc);
+    let hmf2_maps = irtam_days(month_dir, &month, "hmF2", irtam::parse_asc_hmf2);
 
     let mut samples = Vec::new();
-    // Station by station, day by day: each (station, day) is one engine
-    // run against the day's overlay, compared at every hour. A functional
+    // Station by station, day by day: each (station, day) is two engine
+    // runs, one per overlaid map, compared at every hour. A functional
     // form would hide the overlay directory reuse and the error path.
     for station in &observed {
         let req = probe_request(&station.meta, month_number, ssn);
         let climatology = predict_hours(&data::embedded_root(), &req)?;
-        let irtam_by_day: BTreeMap<u8, _> = maps
+        let irtam_by_day: BTreeMap<u8, _> = fof2_maps
             .iter()
             .map(|(day, map)| {
                 let dir = cache_dir.join(format!("sonde-overlay-{month}-{day:02}"));
@@ -196,7 +207,32 @@ pub fn gather(
                     .and_then(|root| predict_hours(&root, &req).map(|h| (*day, h)))
             })
             .collect::<Result<_, _>>()?;
-        samples.extend(station_samples(station, &climatology, &irtam_by_day));
+        // The hmF2 map goes through the same foF2 slot: the engine's own
+        // Jones-Gallet evaluator computes it at the station, and the
+        // half-gyrofrequency the engine adds is the same one
+        // `predicted_chars` takes back off, so the "foF2" column of this
+        // run is the IRTAM height, unshifted.
+        let heights_by_day: BTreeMap<u8, Vec<f64>> = hmf2_maps
+            .iter()
+            .map(|(day, map)| {
+                let dir = cache_dir.join(format!("sonde-overlay-hmf2-{month}-{day:02}"));
+                overlay_for(map, &dir).and_then(|root| {
+                    predict_hours(&root, &req).map(|hours| {
+                        let heights = hours
+                            .iter()
+                            .filter_map(|slot| value_of(slot, "foF2"))
+                            .collect();
+                        (*day, heights)
+                    })
+                })
+            })
+            .collect::<Result<_, _>>()?;
+        samples.extend(station_samples(
+            station,
+            &climatology,
+            &irtam_by_day,
+            &heights_by_day,
+        ));
     }
     save_cache(&cache, &samples);
     Ok((month, samples))
@@ -207,6 +243,7 @@ fn station_samples(
     station: &giro::StationMonth,
     climatology: &[[(&'static str, f64); 4]],
     irtam_by_day: &BTreeMap<u8, Vec<[(&'static str, f64); 4]>>,
+    heights_by_day: &BTreeMap<u8, Vec<f64>>,
 ) -> Vec<Sample> {
     station
         .chars
@@ -217,9 +254,15 @@ fn station_samples(
                     let observed = giro::at_hour(readings, day, hour)?;
                     let slot = climatology[usize::from(hour)];
                     let climatology_value = value_of(&slot, name)?;
-                    let irtam = irtam_by_day
-                        .get(&day)
-                        .and_then(|hours| value_of(&hours[usize::from(hour)], name));
+                    let irtam = if name == "hmF2" {
+                        heights_by_day
+                            .get(&day)
+                            .and_then(|heights| heights.get(usize::from(hour)).copied())
+                    } else {
+                        irtam_by_day
+                            .get(&day)
+                            .and_then(|hours| value_of(&hours[usize::from(hour)], name))
+                    };
                     Some(Sample {
                         station: station.meta.ursi.clone(),
                         day,
@@ -228,11 +271,22 @@ fn station_samples(
                         observed,
                         climatology: climatology_value,
                         irtam,
+                        dudeney: (name == "hmF2").then(|| dudeney_of(&slot)).flatten(),
                     })
                 })
             })
         })
         .collect()
+}
+
+/// Climatology's own M(3000)F2 and frequencies through the corrected
+/// Dudeney form. The factor comes back out of the MUFD column, which is
+/// the ordinary-wave foF2 times it.
+fn dudeney_of(slot: &[(&'static str, f64); 4]) -> Option<f64> {
+    let fof2 = value_of(slot, "foF2")?;
+    let foe = value_of(slot, "foE")?;
+    let m3000 = value_of(slot, "MUFD")? / fof2;
+    (fof2 > 0.0).then(|| irtam::hmf2_dudeney(m3000, fof2, foe))
 }
 
 fn value_of(slot: &[(&'static str, f64); 4], name: &str) -> Option<f64> {
@@ -259,16 +313,23 @@ pub fn secant_factor(distance_km: f64, hmf2_km: f64) -> f64 {
 
 // ---- cache ----------------------------------------------------------
 
-const CACHE_HEADER: &str = "station,day,hour,char,observed,climatology,irtam";
+const CACHE_HEADER: &str = "station,day,hour,char,observed,climatology,irtam,dudeney";
 
 fn save_cache(path: &Path, samples: &[Sample]) {
+    let column = |value: Option<f64>| value.map(|v| format!("{v:.4}")).unwrap_or_default();
     let body = samples
         .iter()
         .map(|s| {
-            let irtam = s.irtam.map(|v| format!("{v:.4}")).unwrap_or_default();
             format!(
-                "{},{},{},{},{:.4},{:.4},{}",
-                s.station, s.day, s.hour, s.characteristic, s.observed, s.climatology, irtam
+                "{},{},{},{},{:.4},{:.4},{},{}",
+                s.station,
+                s.day,
+                s.hour,
+                s.characteristic,
+                s.observed,
+                s.climatology,
+                column(s.irtam),
+                column(s.dudeney)
             )
         })
         .fold(format!("{CACHE_HEADER}\n"), |mut out, line| {
@@ -295,8 +356,16 @@ fn load_cache(path: &Path) -> Option<Vec<Sample>> {
 
 fn parse_cache_line(line: &str) -> Option<Sample> {
     let fields: Vec<&str> = line.split(',').collect();
-    let [station, day, hour, characteristic, observed, climatology, irtam] = fields[..] else {
+    let [station, day, hour, characteristic, observed, climatology, irtam, dudeney] = fields[..]
+    else {
         return None;
+    };
+    let optional = |field: &str| -> Option<Option<f64>> {
+        if field.is_empty() {
+            Some(None)
+        } else {
+            field.parse().ok().map(Some)
+        }
     };
     Some(Sample {
         station: station.to_string(),
@@ -305,11 +374,8 @@ fn parse_cache_line(line: &str) -> Option<Sample> {
         characteristic: characteristic.to_string(),
         observed: observed.parse().ok()?,
         climatology: climatology.parse().ok()?,
-        irtam: if irtam.is_empty() {
-            None
-        } else {
-            Some(irtam.parse().ok()?)
-        },
+        irtam: optional(irtam)?,
+        dudeney: optional(dudeney)?,
     })
 }
 
@@ -391,7 +457,7 @@ impl BandCalls {
 }
 
 /// One (station, day, hour) with both foF2 and hmF2 present, for NVIS
-/// arithmetic. `models` are (climatology, irtam) foF2/hmF2 pairs.
+/// arithmetic.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NvisCell {
     pub observed_fof2: f64,
@@ -399,10 +465,11 @@ pub struct NvisCell {
     pub climatology_fof2: f64,
     pub climatology_hmf2: f64,
     pub irtam_fof2: Option<f64>,
+    pub irtam_hmf2: Option<f64>,
+    pub dudeney_hmf2: Option<f64>,
 }
 
-/// Joins the foF2 and hmF2 samples into NVIS cells. IRTAM replaces only
-/// foF2 in this phase, so the model's hmF2 stays climatology's.
+/// Joins the foF2 and hmF2 samples into NVIS cells.
 pub fn nvis_cells(samples: &[Sample]) -> Vec<NvisCell> {
     let mut fof2: BTreeMap<(String, u8, u8), &Sample> = BTreeMap::new();
     let mut hmf2: BTreeMap<(String, u8, u8), &Sample> = BTreeMap::new();
@@ -427,6 +494,8 @@ pub fn nvis_cells(samples: &[Sample]) -> Vec<NvisCell> {
                 climatology_fof2: f.climatology,
                 climatology_hmf2: h.climatology,
                 irtam_fof2: f.irtam,
+                irtam_hmf2: h.irtam,
+                dudeney_hmf2: h.dudeney,
             })
         })
         .collect()
@@ -483,6 +552,7 @@ mod tests {
                 observed: 5.0 + f64::from(day) * 0.1,
                 climatology: 6.0,
                 irtam: None,
+                dudeney: None,
             })
             .collect();
         let refs: Vec<&Sample> = samples.iter().collect();
@@ -502,6 +572,7 @@ mod tests {
                 observed: 5.0 + f64::from(day) * 0.1,
                 climatology: 6.0,
                 irtam: Some(4.0 + f64::from(day) * 0.1),
+                dudeney: None,
             })
             .collect();
         let refs: Vec<&Sample> = samples.iter().collect();
@@ -520,6 +591,7 @@ mod tests {
                 observed: 4.95,
                 climatology: 5.2,
                 irtam: Some(4.8),
+                dudeney: None,
             },
             Sample {
                 station: "JR055".into(),
@@ -528,7 +600,8 @@ mod tests {
                 characteristic: "hmF2".into(),
                 observed: 310.0,
                 climatology: 295.5,
-                irtam: None,
+                irtam: Some(301.0),
+                dudeney: Some(288.2),
             },
         ];
         let dir = std::env::temp_dir().join(format!("sonde-cache-test-{}", std::process::id()));

@@ -19,9 +19,14 @@ values per hour. Two model columns so far:
 
 - **climatology** — the engine as shipped, at the month's smoothed
   sunspot number.
-- **irtam-foF2** — the same, with each day's archived IRTAM foF2 map
-  written over the coefficient file through the overlay root
-  (`src/irtam.rs`), as in the WSPR study.
+- **irtam** — the same, with each day's archived IRTAM map written over
+  the coefficient file through the overlay root (`src/irtam.rs`), as in
+  the WSPR study. foF2 for the frequency rows; for the height rows the
+  hmF2 map goes through the same slot, so the engine's own Jones-Gallet
+  evaluator computes it at the station.
+- **climatology+dudeney** (heights only) — climatology's own M(3000)F2
+  through Dudeney's corrected form instead of the engine's plain
+  `1490/M - 176`, separating the formula's error from its input's.
 
 Predicted foF2 is put back on the ionosonde's convention before the
 comparison: the engine's F2 working frequency is the extraordinary wave
@@ -41,15 +46,17 @@ usable this hour — as hit, miss and false-alarm rates.
 
 ## What one month says (2025-06, 15 stations, 26,396 samples)
 
-| quantity | climatology | irtam-foF2 |
+| quantity | climatology | with the day's IRTAM maps |
 | --- | --- | --- |
 | foF2 bias / MAE | +0.74 / 0.91 MHz | **-0.01 / 0.36 MHz** |
 | foF2 storm-day bias | +1.22 MHz | +0.09 MHz |
 | foF2 day-to-day correlation | +0.000 (guard) | **+0.745** |
-| hmF2 bias | +61 km | +59 km |
+| hmF2 bias / MAE | +61.5 / 62.2 km | **+3.5 / 14.9 km** |
+| hmF2 day-to-day correlation | +0.000 (guard) | +0.533 |
 | NVIS band calls right, overhead | 86.6% | 94.4% |
+| NVIS MUF(600 km) MAE | 0.96 MHz | **0.54 MHz** (both maps) |
 
-Three findings, in order of consequence:
+Four findings, in order of consequence:
 
 1. **The WSPR ruler was the limit, as suspected.** The same IRTAM input
    that scored +0.1 day-to-day against WSPR medians scores +0.745
@@ -58,10 +65,16 @@ Three findings, in order of consequence:
 2. **Climatology ran high in 2025-06.** +0.74 MHz median foF2 bias at
    these stations, rising to +1.22 MHz on storm days. This is the
    error a per-day effective index and a storm mode exist to remove.
-3. **The layer-height formula runs about +60 km high.** hmF2 from
-   `1490/M3000 - 176` overstates the measured peak at every Kp class.
-   That feeds the NVIS secant directly, and it is the number the
-   planned Dudeney-form conversion work will be judged against.
+3. **The +61 km height bias decomposes.** The corrected Dudeney form
+   over climatology's own inputs removes about 19 km (bias +42 km);
+   the rest is the M(3000)F2 input itself. IRTAM's assimilated height
+   map removes nearly all of it (+3.5 km). An engine that wants honest
+   heights needs both the corrected form and a better height input.
+4. **The height matters exactly where geometry says.** At range zero
+   the height models are indistinguishable (the secant is 1); at
+   600 km, correct daily foF2 over the too-high climatology height
+   under-calls the band (-0.84 MHz bias), and adding the assimilated
+   height brings the error to -0.10 MHz and band calls to 94.2%.
 
 ## Caveats
 

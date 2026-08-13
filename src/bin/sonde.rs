@@ -117,14 +117,21 @@ fn report(month: &str, samples: &[Sample], table: Option<&GeomagTable>) {
             "climatology",
             &pairs(samples, characteristic, climatology, all),
         );
-        error_row("irtam-foF2", &pairs(samples, characteristic, irtam, all));
+        error_row("irtam", &pairs(samples, characteristic, irtam, all));
+        if characteristic == "hmF2" {
+            let dudeney: &dyn Fn(&Sample) -> Option<f64> = &|s| s.dudeney;
+            error_row(
+                "climatology+dudeney",
+                &pairs(samples, characteristic, dudeney, all),
+            );
+        }
         if table.is_some() {
             for (label, want_storm) in [("climatology, quiet", false), ("climatology, storm", true)]
             {
                 let keep: &dyn Fn(&Sample) -> bool =
                     &|s| storminess(table, month, s) == Some(want_storm);
                 error_row(label, &pairs(samples, characteristic, climatology, keep));
-                let irtam_label = label.replace("climatology", "irtam-foF2");
+                let irtam_label = label.replace("climatology", "irtam");
                 error_row(&irtam_label, &pairs(samples, characteristic, irtam, keep));
             }
         }
@@ -137,7 +144,7 @@ fn report(month: &str, samples: &[Sample], table: Option<&GeomagTable>) {
         let (irtam_corr, _) = day_to_day(&of_char, irtam);
         println!(
             "\nday-to-day: climatology {clim_corr:+.3} (guard: must be +0.000), \
-             irtam-foF2 {irtam_corr:+.3}, {pairs_n} day pairs"
+             irtam {irtam_corr:+.3}, {pairs_n} day pairs"
         );
     }
 
@@ -157,14 +164,14 @@ fn report_nvis(samples: &[Sample]) {
         "\n### NVIS MUF(d) from foF2 x secant (n = {})\n",
         cells.len()
     );
-    println!("| range | model       |    bias |    MAE |    RMS | band calls right |");
-    println!("| ----: | ----------- | ------: | -----: | -----: | ---------------: |");
+    println!("| range | model        |    bias |    MAE |    RMS | band calls right |");
+    println!("| ----: | ------------ | ------: | -----: | -----: | ---------------: |");
     for range in NVIS_RANGES_KM {
         let observed: Vec<f64> = cells
             .iter()
             .map(|c| c.observed_fof2 * secant_factor(range, c.observed_hmf2))
             .collect();
-        let models: [(&str, Vec<Option<f64>>); 2] = [
+        let models: [(&str, Vec<Option<f64>>); 4] = [
             (
                 "climatology",
                 cells
@@ -173,12 +180,36 @@ fn report_nvis(samples: &[Sample]) {
                     .collect(),
             ),
             (
+                // The height fix alone: same foF2, corrected formula.
+                "clim+dudeney",
+                cells
+                    .iter()
+                    .map(|c| {
+                        c.dudeney_hmf2
+                            .map(|h| c.climatology_fof2 * secant_factor(range, h))
+                    })
+                    .collect(),
+            ),
+            (
+                // The daily frequency alone, over the shipped height.
                 "irtam-foF2",
                 cells
                     .iter()
                     .map(|c| {
                         c.irtam_fof2
                             .map(|f| f * secant_factor(range, c.climatology_hmf2))
+                    })
+                    .collect(),
+            ),
+            (
+                // Both assimilated maps together.
+                "irtam-both",
+                cells
+                    .iter()
+                    .map(|c| {
+                        c.irtam_fof2
+                            .zip(c.irtam_hmf2)
+                            .map(|(f, h)| f * secant_factor(range, h))
                     })
                     .collect(),
             ),
@@ -199,10 +230,10 @@ fn report_nvis(samples: &[Sample]) {
             }
             match errors(&muf_pairs) {
                 Some((bias, mae, rms)) => println!(
-                    "| {range:4.0}k | {label:<11} | {bias:+7.3} | {mae:6.3} | {rms:6.3} | {:15.1}% |",
+                    "| {range:4.0}k | {label:<12} | {bias:+7.3} | {mae:6.3} | {rms:6.3} | {:15.1}% |",
                     calls.accuracy() * 100.0
                 ),
-                None => println!("| {range:4.0}k | {label:<11} |       - |      - |      - |                - |"),
+                None => println!("| {range:4.0}k | {label:<12} |       - |      - |      - |                - |"),
             }
         }
     }

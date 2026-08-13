@@ -39,6 +39,23 @@ pub struct IrtamMap {
 /// last 76 are the linear-trend map. A mean foF2 outside 1-20 MHz in the
 /// leading coefficient means the file is not what this expects.
 pub fn parse_asc(text: &str) -> Result<IrtamMap, String> {
+    parse_asc_with(text, 1.0..=20.0, "a mean foF2 in MHz")
+}
+
+/// Parses an `IRTAM_hmF2_COEFFS_*.ASC` file. Same layout, different units:
+/// the leading coefficient is the global mean peak height in km.
+pub fn parse_asc_hmf2(text: &str) -> Result<IrtamMap, String> {
+    parse_asc_with(text, 150.0..=500.0, "a mean hmF2 in km")
+}
+
+/// The shared reader. The plausibility range on the leading coefficient —
+/// the global mean of the characteristic — is what tells a wrong file
+/// (or a wrong characteristic) apart from a right one.
+fn parse_asc_with(
+    text: &str,
+    plausible: std::ops::RangeInclusive<f64>,
+    expected_mean: &str,
+) -> Result<IrtamMap, String> {
     let values: Vec<f64> = text
         .lines()
         .filter(|l| !l.trim_start().starts_with('#'))
@@ -53,14 +70,43 @@ pub fn parse_asc(text: &str) -> Result<IrtamMap, String> {
         ));
     }
     let mean = values[0];
-    if !(1.0..=20.0).contains(&mean) {
-        return Err(format!(
-            "leading coefficient {mean} is not a mean foF2 in MHz"
-        ));
+    if !plausible.contains(&mean) {
+        return Err(format!("leading coefficient {mean} is not {expected_mean}"));
     }
     Ok(IrtamMap {
         coeffs: values[..TEMPORAL * SPATIAL].to_vec(),
     })
+}
+
+/// Dudeney's peak-height relation, forward: hmF2 in km from the
+/// M(3000)F2 factor and the foF2/foE ratio.
+///
+/// `hmF2 = 1490 / (M + dM) - 176`, with `dM = 0.253/(r - 1.215) - 0.012`
+/// and `r = foF2/foE`. The correction term is what the engine's own
+/// `1490/M - 176` form lacks, and the measured +61 km height bias
+/// (docs/ionosonde.md) is the price of lacking it. The ratio is clamped
+/// at 1.7 below which the relation's denominator loses meaning.
+pub fn hmf2_dudeney(m3000: f64, fof2_mhz: f64, foe_mhz: f64) -> f64 {
+    1490.0 / (m3000 + dudeney_dm(fof2_mhz, foe_mhz)) - 176.0
+}
+
+/// Dudeney's relation, inverted: the M(3000)F2 factor a legacy-shaped
+/// consumer needs so that its `1490/(M + dM) - 176` lands on a known
+/// hmF2. This is the conversion step docs/irtam.md named for feeding
+/// IRTAM's height map to an engine that eats M(3000)F2.
+pub fn m3000_from_hmf2(hmf2_km: f64, fof2_mhz: f64, foe_mhz: f64) -> f64 {
+    1490.0 / (hmf2_km + 176.0) - dudeney_dm(fof2_mhz, foe_mhz)
+}
+
+fn dudeney_dm(fof2_mhz: f64, foe_mhz: f64) -> f64 {
+    let ratio = if foe_mhz > 0.0 {
+        (fof2_mhz / foe_mhz).max(1.7)
+    } else {
+        // No E layer to retard the ray: the correction tends to its
+        // night-side floor.
+        f64::INFINITY
+    };
+    0.253 / (ratio - 1.215) - 0.012
 }
 
 pub fn load_asc(path: &Path) -> io::Result<Result<IrtamMap, String>> {
@@ -125,6 +171,41 @@ mod tests {
     fn rejects_an_implausible_mean() {
         let text = sample_text().replacen("8.8", "88.0", 1);
         assert!(parse_asc(&text).is_err());
+    }
+
+    #[test]
+    fn the_height_reader_wants_heights() {
+        // A foF2 file fed to the hmF2 reader fails on the mean, and the
+        // other way around: the plausibility ranges do not overlap.
+        let fof2 = sample_text();
+        assert!(parse_asc_hmf2(&fof2).is_err());
+        let hmf2 = fof2.replacen("8.8", "290.0", 1);
+        assert!(parse_asc_hmf2(&hmf2).is_ok());
+        assert!(parse_asc(&hmf2).is_err());
+    }
+
+    #[test]
+    fn dudeney_round_trips() {
+        // Day-side numbers: a 6 MHz F2 over a 3 MHz E at 290 km.
+        let m = m3000_from_hmf2(290.0, 6.0, 3.0);
+        let h = hmf2_dudeney(m, 6.0, 3.0);
+        assert!((h - 290.0).abs() < 1e-9, "h = {h}");
+    }
+
+    #[test]
+    fn dudeney_sits_below_the_uncorrected_form() {
+        // The correction term is positive, so for the same M(3000)F2 the
+        // Dudeney height is lower than 1490/M - 176 — the direction of
+        // the measured +61 km bias.
+        let m: f64 = 3.0;
+        let plain = 1490.0 / m - 176.0;
+        assert!(hmf2_dudeney(m, 6.0, 3.0) < plain);
+        // With no E layer the correction tends to its -0.012 floor: the
+        // Dudeney height converges to just above the plain form, and the
+        // big day-side correction is gone. That matches the measurement:
+        // the height bias is worst in daytime.
+        let night = hmf2_dudeney(m, 6.0, 0.0);
+        assert!(night.is_finite() && (night - plain).abs() < 5.0);
     }
 
     #[test]
