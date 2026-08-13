@@ -109,6 +109,24 @@ derived from the header, not stored. The encoder and decoder round-trip
 bit-exactly including NaN; the JNI and application side of the crossing
 is parked with the rest of the app work.
 
+## The service selector
+
+The JSON service (`src/service.rs`, the whole application boundary)
+takes an `"engine"` field: `"voacap"` — the default, so every existing
+request predicts exactly what it always did — or `"nowcast"`, which
+runs the same physics conditioned on the fitted daily index. A nowcast
+request states `"essn"` in place of `"ssn"` (both at once is refused),
+and the run applies the floor: the engine never goes below the map's
+zero-sunspot plane, and below it a synthesized coefficient overlay
+holds foF2 on the fitted line. The below-floor synthesis needs a
+writable `"workDir"` and the compiled-in root; a caller with its own
+overlay directory writes `coeffs/fof2CCIR.daw` there itself. Every
+answer — point-to-point and area — carries `"engine"` naming the model
+behind it, which is the seam an application needs to offer the model
+as a user preference. The storm ratio stays at the characteristics
+level where it was fitted and scored; no seam carries a per-place,
+per-hour foF2 ratio into a listing run yet.
+
 ## What replaces the skeleton
 
 The inner physics will be re-formed for batches next (the
