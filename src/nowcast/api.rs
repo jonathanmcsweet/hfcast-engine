@@ -1,0 +1,405 @@
+//! The nowcast point API: conditioned ionospheric answers at a place.
+//!
+//! One call answers "what is the ionosphere over this point at this
+//! hour" in the ionosonde's own conventions: ordinary-wave foF2 in MHz,
+//! foE in MHz, hmF2 in km through Dudeney's corrected form, and the
+//! M(3000)F2 factor. NVIS-range MUF comes from the mirror-geometry
+//! secant ([`PointAnswer::muf_at`]).
+//!
+//! The conditioning input is the day knob the parity engine does not
+//! have. [`Conditioning::Climatology`] is the engine as shipped, at the
+//! month's smoothed sunspot number. [`Conditioning::Daily`] runs at a
+//! fitted daily index (`src/essn.rs`) and, when the trailing-24-hour
+//! Kp maximum is known, multiplies foF2 by the embedded storm ratio
+//! (`src/stormfit.rs`). Both were scored held-out against ionosonde
+//! truth before this API existed; the numbers are in
+//! `docs/ionosonde.md`.
+
+use std::path::Path;
+
+use crate::api::{predict, FoF2Model, Ionosphere, Model, Report, Request, Site, Task};
+use crate::{irtam, stormfit};
+
+/// Half the probe path's latitude span. The path runs from half a
+/// degree north of the point to half a degree south, so its midpoint —
+/// the one control point on a path this short — is the point itself.
+pub const PROBE_OFFSET_DEG: f64 = 0.5;
+
+/// What the day's prediction is conditioned on.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Conditioning {
+    /// The engine as shipped: the month's smoothed sunspot number.
+    Climatology { ssn: f64 },
+    /// A daily index fitted from live soundings, and the trailing
+    /// 24-hour Kp maximum per UT hour where the index feed has one —
+    /// the maximum moves during a day as storm blocks enter and leave
+    /// the window. A missing hour gets no storm correction: the table
+    /// is the identity, exactly what a device without the feed can
+    /// honestly do.
+    Daily {
+        essn: f64,
+        /// Boxed so the enum stays the size of its common variant.
+        kp_max24: Box<[Option<f64>; 24]>,
+    },
+}
+
+impl Conditioning {
+    /// Daily conditioning with one storm state for the whole day, for
+    /// callers that hold a single Kp number rather than the hourly
+    /// record.
+    pub fn daily(essn: f64, kp_max24: Option<f64>) -> Self {
+        Self::Daily {
+            essn,
+            kp_max24: Box::new([kp_max24; 24]),
+        }
+    }
+
+    /// Daily conditioning with the hourly storm record.
+    pub fn daily_by_hour(essn: f64, kp_max24: [Option<f64>; 24]) -> Self {
+        Self::Daily {
+            essn,
+            kp_max24: Box::new(kp_max24),
+        }
+    }
+
+    /// The sunspot number the engine runs at.
+    fn ssn(&self) -> f64 {
+        match self {
+            Self::Climatology { ssn } => *ssn,
+            Self::Daily { essn, .. } => *essn,
+        }
+    }
+
+    /// The storm ratio for one place-hour under this conditioning.
+    fn storm_ratio(&self, month: u32, lat_deg: f64, lon_deg: f64, ut_hour: u8) -> f64 {
+        let Self::Daily { kp_max24, .. } = self else {
+            return 1.0;
+        };
+        let Some(kp) = kp_max24[usize::from(ut_hour) % 24] else {
+            return 1.0;
+        };
+        let bin = stormfit::bin(month, lat_deg, lon_deg, ut_hour, kp);
+        stormfit::correction(&stormfit::FITTED, Some(bin))
+    }
+}
+
+/// One point question.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PointRequest {
+    pub lat_deg: f64,
+    pub lon_deg: f64,
+    pub month: u32,
+    /// UT hour, 0 to 23.
+    pub ut_hour: u8,
+    pub conditioning: Conditioning,
+}
+
+/// One point answer, in ionosonde conventions.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PointAnswer {
+    /// Ordinary-wave F2 critical frequency, MHz.
+    pub fof2_mhz: f64,
+    /// E-layer critical frequency, MHz.
+    pub foe_mhz: f64,
+    /// F2 peak height through Dudeney's corrected form, km.
+    pub hmf2_km: f64,
+    /// The M(3000)F2 propagation factor.
+    pub m3000: f64,
+}
+
+impl PointAnswer {
+    /// MUF over a ground range, from foF2 and the mirror geometry.
+    pub fn muf_at(&self, range_km: f64) -> f64 {
+        self.fof2_mhz * secant_factor(range_km, self.hmf2_km)
+    }
+
+    /// MUF(3000), DIDBase's MUFD convention.
+    pub fn muf3000_mhz(&self) -> f64 {
+        self.fof2_mhz * self.m3000
+    }
+}
+
+/// The raw layer values of one predicted hour, engine conventions.
+/// `f2z` is the extraordinary-wave F2 frequency: the map's foF2 plus
+/// half the gyrofrequency `fh2`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LayerHour {
+    pub fe: f64,
+    pub f2z: f64,
+    pub fh2: f64,
+    pub h2: f64,
+    pub m3000: f64,
+}
+
+/// The engine request for one point's probe path. Values other than the
+/// path and month are fixed choices; the `Parameters` task reads none
+/// of the system fields.
+fn probe_request(lat_deg: f64, lon_deg: f64, month: u32, ssn: f64) -> Request {
+    let site = |suffix: &str, lat: f64| Site {
+        name: format!("probe-{suffix}"),
+        lat_deg: lat,
+        lon_deg,
+    };
+    Request {
+        tx: site("n", lat_deg + PROBE_OFFSET_DEG),
+        rx: site("s", lat_deg - PROBE_OFFSET_DEG),
+        month,
+        year: 2026,
+        ssn,
+        power_watts: 100.0,
+        freqs_mhz: vec![7.1],
+        required_snr_db: 24.0,
+        noise_dbw: 145.0,
+        fof2: FoF2Model::Ccir,
+        layer_multipliers: [1.0, 1.0, 1.0, 1.0],
+        tx_antennas: Vec::new(),
+        rx_antennas: Vec::new(),
+        ionosphere: Ionosphere::default(),
+        model: Model::Compatible,
+    }
+}
+
+/// The raw layer values per UT hour 0..24 over one point. VOACAP's
+/// hours run 1 to 24; hour 24 is the day's midnight and lands in slot
+/// 0. The harness (`src/sonde.rs`) reads the same table, so the two
+/// pipelines cannot disagree about what the engine said.
+pub fn probe_hours(
+    root: &Path,
+    lat_deg: f64,
+    lon_deg: f64,
+    month: u32,
+    ssn: f64,
+) -> Result<Vec<LayerHour>, String> {
+    let req = probe_request(lat_deg, lon_deg, month, ssn);
+    let Report::Parameters(rows) = predict(root, &req, Task::Parameters)? else {
+        return Err("Parameters task answered with a different report".to_string());
+    };
+    let mut by_hour = vec![None; 24];
+    // One row per control point per hour; a probe path has one point,
+    // so this writes each hour once. Indexing keeps the 24-to-0 hour
+    // fold in one place.
+    for row in &rows {
+        by_hour[(row.gmt as usize) % 24] = Some(LayerHour {
+            fe: f64::from(row.fe),
+            f2z: f64::from(row.f2z),
+            fh2: f64::from(row.fh2),
+            h2: f64::from(row.h2),
+            m3000: f64::from(row.m3000),
+        });
+    }
+    by_hour
+        .into_iter()
+        .enumerate()
+        .map(|(hour, slot)| slot.ok_or(format!("no parameters for hour {hour}")))
+        .collect()
+}
+
+/// All 24 hours of one conditioned day over a point.
+pub fn day(
+    root: &Path,
+    lat_deg: f64,
+    lon_deg: f64,
+    month: u32,
+    conditioning: &Conditioning,
+) -> Result<Vec<PointAnswer>, String> {
+    let hours = probe_hours(root, lat_deg, lon_deg, month, conditioning.ssn())?;
+    Ok(hours
+        .iter()
+        .enumerate()
+        .map(|(hour, layer)| {
+            let fof2 = layer.f2z - layer.fh2;
+            let ratio = conditioning.storm_ratio(month, lat_deg, lon_deg, hour as u8);
+            PointAnswer {
+                fof2_mhz: fof2 * ratio,
+                foe_mhz: layer.fe,
+                // The height reads the run's own uncorrected foF2: the
+                // storm ratio is fitted to foF2 alone, and Dudeney's
+                // relation was scored with the run's values.
+                hmf2_km: irtam::hmf2_dudeney(layer.m3000, fof2, layer.fe),
+                m3000: layer.m3000,
+            }
+        })
+        .collect())
+}
+
+/// One conditioned point-hour.
+pub fn point(root: &Path, req: &PointRequest) -> Result<PointAnswer, String> {
+    let answers = day(root, req.lat_deg, req.lon_deg, req.month, &req.conditioning)?;
+    answers
+        .get(usize::from(req.ut_hour) % 24)
+        .copied()
+        .ok_or(format!("no answer for hour {}", req.ut_hour))
+}
+
+/// The obliquity factor for a mirror reflection at `hmf2_km` over a
+/// ground range of `distance_km`, curved earth. MUF(d) = foF2 x this.
+/// At zero range it is exactly 1; at 600 km under a 300 km layer it is
+/// about 1.4 — the small-secant regime where foF2 error dominates.
+pub fn secant_factor(distance_km: f64, hmf2_km: f64) -> f64 {
+    const EARTH_RADIUS_KM: f64 = 6371.0;
+    if distance_km <= 0.0 || hmf2_km <= 0.0 {
+        return 1.0;
+    }
+    let half_angle = distance_km / (2.0 * EARTH_RADIUS_KM);
+    let ratio = EARTH_RADIUS_KM / (EARTH_RADIUS_KM + hmf2_km);
+    let elevation = ((half_angle.cos() - ratio) / half_angle.sin()).atan();
+    let sin_incidence = ratio * elevation.cos();
+    1.0 / (1.0 - sin_incidence * sin_incidence).sqrt()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn straight_up_needs_no_obliquity() {
+        assert_eq!(secant_factor(0.0, 300.0), 1.0);
+    }
+
+    #[test]
+    fn the_factor_matches_the_mirror_geometry() {
+        // 600 km under a 300 km mirror: worked by hand from the curved-
+        // earth construction, about 1.40.
+        let k = secant_factor(600.0, 300.0);
+        assert!((k - 1.397).abs() < 0.01, "k = {k}");
+        // A lower mirror bends more.
+        assert!(secant_factor(600.0, 250.0) > k);
+    }
+
+    #[test]
+    fn the_answer_derives_its_mufs() {
+        let answer = PointAnswer {
+            fof2_mhz: 5.0,
+            foe_mhz: 2.0,
+            hmf2_km: 300.0,
+            m3000: 3.2,
+        };
+        assert_eq!(answer.muf_at(0.0), 5.0);
+        assert!((answer.muf3000_mhz() - 16.0).abs() < 1e-12);
+        assert!(answer.muf_at(600.0) > 5.0);
+    }
+
+    #[test]
+    fn conditioning_without_kp_has_no_storm_ratio() {
+        let daily = Conditioning::daily(80.0, None);
+        assert_eq!(daily.storm_ratio(3, 45.0, 10.0, 13), 1.0);
+        let clim = Conditioning::Climatology { ssn: 80.0 };
+        assert_eq!(clim.storm_ratio(3, 45.0, 10.0, 13), 1.0);
+    }
+
+    #[test]
+    fn a_known_storm_state_reads_the_embedded_table() {
+        let daily = Conditioning::daily(80.0, Some(8.0));
+        let expected = stormfit::FITTED[stormfit::bin(3, 45.0, 10.0, 13, 8.0)];
+        assert_eq!(daily.storm_ratio(3, 45.0, 10.0, 13), expected);
+        // The mid-latitude severe bin is a real fitted value.
+        assert_ne!(expected, 1.0);
+    }
+
+    #[cfg(feature = "embedded-coefficients")]
+    mod with_coefficients {
+        use super::super::*;
+        use crate::voacap::data;
+
+        const JULIUSRUH: (f64, f64) = (54.6, 13.4);
+
+        fn june_day(conditioning: &Conditioning) -> Vec<PointAnswer> {
+            day(
+                &data::embedded_root(),
+                JULIUSRUH.0,
+                JULIUSRUH.1,
+                6,
+                conditioning,
+            )
+            .expect("the embedded root answers")
+        }
+
+        #[test]
+        fn a_day_is_24_finite_plausible_hours() {
+            let answers = june_day(&Conditioning::Climatology { ssn: 80.0 });
+            assert_eq!(answers.len(), 24);
+            for a in &answers {
+                assert!(a.fof2_mhz.is_finite() && a.fof2_mhz > 1.0 && a.fof2_mhz < 20.0);
+                assert!(a.foe_mhz.is_finite() && a.foe_mhz >= 0.0);
+                assert!(a.hmf2_km.is_finite() && a.hmf2_km > 150.0 && a.hmf2_km < 500.0);
+                assert!(a.m3000.is_finite() && a.m3000 > 2.0 && a.m3000 < 4.0);
+            }
+        }
+
+        #[test]
+        fn the_same_question_gets_the_same_answer() {
+            let conditioning = Conditioning::daily(63.0, Some(5.5));
+            assert_eq!(june_day(&conditioning), june_day(&conditioning));
+        }
+
+        #[test]
+        fn a_point_is_its_days_hour() {
+            let conditioning = Conditioning::Climatology { ssn: 80.0 };
+            let answers = june_day(&conditioning);
+            let one = point(
+                &data::embedded_root(),
+                &PointRequest {
+                    lat_deg: JULIUSRUH.0,
+                    lon_deg: JULIUSRUH.1,
+                    month: 6,
+                    ut_hour: 13,
+                    conditioning,
+                },
+            )
+            .expect("the embedded root answers");
+            assert_eq!(one, answers[13]);
+        }
+
+        #[test]
+        fn climatology_is_the_parity_engine_in_sonde_conventions() {
+            // The tripwire: under climatology conditioning, foF2 must be
+            // exactly the parity engine's extraordinary-wave value minus
+            // half the gyrofrequency, and the height exactly Dudeney over
+            // the run's own values. When a later phase replaces the inner
+            // physics, this equality becomes a measured envelope.
+            let hours = probe_hours(&data::embedded_root(), JULIUSRUH.0, JULIUSRUH.1, 6, 80.0)
+                .expect("the embedded root answers");
+            let answers = june_day(&Conditioning::Climatology { ssn: 80.0 });
+            for (layer, answer) in hours.iter().zip(&answers) {
+                assert_eq!(answer.fof2_mhz, layer.f2z - layer.fh2);
+                assert_eq!(answer.foe_mhz, layer.fe);
+                assert_eq!(answer.m3000, layer.m3000);
+                let dudeney =
+                    crate::irtam::hmf2_dudeney(layer.m3000, layer.f2z - layer.fh2, layer.fe);
+                assert_eq!(answer.hmf2_km, dudeney);
+            }
+        }
+
+        #[test]
+        fn daily_fof2_is_linear_in_the_index() {
+            // foF2 is an exact line in the sunspot number (two map
+            // planes, linear blend), so the midpoint index must land on
+            // the midpoint frequency within f32 rounding.
+            let at = |essn: f64| june_day(&Conditioning::daily(essn, None));
+            let (low, mid, high) = (at(0.0), at(50.0), at(100.0));
+            for hour in 0..24 {
+                let expected = (low[hour].fof2_mhz + high[hour].fof2_mhz) / 2.0;
+                assert!(
+                    (mid[hour].fof2_mhz - expected).abs() < 5e-3,
+                    "hour {hour}: {} vs {expected}",
+                    mid[hour].fof2_mhz
+                );
+            }
+        }
+
+        #[test]
+        fn the_storm_ratio_multiplies_the_daily_answer() {
+            let quiet = june_day(&Conditioning::daily(63.0, None));
+            let severe = june_day(&Conditioning::daily(63.0, Some(8.0)));
+            for (hour, (q, s)) in quiet.iter().zip(&severe).enumerate() {
+                let ratio = stormfit::correction(
+                    &stormfit::FITTED,
+                    Some(stormfit::bin(6, JULIUSRUH.0, JULIUSRUH.1, hour as u8, 8.0)),
+                );
+                assert!((s.fof2_mhz - q.fof2_mhz * ratio).abs() < 1e-12);
+                // The height is not storm-corrected.
+                assert_eq!(s.hmf2_km, q.hmf2_km);
+            }
+        }
+    }
+}

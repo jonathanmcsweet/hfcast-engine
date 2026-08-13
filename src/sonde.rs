@@ -22,14 +22,13 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use crate::api::{predict, FoF2Model, Ionosphere, Model, Report, Request, Site, Task};
+use crate::nowcast::api::LayerHour;
 use crate::voacap::data;
 use crate::{essn, giro, irtam, stats, wspr};
 
-/// Half the probe path's latitude span. The path runs from half a degree
-/// north of the station to half a degree south, so its midpoint — the one
-/// control point on a path this short — is the station.
-pub const PROBE_OFFSET_DEG: f64 = 0.5;
+/// The probe geometry and the secant now live with the nowcast API, so
+/// the harness and the deployable pipeline read the same engine table.
+pub use crate::nowcast::api::{secant_factor, PROBE_OFFSET_DEG};
 
 /// NVIS ground ranges scored, in km. Zero is straight up.
 pub const NVIS_RANGES_KM: [f64; 3] = [0.0, 300.0, 600.0];
@@ -63,37 +62,14 @@ pub struct Sample {
     /// (`src/essn.rs`). This is the deployable-skill column: no map of
     /// the scored station's own data stands behind it.
     pub essn: Option<f64>,
+    /// The day's leave-this-station-out index itself — the input the
+    /// essn column and the nowcast `Conditioning::Daily` consume.
+    /// Cached so `sonde --engine nowcast` can replay the deployable
+    /// API against the research columns.
+    pub essn_index: Option<f64>,
 }
 
-/// The engine request for one station's probe path. Values other than the
-/// path and month are the fixed choices every station shares; `Parameters`
-/// reads none of the system fields.
-fn probe_request(meta: &giro::StationMeta, month: u32, ssn: f64) -> Request {
-    let site = |name: &str, lat: f64| Site {
-        name: name.to_string(),
-        lat_deg: lat,
-        lon_deg: meta.lon,
-    };
-    Request {
-        tx: site(&format!("{}-N", meta.ursi), meta.lat + PROBE_OFFSET_DEG),
-        rx: site(&format!("{}-S", meta.ursi), meta.lat - PROBE_OFFSET_DEG),
-        month,
-        year: 2026,
-        ssn,
-        power_watts: 100.0,
-        freqs_mhz: vec![7.1],
-        required_snr_db: 24.0,
-        noise_dbw: 145.0,
-        fof2: FoF2Model::Ccir,
-        layer_multipliers: [1.0, 1.0, 1.0, 1.0],
-        tx_antennas: Vec::new(),
-        rx_antennas: Vec::new(),
-        ionosphere: Ionosphere::default(),
-        model: Model::Compatible,
-    }
-}
-
-/// The four characteristics one hour's `ParRow` predicts, in the bundle's
+/// The four characteristics one predicted hour carries, in the bundle's
 /// names and units.
 ///
 /// The engine's F2 working frequency (`f2z`) is the extraordinary-wave
@@ -103,42 +79,14 @@ fn probe_request(meta: &giro::StationMeta, month: u32, ssn: f64) -> Request {
 /// whole column reads about 0.55 MHz high and the error is the magnetic
 /// field, not the model. MUF(3000) is the ordinary-wave foF2 times the
 /// M(3000)F2 factor, which is DIDBase's MUFD convention.
-fn predicted_chars(fe: f64, f2z: f64, fh2: f64, h2: f64, m3000: f64) -> [(&'static str, f64); 4] {
-    let fof2 = f2z - fh2;
+fn predicted_chars(layer: &LayerHour) -> [(&'static str, f64); 4] {
+    let fof2 = layer.f2z - layer.fh2;
     [
         ("foF2", fof2),
-        ("foE", fe),
-        ("hmF2", h2),
-        ("MUFD", fof2 * m3000),
+        ("foE", layer.fe),
+        ("hmF2", layer.h2),
+        ("MUFD", fof2 * layer.m3000),
     ]
-}
-
-/// Predicted characteristics per UT hour 0..24 for one station and root.
-/// VOACAP's hours run 1 to 24; hour 24 is the day's midnight and lands in
-/// slot 0, which is also where IRTAM's trailing-24-hour fit puts it.
-fn predict_hours(root: &Path, req: &Request) -> Result<Vec<[(&'static str, f64); 4]>, String> {
-    let Report::Parameters(rows) = predict(root, req, Task::Parameters)? else {
-        return Err("Parameters task answered with a different report".to_string());
-    };
-    let mut by_hour = vec![None; 24];
-    // One row per control point per hour; a probe path has one point, so
-    // this writes each hour once. Indexing rather than collecting keeps
-    // the 24-to-0 hour fold in one place.
-    for row in &rows {
-        let hour = (row.gmt as usize) % 24;
-        by_hour[hour] = Some(predicted_chars(
-            f64::from(row.fe),
-            f64::from(row.f2z),
-            f64::from(row.fh2),
-            f64::from(row.h2),
-            f64::from(row.m3000),
-        ));
-    }
-    by_hour
-        .into_iter()
-        .enumerate()
-        .map(|(hour, slot)| slot.ok_or(format!("no parameters for hour {hour}")))
-        .collect()
 }
 
 /// The IRTAM maps of one characteristic present in the bundle, per day.
@@ -234,10 +182,10 @@ pub fn gather(
 /// number, the two map planes for the index fit, and the per-day
 /// assimilated maps.
 struct StationTables {
-    climatology: Vec<[(&'static str, f64); 4]>,
-    plane0: Vec<[(&'static str, f64); 4]>,
-    plane100: Vec<[(&'static str, f64); 4]>,
-    irtam_by_day: BTreeMap<u8, Vec<[(&'static str, f64); 4]>>,
+    climatology: Vec<LayerHour>,
+    plane0: Vec<LayerHour>,
+    plane100: Vec<LayerHour>,
+    irtam_by_day: BTreeMap<u8, Vec<LayerHour>>,
     heights_by_day: BTreeMap<u8, Vec<f64>>,
 }
 
@@ -250,36 +198,37 @@ fn station_tables(
     fof2_maps: &BTreeMap<u8, irtam::IrtamMap>,
     hmf2_maps: &BTreeMap<u8, irtam::IrtamMap>,
 ) -> Result<StationTables, String> {
-    let req = probe_request(&station.meta, month_number, ssn);
-    let climatology = predict_hours(&data::embedded_root(), &req)?;
-    let at_ssn = |value: f64| Request {
-        ssn: value,
-        ..probe_request(&station.meta, month_number, ssn)
+    let probe = |root: &Path, at_ssn: f64| {
+        crate::nowcast::api::probe_hours(
+            root,
+            station.meta.lat,
+            station.meta.lon,
+            month_number,
+            at_ssn,
+        )
     };
-    let plane0 = predict_hours(&data::embedded_root(), &at_ssn(0.0))?;
-    let plane100 = predict_hours(&data::embedded_root(), &at_ssn(100.0))?;
+    let climatology = probe(&data::embedded_root(), ssn)?;
+    let plane0 = probe(&data::embedded_root(), 0.0)?;
+    let plane100 = probe(&data::embedded_root(), 100.0)?;
     let irtam_by_day: BTreeMap<u8, _> = fof2_maps
         .iter()
         .map(|(day, map)| {
             let dir = cache_dir.join(format!("sonde-overlay-{month}-{day:02}"));
-            overlay_for(map, &dir).and_then(|root| predict_hours(&root, &req).map(|h| (*day, h)))
+            overlay_for(map, &dir).and_then(|root| probe(&root, ssn).map(|h| (*day, h)))
         })
         .collect::<Result<_, _>>()?;
     // The hmF2 map goes through the same foF2 slot: the engine's own
     // Jones-Gallet evaluator computes it at the station, and the
     // half-gyrofrequency the engine adds is the same one
-    // `predicted_chars` takes back off, so the "foF2" column of this
+    // `predicted_chars` takes back off, so the "foF2" value of this
     // run is the IRTAM height, unshifted.
     let heights_by_day: BTreeMap<u8, Vec<f64>> = hmf2_maps
         .iter()
         .map(|(day, map)| {
             let dir = cache_dir.join(format!("sonde-overlay-hmf2-{month}-{day:02}"));
             overlay_for(map, &dir).and_then(|root| {
-                predict_hours(&root, &req).map(|hours| {
-                    let heights = hours
-                        .iter()
-                        .filter_map(|slot| value_of(slot, "foF2"))
-                        .collect();
+                probe(&root, ssn).map(|hours| {
+                    let heights = hours.iter().map(|layer| layer.f2z - layer.fh2).collect();
                     (*day, heights)
                 })
             })
@@ -298,8 +247,8 @@ fn station_tables(
 /// its two plane tables.
 fn fof2_solutions(
     station: &giro::StationMonth,
-    plane0: &[[(&'static str, f64); 4]],
-    plane100: &[[(&'static str, f64); 4]],
+    plane0: &[LayerHour],
+    plane100: &[LayerHour],
 ) -> Vec<essn::Solution> {
     let Some(readings) = station.chars.get("foF2") else {
         return Vec::new();
@@ -308,12 +257,14 @@ fn fof2_solutions(
         .flat_map(|day| {
             (0..24u8).filter_map(move |hour| {
                 let observed = giro::at_hour(readings, day, hour)?;
-                let f0 = value_of(&plane0[usize::from(hour)], "foF2")?;
-                let f100 = value_of(&plane100[usize::from(hour)], "foF2")?;
-                essn::solve(observed, f0, f100).map(|value| essn::Solution {
-                    station: station.meta.ursi.clone(),
-                    day,
-                    value,
+                let f0 = plane0[usize::from(hour)];
+                let f100 = plane100[usize::from(hour)];
+                essn::solve(observed, f0.f2z - f0.fh2, f100.f2z - f100.fh2).map(|value| {
+                    essn::Solution {
+                        station: station.meta.ursi.clone(),
+                        day,
+                        value,
+                    }
                 })
             })
         })
@@ -347,29 +298,18 @@ fn station_samples(
                 let index = index_by_day.get(&day).copied().flatten();
                 (0..24u8).filter_map(move |hour| {
                     let observed = giro::at_hour(readings, day, hour)?;
-                    let slot = tables.climatology[usize::from(hour)];
-                    let climatology_value = value_of(&slot, name)?;
-                    let irtam = if name == "hmF2" {
-                        tables
-                            .heights_by_day
-                            .get(&day)
-                            .and_then(|heights| heights.get(usize::from(hour)).copied())
-                    } else {
-                        tables
-                            .irtam_by_day
-                            .get(&day)
-                            .and_then(|hours| value_of(&hours[usize::from(hour)], name))
-                    };
+                    let slot = predicted_chars(&tables.climatology[usize::from(hour)]);
                     Some(Sample {
                         station: station.meta.ursi.clone(),
                         day,
                         hour,
                         characteristic: name.clone(),
                         observed,
-                        climatology: climatology_value,
-                        irtam,
+                        climatology: value_of(&slot, name)?,
+                        irtam: irtam_of(tables, name, day, hour),
                         dudeney: (name == "hmF2").then(|| dudeney_of(&slot)).flatten(),
                         essn: index.and_then(|value| essn_value(tables, name, hour, value)),
+                        essn_index: index,
                     })
                 })
             })
@@ -377,23 +317,34 @@ fn station_samples(
         .collect()
 }
 
+/// The day-informed column value: the IRTAM hmF2 evaluation for the
+/// height rows, the day's IRTAM foF2 run for the rest. None where the
+/// day had no readable map.
+fn irtam_of(tables: &StationTables, name: &str, day: u8, hour: u8) -> Option<f64> {
+    if name == "hmF2" {
+        tables
+            .heights_by_day
+            .get(&day)
+            .and_then(|heights| heights.get(usize::from(hour)).copied())
+    } else {
+        tables
+            .irtam_by_day
+            .get(&day)
+            .and_then(|hours| value_of(&predicted_chars(&hours[usize::from(hour)]), name))
+    }
+}
+
 /// The model at the fitted index, for the frequency rows. foF2 reads its
 /// own line; MUF(3000) is the product of the foF2 line and the factor's
 /// line, each linear in the index. Heights and foE stay out: the index
 /// is fitted to foF2 and would only pretend to inform them.
 fn essn_value(tables: &StationTables, name: &str, hour: u8, index: f64) -> Option<f64> {
-    let plane = |table: &[[(&'static str, f64); 4]], char_name: &str| {
-        value_of(&table[usize::from(hour)], char_name)
-    };
-    let f0 = plane(&tables.plane0, "foF2")?;
-    let f100 = plane(&tables.plane100, "foF2")?;
+    let p0 = tables.plane0[usize::from(hour)];
+    let p100 = tables.plane100[usize::from(hour)];
+    let (f0, f100) = (p0.f2z - p0.fh2, p100.f2z - p100.fh2);
     match name {
         "foF2" => Some(essn::at(f0, f100, index)),
-        "MUFD" => {
-            let m0 = plane(&tables.plane0, "MUFD")? / f0;
-            let m100 = plane(&tables.plane100, "MUFD")? / f100;
-            Some(essn::at(f0, f100, index) * essn::at(m0, m100, index))
-        }
+        "MUFD" => Some(essn::at(f0, f100, index) * essn::at(p0.m3000, p100.m3000, index)),
         _ => None,
     }
 }
@@ -414,25 +365,10 @@ fn value_of(slot: &[(&'static str, f64); 4], name: &str) -> Option<f64> {
         .map(|(_, value)| *value)
 }
 
-/// The obliquity factor for a mirror reflection at `hmf2_km` over a ground
-/// range of `distance_km`, curved earth. MUF(d) = foF2 × this. At zero
-/// range it is exactly 1; at 600 km under a 300 km layer it is about 1.4 —
-/// the small-secant regime where foF2 error dominates the answer.
-pub fn secant_factor(distance_km: f64, hmf2_km: f64) -> f64 {
-    const EARTH_RADIUS_KM: f64 = 6371.0;
-    if distance_km <= 0.0 || hmf2_km <= 0.0 {
-        return 1.0;
-    }
-    let half_angle = distance_km / (2.0 * EARTH_RADIUS_KM);
-    let ratio = EARTH_RADIUS_KM / (EARTH_RADIUS_KM + hmf2_km);
-    let elevation = ((half_angle.cos() - ratio) / half_angle.sin()).atan();
-    let sin_incidence = ratio * elevation.cos();
-    1.0 / (1.0 - sin_incidence * sin_incidence).sqrt()
-}
-
 // ---- cache ----------------------------------------------------------
 
-const CACHE_HEADER: &str = "station,day,hour,char,observed,climatology,irtam,dudeney,essn";
+const CACHE_HEADER: &str =
+    "station,day,hour,char,observed,climatology,irtam,dudeney,essn,essn_index";
 
 fn save_cache(path: &Path, samples: &[Sample]) {
     let column = |value: Option<f64>| value.map(|v| format!("{v:.4}")).unwrap_or_default();
@@ -440,7 +376,7 @@ fn save_cache(path: &Path, samples: &[Sample]) {
         .iter()
         .map(|s| {
             format!(
-                "{},{},{},{},{:.4},{:.4},{},{},{}",
+                "{},{},{},{},{:.4},{:.4},{},{},{},{}",
                 s.station,
                 s.day,
                 s.hour,
@@ -449,7 +385,8 @@ fn save_cache(path: &Path, samples: &[Sample]) {
                 s.climatology,
                 column(s.irtam),
                 column(s.dudeney),
-                column(s.essn)
+                column(s.essn),
+                column(s.essn_index)
             )
         })
         .fold(format!("{CACHE_HEADER}\n"), |mut out, line| {
@@ -476,7 +413,7 @@ fn load_cache(path: &Path) -> Option<Vec<Sample>> {
 
 fn parse_cache_line(line: &str) -> Option<Sample> {
     let fields: Vec<&str> = line.split(',').collect();
-    let [station, day, hour, characteristic, observed, climatology, irtam, dudeney, essn] =
+    let [station, day, hour, characteristic, observed, climatology, irtam, dudeney, essn, essn_index] =
         fields[..]
     else {
         return None;
@@ -498,6 +435,7 @@ fn parse_cache_line(line: &str) -> Option<Sample> {
         irtam: optional(irtam)?,
         dudeney: optional(dudeney)?,
         essn: optional(essn)?,
+        essn_index: optional(essn_index)?,
     })
 }
 
@@ -630,21 +568,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn straight_up_needs_no_obliquity() {
-        assert_eq!(secant_factor(0.0, 300.0), 1.0);
-    }
-
-    #[test]
-    fn the_factor_matches_the_mirror_geometry() {
-        // 600 km under a 300 km mirror: worked by hand from the curved-
-        // earth construction, about 1.40.
-        let k = secant_factor(600.0, 300.0);
-        assert!((k - 1.397).abs() < 0.01, "k = {k}");
-        // A lower mirror bends more.
-        assert!(secant_factor(600.0, 250.0) > k);
-    }
-
-    #[test]
     fn band_calls_land_in_the_right_boxes() {
         let mut calls = BandCalls::default();
         calls.count(8.0, 8.5, 7.1); // both say 40 m works
@@ -678,6 +601,7 @@ mod tests {
                 irtam: None,
                 dudeney: None,
                 essn: None,
+                essn_index: None,
             })
             .collect();
         let refs: Vec<&Sample> = samples.iter().collect();
@@ -699,6 +623,7 @@ mod tests {
                 irtam: Some(4.0 + f64::from(day) * 0.1),
                 dudeney: None,
                 essn: None,
+                essn_index: None,
             })
             .collect();
         let refs: Vec<&Sample> = samples.iter().collect();
@@ -719,6 +644,7 @@ mod tests {
                 irtam: Some(4.8),
                 dudeney: None,
                 essn: Some(5.1),
+                essn_index: Some(52.5),
             },
             Sample {
                 station: "JR055".into(),
@@ -730,6 +656,7 @@ mod tests {
                 irtam: Some(301.0),
                 dudeney: Some(288.2),
                 essn: None,
+                essn_index: None,
             },
         ];
         let dir = std::env::temp_dir().join(format!("sonde-cache-test-{}", std::process::id()));

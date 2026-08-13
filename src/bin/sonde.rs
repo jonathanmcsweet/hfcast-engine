@@ -12,6 +12,8 @@
 //! `--check <dir>` prints what a bundle holds and runs nothing.
 //! `--fit-storm` fits the storm ratio table (`src/stormfit.rs`) from the
 //! given months and prints it as Rust source instead of a report.
+//! `--engine nowcast` replays the nowcast point API over the cached
+//! cells and fails if it disagrees with the research columns.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -19,6 +21,7 @@ use std::process::ExitCode;
 
 use hfcast::geomag::{self, GeomagTable};
 use hfcast::giro::{self, StationMeta};
+use hfcast::nowcast::api::{self as nowcast, Conditioning};
 use hfcast::sonde::{
     self, day_to_day, errors, nvis_cells, secant_factor, BandCalls, Sample, NVIS_BANDS_MHZ,
     NVIS_RANGES_KM, STORM_KP,
@@ -179,6 +182,202 @@ fn fit_storm_report(samples: &[(usize, f64)]) {
     }
 }
 
+/// The essn prediction times the embedded storm ratio. The ratio is
+/// fitted to foF2 and multiplies MUFD identically, since MUFD is the
+/// foF2 line times the factor line. Unknown storm state (no Kp file,
+/// missing lookback days) leaves the prediction alone — exactly what a
+/// deployed device would do. The `--engine nowcast` check replays the
+/// nowcast API against this same function, so the deployable path and
+/// the research column cannot drift apart.
+fn essn_storm_value(
+    s: &Sample,
+    month: &str,
+    table: Option<&GeomagTable>,
+    stations: &BTreeMap<String, StationMeta>,
+) -> Option<f64> {
+    let predicted = s.essn?;
+    let bin = stations
+        .get(&s.station)
+        .zip(year_month(month))
+        .and_then(|(meta, (year, mm))| {
+            let kp = table?.kp_max_lookback(year, mm, s.day, s.hour, 24)?;
+            Some(stormfit::bin(mm, meta.lat, meta.lon, s.hour, kp))
+        });
+    Some(predicted * stormfit::correction(&stormfit::FITTED, bin))
+}
+
+/// The running worst disagreement of one comparison.
+#[derive(Default)]
+struct WorstDelta {
+    max: f64,
+    n: usize,
+}
+
+impl WorstDelta {
+    fn track(&mut self, model: f64, reference: f64) {
+        self.max = self.max.max((model - reference).abs());
+        self.n += 1;
+    }
+
+    fn line(&self, label: &str, tolerance: f64) -> String {
+        let verdict = if self.max <= tolerance { "ok" } else { "FAIL" };
+        format!(
+            "  {label:<24} max |d| {max:.5} over {n} samples, tolerance {tolerance} — {verdict}",
+            max = self.max,
+            n = self.n
+        )
+    }
+
+    fn passes(&self, tolerance: f64) -> bool {
+        self.max <= tolerance
+    }
+}
+
+/// Replays the nowcast point API over every cached cell of the month and
+/// measures the worst disagreement against the research columns. The
+/// climatology comparisons must agree to cache rounding (5e-5: the same
+/// engine run on both sides). The daily comparison crosses two f32
+/// rounding paths — the research column interpolates the answer line
+/// between the two map planes, the API blends coefficients and then
+/// evaluates — which differ by up to about 0.03 MHz where the harmonic
+/// series cancels at night (measured over all eight months). The faults
+/// this check exists for are an order larger: a wrong storm bin moves a
+/// storm hour by about 0.25 MHz, a shifted hour by about 1 MHz.
+fn verify_nowcast(
+    month: &str,
+    samples: &[Sample],
+    table: Option<&GeomagTable>,
+    stations: &BTreeMap<String, StationMeta>,
+) -> bool {
+    const TOL_CLIMATOLOGY: f64 = 1e-3;
+    const TOL_DAILY: f64 = 5e-2;
+    let Some(ssn) = hfcast::wspr::smoothed_ssn(month) else {
+        eprintln!("no smoothed SSN for {month}");
+        return false;
+    };
+    let by_station: BTreeMap<&str, Vec<&Sample>> =
+        samples.iter().fold(BTreeMap::new(), |mut map, s| {
+            map.entry(s.station.as_str()).or_default().push(s);
+            map
+        });
+
+    let mut deltas = NowcastDeltas::default();
+    // A loop over stations: each iteration runs the engine and
+    // accumulates into the trackers, and an engine error ends the check.
+    for (code, rows) in &by_station {
+        let outcome = stations
+            .get(*code)
+            .ok_or(format!("{code} is not in the station list"))
+            .and_then(|meta| check_station(month, ssn, meta, rows, table, stations, &mut deltas));
+        if let Err(e) = outcome {
+            eprintln!("{e}");
+            return false;
+        }
+    }
+
+    println!("\n## {month}: nowcast API against the research columns\n");
+    println!(
+        "{}",
+        deltas.clim_fof2.line("climatology foF2", TOL_CLIMATOLOGY)
+    );
+    println!(
+        "{}",
+        deltas.clim_foe.line("climatology foE", TOL_CLIMATOLOGY)
+    );
+    println!(
+        "{}",
+        deltas
+            .clim_hmf2
+            .line("climatology hmF2/dudeney", TOL_CLIMATOLOGY)
+    );
+    println!(
+        "{}",
+        deltas.daily_fof2.line("daily foF2/essn+storm", TOL_DAILY)
+    );
+    deltas.clim_fof2.passes(TOL_CLIMATOLOGY)
+        && deltas.clim_foe.passes(TOL_CLIMATOLOGY)
+        && deltas.clim_hmf2.passes(TOL_CLIMATOLOGY)
+        && deltas.daily_fof2.passes(TOL_DAILY)
+}
+
+/// The four disagreement trackers of the nowcast check.
+#[derive(Default)]
+struct NowcastDeltas {
+    clim_fof2: WorstDelta,
+    clim_foe: WorstDelta,
+    clim_hmf2: WorstDelta,
+    daily_fof2: WorstDelta,
+}
+
+/// One station's replay: the climatology day against the climatology
+/// and dudeney columns, then each indexed day against the essn+storm
+/// column.
+fn check_station(
+    month: &str,
+    ssn: f64,
+    meta: &StationMeta,
+    rows: &[&Sample],
+    table: Option<&GeomagTable>,
+    stations: &BTreeMap<String, StationMeta>,
+    deltas: &mut NowcastDeltas,
+) -> Result<(), String> {
+    let root = hfcast::voacap::data::embedded_root();
+    let mm = year_month(month).map(|(_, mm)| mm).ok_or("bad month")?;
+    let conditioning = Conditioning::Climatology { ssn };
+    let clim_day = nowcast::day(&root, meta.lat, meta.lon, mm, &conditioning)?;
+    for s in rows {
+        let answer = &clim_day[usize::from(s.hour)];
+        match s.characteristic.as_str() {
+            "foF2" => deltas.clim_fof2.track(answer.fof2_mhz, s.climatology),
+            "foE" => deltas.clim_foe.track(answer.foe_mhz, s.climatology),
+            "hmF2" => {
+                if let Some(dudeney) = s.dudeney {
+                    deltas.clim_hmf2.track(answer.hmf2_km, dudeney);
+                }
+            }
+            _ => {}
+        }
+    }
+    check_station_days(month, meta, rows, table, stations, deltas)
+}
+
+/// The daily half of one station's replay, one engine run per day that
+/// has a fitted index.
+fn check_station_days(
+    month: &str,
+    meta: &StationMeta,
+    rows: &[&Sample],
+    table: Option<&GeomagTable>,
+    stations: &BTreeMap<String, StationMeta>,
+    deltas: &mut NowcastDeltas,
+) -> Result<(), String> {
+    let root = hfcast::voacap::data::embedded_root();
+    let (year, mm) = year_month(month).ok_or("bad month")?;
+    let indexed_days: BTreeMap<u8, f64> = rows
+        .iter()
+        .filter_map(|s| s.essn_index.map(|index| (s.day, index)))
+        .collect();
+    // A loop over days: each iteration is an engine run.
+    for (day, index) in indexed_days {
+        let kp_max24 = std::array::from_fn(|h| {
+            table.and_then(|t| t.kp_max_lookback(year, mm, day, h as u8, 24))
+        });
+        let conditioning = Conditioning::daily_by_hour(index, kp_max24);
+        let daily = nowcast::day(&root, meta.lat, meta.lon, mm, &conditioning)?;
+        for s in rows
+            .iter()
+            .filter(|s| s.day == day && s.characteristic == "foF2")
+        {
+            if let Some(reference) = essn_storm_value(s, month, table, stations) {
+                deltas
+                    .daily_fof2
+                    .track(daily[usize::from(s.hour)].fof2_mhz, reference);
+            }
+        }
+    }
+    Ok(())
+}
+
 fn report(
     month: &str,
     samples: &[Sample],
@@ -197,22 +396,8 @@ fn report(
     let climatology: &dyn Fn(&Sample) -> Option<f64> = &|s| Some(s.climatology);
     let irtam: &dyn Fn(&Sample) -> Option<f64> = &|s| s.irtam;
     let all: &dyn Fn(&Sample) -> bool = &|_| true;
-    // The essn prediction times the embedded storm ratio. The ratio is
-    // fitted to foF2 and multiplies MUFD identically, since MUFD is the
-    // foF2 line times the factor line. Unknown storm state (no Kp file,
-    // missing lookback days) leaves the prediction alone — exactly what
-    // a deployed device would do.
-    let essn_storm: &dyn Fn(&Sample) -> Option<f64> = &|s| {
-        let predicted = s.essn?;
-        let bin = stations
-            .get(&s.station)
-            .zip(year_month(month))
-            .and_then(|(meta, (year, mm))| {
-                let kp = table?.kp_max_lookback(year, mm, s.day, s.hour, 24)?;
-                Some(stormfit::bin(mm, meta.lat, meta.lon, s.hour, kp))
-            });
-        Some(predicted * stormfit::correction(&stormfit::FITTED, bin))
-    };
+    let essn_storm: &dyn Fn(&Sample) -> Option<f64> =
+        &|s| essn_storm_value(s, month, table, stations);
 
     // Loops, not maps: these iterate to print, and the report reads in
     // this order.
@@ -390,6 +575,7 @@ struct Args {
     months: Vec<PathBuf>,
     check_only: bool,
     fit_storm: bool,
+    engine: String,
 }
 
 fn parse_args() -> Args {
@@ -400,6 +586,7 @@ fn parse_args() -> Args {
         months: Vec::new(),
         check_only: false,
         fit_storm: false,
+        engine: "parity".to_string(),
     };
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -411,6 +598,11 @@ fn parse_args() -> Args {
             }
             "--check" => parsed.check_only = true,
             "--fit-storm" => parsed.fit_storm = true,
+            "--engine" => {
+                if let Some(name) = args.next() {
+                    parsed.engine = name;
+                }
+            }
             _ => parsed.months.push(PathBuf::from(arg)),
         }
     }
@@ -435,10 +627,10 @@ fn over_months(args: &Args, consume: &mut dyn FnMut(&str, &[Sample])) -> bool {
 
 fn main() -> ExitCode {
     let args = parse_args();
-    if args.months.is_empty() {
+    if args.months.is_empty() || !matches!(args.engine.as_str(), "parity" | "nowcast") {
         eprintln!(
-            "usage: sonde [--check] [--fit-storm] [--kp data/kp_daily.txt] \
-             [--stations tools/giro-stations.tsv] data/YYYY-MM ..."
+            "usage: sonde [--check] [--fit-storm] [--engine parity|nowcast] \
+             [--kp data/kp_daily.txt] [--stations tools/giro-stations.tsv] data/YYYY-MM ..."
         );
         return ExitCode::FAILURE;
     }
@@ -476,6 +668,17 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
         fit_storm_report(&fit_samples);
+        return ExitCode::SUCCESS;
+    }
+
+    if args.engine == "nowcast" {
+        let mut all_pass = true;
+        if !over_months(&args, &mut |month, samples| {
+            all_pass &= verify_nowcast(month, samples, table.as_ref(), &station_meta);
+        }) || !all_pass
+        {
+            return ExitCode::FAILURE;
+        }
         return ExitCode::SUCCESS;
     }
 

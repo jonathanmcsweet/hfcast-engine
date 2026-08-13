@@ -37,6 +37,7 @@ pub mod irtam;
 pub mod itu;
 pub mod json;
 pub mod listing;
+pub mod nowcast;
 /// Temporary step timers; see `src/perf.rs`.
 pub mod perf;
 pub mod runner;
