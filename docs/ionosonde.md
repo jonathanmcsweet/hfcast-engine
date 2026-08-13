@@ -27,6 +27,11 @@ values per hour. Two model columns so far:
 - **climatology+dudeney** (heights only) — climatology's own M(3000)F2
   through Dudeney's corrected form instead of the engine's plain
   `1490/M - 176`, separating the formula's error from its input's.
+- **essn** (frequency rows only) — one effective sunspot number fitted
+  per day from the day's GIRO foF2 readings, always leaving the scored
+  station out (`src/essn.rs`). Predicted foF2 is exactly linear in the
+  sunspot number, so the fit is a median of closed-form per-sample
+  solutions.
 
 Predicted foF2 is put back on the ionosonde's convention before the
 comparison: the engine's F2 working frequency is the extraordinary wave
@@ -46,18 +51,20 @@ usable this hour — as hit, miss and false-alarm rates.
 
 ## What the eight months say (237,506 samples, 14-22 stations each)
 
-foF2, model minus observed, and the NVIS band calls at 600 km:
+foF2, model minus observed. `essn` is the leave-one-station-out fitted
+daily index — the deployable column; `irtam` is the assimilated-map
+upper bound.
 
-| month | clim bias / MAE (MHz) | irtam MAE | day-to-day (irtam) | calls, clim → both maps |
-| --- | --- | --- | --- | --- |
-| 2015-03 | -0.26 / 0.71 | 0.34 | +0.794 | 92.7% → 96.0% |
-| 2019-06 | +0.38 / 0.49 | 0.28 | +0.493 | 89.9% → 93.2% |
-| 2019-12 | +0.07 / 0.54 | 0.30 | +0.572 | 88.2% → 93.4% |
-| 2022-09 | +0.53 / 0.69 | 0.36 | +0.730 | 91.5% → 95.0% |
-| 2024-12 | +0.86 / 0.96 | 0.39 | +0.757 | 92.0% → 95.6% |
-| 2025-03 | +0.34 / 0.70 | 0.40 | +0.795 | 93.4% → 95.8% |
-| 2025-06 | +0.74 / 0.91 | 0.36 | +0.745 | 89.8% → 94.2% |
-| 2025-07 | +0.59 / 0.75 | 0.32 | +0.751 | 91.3% → 94.7% |
+| month | clim bias / MAE | essn bias / MAE | irtam MAE | day corr: essn / irtam | calls @600, clim → both maps |
+| --- | --- | --- | --- | --- | --- |
+| 2015-03 | -0.26 / 0.71 | +0.00 / 0.58 | 0.34 | +0.390 / +0.794 | 92.7% → 96.0% |
+| 2019-06 | +0.38 / 0.49 | +0.02 / 0.40 | 0.28 | +0.147 / +0.493 | 89.9% → 93.2% |
+| 2019-12 | +0.07 / 0.54 | -0.01 / 0.55 | 0.30 | +0.108 / +0.572 | 88.2% → 93.4% |
+| 2022-09 | +0.53 / 0.69 | +0.00 / 0.51 | 0.36 | +0.462 / +0.730 | 91.5% → 95.0% |
+| 2024-12 | +0.86 / 0.96 | +0.01 / 0.62 | 0.39 | +0.428 / +0.757 | 92.0% → 95.6% |
+| 2025-03 | +0.34 / 0.70 | +0.00 / 0.62 | 0.40 | +0.404 / +0.795 | 93.4% → 95.8% |
+| 2025-06 | +0.74 / 0.91 | -0.01 / 0.57 | 0.36 | +0.164 / +0.745 | 89.8% → 94.2% |
+| 2025-07 | +0.59 / 0.75 | -0.04 / 0.51 | 0.32 | +0.287 / +0.751 | 91.3% → 94.7% |
 
 The climatology day-to-day guard printed +0.000 in every table of every
 month. Findings, in order of consequence:
@@ -68,11 +75,13 @@ month. Findings, in order of consequence:
    minimum where daily variance is smallest. The assimilated map does
    know what the ionosphere did that day; WSPR could not see it.
    (One caveat below.)
-2. **Climatology's foF2 bias moves month by month** — from -0.26 to
-   +0.86 MHz across the eight months, largest near the cycle 25
-   maximum, and larger still on storm days (2025-06: +1.22 MHz). A
-   fixed monthly map cannot remove a bias that moves; a per-day
-   effective index and a storm mode can, and they are the next phase.
+2. **Climatology's foF2 bias moves month by month, and the fitted daily
+   index removes it out of sample.** The bias runs -0.26 to +0.86 MHz
+   across the eight months; the leave-one-station-out index brings it
+   to zero in every month, improves MAE in seven of eight, and carries
+   +0.11 to +0.46 day-to-day skill — strongest exactly where it
+   matters, in the storm months. That skill uses no data from the
+   scored station: it is what a deployed nowcast could really have.
 3. **The +61 km height bias decomposes** (2025-06). Dudeney's corrected
    form over climatology's own inputs removes about 19 km; the rest is
    the M(3000)F2 input itself. IRTAM's height map removes nearly all
@@ -88,9 +97,9 @@ month. Findings, in order of consequence:
 ## Caveats
 
 - **IRTAM assimilates these same stations.** Its columns are mechanism
-  proofs and upper bounds, not deployed-skill claims. Deployable skill
-  needs the leave-one-station-out effective-index fit, which is the next
-  phase's work.
+  proofs and upper bounds, not deployed-skill claims. The deployable
+  number is the essn column, which leaves the scored station out of its
+  own fit.
 - MUFD came back empty from FastChar for every station; the MUF column
   waits for a DIDBGetValues fetch. The secant-derived NVIS MUF stands in
   meanwhile and is conversion-free at range zero.
@@ -100,8 +109,8 @@ month. Findings, in order of consequence:
 
 ## The decision this supports
 
-Build the daily conditioning. The ionosonde ruler shows real, large
-day-level structure that the engine's monthly input misses and that an
-assimilated daily input captures; the open question is no longer
-"is there signal" but "how much survives honest holdout" — which is
-exactly what the effective-index and storm-mode phases measure next.
+Build the daily conditioning into the new pipeline. The signal is real
+(irtam), and enough of it survives honest holdout (essn) to remove the
+moving bias and add day-level skill from live soundings alone. The
+remaining daily-modeling work is the Kp-conditioned storm table, which
+targets the days where both columns show the most structure.

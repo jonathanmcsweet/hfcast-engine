@@ -120,6 +120,10 @@ fn report(month: &str, samples: &[Sample], table: Option<&GeomagTable>) {
             &pairs(samples, characteristic, climatology, all),
         );
         error_row("irtam", &pairs(samples, characteristic, irtam, all));
+        let essn: &dyn Fn(&Sample) -> Option<f64> = &|s| s.essn;
+        if matches!(characteristic, "foF2" | "MUFD") {
+            error_row("essn (holdout)", &pairs(samples, characteristic, essn, all));
+        }
         if characteristic == "hmF2" {
             let dudeney: &dyn Fn(&Sample) -> Option<f64> = &|s| s.dudeney;
             error_row(
@@ -135,6 +139,10 @@ fn report(month: &str, samples: &[Sample], table: Option<&GeomagTable>) {
                 error_row(label, &pairs(samples, characteristic, climatology, keep));
                 let irtam_label = label.replace("climatology", "irtam");
                 error_row(&irtam_label, &pairs(samples, characteristic, irtam, keep));
+                if matches!(characteristic, "foF2" | "MUFD") {
+                    let essn_label = label.replace("climatology", "essn");
+                    error_row(&essn_label, &pairs(samples, characteristic, essn, keep));
+                }
             }
         }
 
@@ -144,9 +152,10 @@ fn report(month: &str, samples: &[Sample], table: Option<&GeomagTable>) {
             .collect();
         let (clim_corr, pairs_n) = day_to_day(&of_char, climatology);
         let (irtam_corr, _) = day_to_day(&of_char, irtam);
+        let (essn_corr, _) = day_to_day(&of_char, essn);
         println!(
             "\nday-to-day: climatology {clim_corr:+.3} (guard: must be +0.000), \
-             irtam {irtam_corr:+.3}, {pairs_n} day pairs"
+             irtam {irtam_corr:+.3}, essn {essn_corr:+.3}, {pairs_n} day pairs"
         );
     }
 
@@ -174,7 +183,7 @@ fn report_nvis(samples: &[Sample]) {
             .iter()
             .map(|c| c.observed_fof2 * secant_factor(range, c.observed_hmf2))
             .collect();
-        let models: [(&str, Vec<Option<f64>>); 4] = [
+        let models: [(&str, Vec<Option<f64>>); 5] = [
             (
                 "climatology",
                 cells
@@ -201,6 +210,19 @@ fn report_nvis(samples: &[Sample]) {
                     .map(|c| {
                         c.irtam_fof2
                             .map(|f| f * secant_factor(range, c.climatology_hmf2))
+                    })
+                    .collect(),
+            ),
+            (
+                // The deployable offline pair: holdout index over the
+                // corrected height form.
+                "essn+dudeney",
+                cells
+                    .iter()
+                    .map(|c| {
+                        c.essn_fof2.map(|f| {
+                            f * secant_factor(range, c.dudeney_hmf2.unwrap_or(c.climatology_hmf2))
+                        })
                     })
                     .collect(),
             ),

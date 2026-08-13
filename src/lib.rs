@@ -29,6 +29,7 @@
 pub mod api;
 pub mod compare;
 pub mod deck;
+pub mod essn;
 pub mod fuzz;
 pub mod geomag;
 pub mod giro;
