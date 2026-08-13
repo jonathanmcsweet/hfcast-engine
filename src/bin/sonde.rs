@@ -28,10 +28,26 @@ use hfcast::sonde::{
 };
 use hfcast::stormfit;
 
+/// How many days the bundle's month really has, so the `--check` view
+/// does not report a complete April as 30 of 31.
+fn days_in_month(name: &str) -> u32 {
+    let Some((year, month)) = year_month(name) else {
+        return 31;
+    };
+    let leap = year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400));
+    match month {
+        4 | 6 | 9 | 11 => 30,
+        2 if leap => 29,
+        2 => 28,
+        _ => 31,
+    }
+}
+
 fn check(dir: &Path) {
     let name = dir.file_name().and_then(|n| n.to_str()).unwrap_or("?");
     let wspr = dir.join("month.txt").is_file();
-    let irtam = (1..=31)
+    let days = days_in_month(name);
+    let irtam = (1..=days)
         .filter(|day| {
             let file = format!(
                 "IRTAM_foF2_COEFFS_{}_234500.ASC",
@@ -49,7 +65,7 @@ fn check(dir: &Path) {
         })
         .unwrap_or(0);
     println!(
-        "{name}: wspr {}, irtam foF2 {irtam}/31 days, giro {giro} stations",
+        "{name}: wspr {}, irtam foF2 {irtam}/{days} days, giro {giro} stations",
         ok(wspr)
     );
 }

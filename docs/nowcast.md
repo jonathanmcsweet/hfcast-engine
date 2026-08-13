@@ -92,6 +92,18 @@ the application's strip sharding and JSON rendering were the loss. The
 per-point physics is unchanged (`portcheck`: 23,040 cells, zero drift
 after the seam).
 
+## The packed answer
+
+`nowcast::packed` is HFB1: the grid planes as one little-endian byte
+body — a 48-byte header (lattice, counts), the frequencies, then the
+reliability, SNR and takeoff planes as raw `f32`, each starting 4-byte
+aligned so a JavaScript consumer can view them as `Float32Array`
+without parsing. A one-band fine globe is about 405 KB against the
+2.2 MB JSON crossing and its 34,560 objects. Point coordinates are
+derived from the header, not stored. The encoder and decoder round-trip
+bit-exactly including NaN; the JNI and application side of the crossing
+is parked with the rest of the app work.
+
 ## What replaces the skeleton
 
 The inner physics will be re-formed for batches next (the

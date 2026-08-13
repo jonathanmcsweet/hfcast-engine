@@ -26,3 +26,4 @@
 
 pub mod api;
 pub mod grid;
+pub mod packed;
