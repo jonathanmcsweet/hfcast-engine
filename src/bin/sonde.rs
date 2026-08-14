@@ -20,6 +20,8 @@
 //! `--ledger` prints one CSV line per month: the most recent day with
 //! samples, scored on its own rows — the live loop's trend line
 //! (`tools/live-check.sh`, `docs/live.md`).
+//! `--daily` prints one CSV line for every day of every month given —
+//! the whole-archive daily comparison (`tools/backfill.sh`).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -240,6 +242,46 @@ fn run_ledger(args: &Args) -> ExitCode {
 /// are the day filling in, not a fault.
 fn ledger_line(samples: &[Sample]) -> Option<String> {
     let day = samples.iter().map(|s| s.day).max()?;
+    day_line(samples, day)
+}
+
+/// The `--daily` mode: every day of every month given, one line each —
+/// the whole-archive daily comparison behind `docs/comparison.md`. The
+/// last column is the day's peak Kp (the storm meter), for storm
+/// marking in whatever reads the file.
+fn run_daily(args: &Args, table: Option<&GeomagTable>) -> ExitCode {
+    println!(
+        "month,day,n_fof2,essn_bias,essn_mae,clim_bias,clim_mae,\
+         essn_index,n_fmin,edge_bias,edge_mae,kp_max"
+    );
+    if !over_months(args, &mut |month, samples| {
+        // The gather probes days 1..=31 whatever the month, and the
+        // last phantom day catches the true last day's final half hour
+        // through the ±30-minute window (roadmap: bound the gather).
+        // The daily view drops it rather than print a June 31.
+        let limit = days_in_month(month) as u8;
+        let days: BTreeSet<u8> = samples
+            .iter()
+            .map(|s| s.day)
+            .filter(|d| *d <= limit)
+            .collect();
+        for day in days {
+            let kp = year_month(month)
+                .and_then(|(y, m)| table?.kp_max_lookback(y, m, day, 23, 24))
+                .map_or(String::new(), |kp| format!("{kp:.1}"));
+            if let Some(line) = day_line(samples, day) {
+                println!("{month},{line},{kp}");
+            }
+        }
+    }) {
+        return ExitCode::FAILURE;
+    }
+    ExitCode::SUCCESS
+}
+
+/// One day scored on its own rows: both engines against the day's
+/// observations, the day's fitted index, and the calibrated edge.
+fn day_line(samples: &[Sample], day: u8) -> Option<String> {
     let rows: Vec<&Sample> = samples.iter().filter(|s| s.day == day).collect();
     let against = |characteristic: &str, pick: &dyn Fn(&Sample) -> Option<f64>| {
         let pairs: Vec<(f64, f64)> = rows
@@ -900,6 +942,7 @@ struct Args {
     fit_storm: bool,
     fit_edge: bool,
     ledger: bool,
+    daily: bool,
     engine: String,
 }
 
@@ -913,6 +956,7 @@ fn parse_args() -> Args {
         fit_storm: false,
         fit_edge: false,
         ledger: false,
+        daily: false,
         engine: "parity".to_string(),
     };
     while let Some(arg) = args.next() {
@@ -927,6 +971,7 @@ fn parse_args() -> Args {
             "--fit-storm" => parsed.fit_storm = true,
             "--fit-edge" => parsed.fit_edge = true,
             "--ledger" => parsed.ledger = true,
+            "--daily" => parsed.daily = true,
             "--engine" => {
                 if let Some(name) = args.next() {
                     parsed.engine = name;
@@ -958,7 +1003,7 @@ fn main() -> ExitCode {
     let args = parse_args();
     if args.months.is_empty() || !matches!(args.engine.as_str(), "parity" | "nowcast") {
         eprintln!(
-            "usage: sonde [--check] [--fit-storm] [--fit-edge] [--ledger] \
+            "usage: sonde [--check] [--fit-storm] [--fit-edge] [--ledger] [--daily] \
              [--engine parity|nowcast] [--kp data/kp_daily.txt] \
              [--stations tools/giro-stations.tsv] data/YYYY-MM ..."
         );
@@ -1025,6 +1070,9 @@ fn fit_mode(
     }
     if args.ledger {
         return Some(run_ledger(args));
+    }
+    if args.daily {
+        return Some(run_daily(args, table));
     }
     None
 }

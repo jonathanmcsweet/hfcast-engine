@@ -19,6 +19,21 @@ names the engine behind it. The comparison below is therefore about
 what the conditioning adds on real days, not about two divergent
 physics.
 
+## Day by day, across the archive
+
+The monthly tables below aggregate; the daily view does not.
+`sonde --daily` prints one CSV line per day — both engines scored
+against that day's own soundings (sample count, bias and MAE for the
+fitted-index model and for climatology, the day's fitted index, the
+calibrated lower edge against fmin, and the day's peak Kp).
+`tools/backfill.sh 2015-01 <now>` builds the month bundles across the
+archive and writes the combined file to `data/daily-comparison.csv`;
+`tools/live-check.sh` extends the same comparison forward every day.
+The span starts at 2015 because the curated station list and the R12
+table (`src/wspr.rs`, now monthly since 2015-01) are solid from
+there; the tooling takes any range, so the span can be extended
+backward by running the same script for earlier years.
+
 ## foF2 against ionosonde truth
 
 237,506 samples, 14-22 stations per month, model minus observed, MHz.

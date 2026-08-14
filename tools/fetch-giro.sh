@@ -7,7 +7,9 @@
 # lowest returned frequency — the absorption proxy the NVIS lower edge
 # scores against). See src/giro.rs for the format and the confidence
 # rules. MUFD has never been served (see docs/roadmap.md); it stays in
-# the list so a service-side change would surface by itself.
+# the default list so a service-side change would surface by itself.
+# GIRO_CHARS overrides the list — the bulk backfill leaves MUFD out to
+# spare the service known-empty requests.
 #
 # GIRO is a research service. This script identifies itself, spaces its
 # requests, fetches archive months once and keeps them (the past does not
@@ -28,6 +30,7 @@ mkdir -p "$out"
 
 base="https://lgdc.uml.edu/fastchar/getbest"
 agent="hfcast-validation (github.com/jonathanmcsweet/hfcast-engine)"
+chars="${GIRO_CHARS:-foF2 foE hmF2 MUFD fmin}"
 
 # First day of the next month, for the range's open end.
 next=$(date -d "${year}-${mm}-01 +1 month" +%Y.%m.01)
@@ -39,7 +42,7 @@ while IFS=$'\t' read -r ursi _name _lat _lon; do
   case "$ursi" in ''|'#'*) continue ;; esac
   stations=$((stations + 1))
   mkdir -p "${out}/${ursi}"
-  for char in foF2 foE hmF2 MUFD fmin; do
+  for char in $chars; do
     dest="${out}/${ursi}/${char}.txt"
     if [ -s "$dest" ]; then
       files=$((files + 1))
