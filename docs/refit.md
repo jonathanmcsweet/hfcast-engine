@@ -115,16 +115,3 @@ Model-selection notes, all judged on the held-out months only:
   points themselves. Six southern stations reaching only −34° cannot
   settle the physics; a deeper southern network could reopen this.
 
-## What changed in the report pipeline
-
-- `HELD_OUT` grew from two months to the eight above; `--fit-storm`
-  now skips held-out months itself instead of trusting the command
-  line.
-- Fit samples drop the phantom day 31 at read time, as `--daily`
-  already did.
-- `--fit-edge` prints per-month median ratios and fits the model;
-  `--daily` and `--ledger` score the edge with the shipped model at
-  each day's own index.
-- Committed report docs were regenerated where read-time corrections
-  moved them (`ionosonde-output.md`: essn+storm and corrected fmin
-  rows only).
