@@ -136,6 +136,14 @@ impl EngineChoice {
 ///
 /// A nowcast request states `"essn"` in place of `"ssn"`; both at once
 /// would disagree about what the run should do, so the pair is refused.
+/// A nowcast request with NO `"essn"` is the offline form: the index is
+/// the embedded sunspot table at the request's year and month plus the
+/// fitted day-of-year correction (`nowcast::api::offline_anomaly`) at
+/// the optional `"day"` (1 to 31; absent, 15, the curve's mid-month
+/// value), plus an optional baked `"sync"` record — an object with
+/// `"anomaly"`, `"month"`, `"day"` and `"daysAgo"` — decayed exactly as
+/// `Conditioning::offline_synced` does. The fits and their held-out
+/// verdicts are in `docs/offline.md`.
 /// Below the floor the synthesis needs a writable `"workDir"` and the
 /// compiled-in root, because the overlay form shadows only the
 /// compiled-in files; a caller with its own overlay directory writes
@@ -160,6 +168,77 @@ fn select_engine(tree: PathBuf, req: &mut Json) -> Result<(PathBuf, EngineChoice
              about what the run should do"
                 .into(),
         );
+    }
+    select_nowcast(tree, req)
+}
+
+/// The offline form's index: the embedded sunspot table at the request's
+/// year and month, the day-of-year correction at the request's `"day"`,
+/// and the optional baked `"sync"` record decayed by its age.
+fn offline_essn(req: &Json) -> Result<f64, String> {
+    let year = req.number("year")? as u32;
+    let month = req.number("month")? as u32;
+    let key = format!("{year:04}-{month:02}");
+    let Some(ssn) = crate::wspr::smoothed_ssn(&key) else {
+        return Err(format!(
+            "the embedded sunspot table has no entry for {key}; pass \"essn\" or \
+             update the engine"
+        ));
+    };
+    let day = match req.get("day") {
+        None => 15,
+        Some(_) => match req.number("day")? as u32 {
+            d @ 1..=31 => d,
+            other => return Err(format!("\"day\" must be 1 to 31, not {other}")),
+        },
+    };
+    let anomaly = crate::nowcast::api::offline_anomaly(month, day);
+    let synced = match req.get("sync") {
+        None => 0.0,
+        Some(sync) => {
+            let record = sync_record(sync)?;
+            let relative =
+                record.anomaly - crate::nowcast::api::offline_anomaly(record.month, record.day);
+            crate::nowcast::api::sync_weight(f64::from(record.days_ago)) * relative
+        }
+    };
+    Ok(ssn + anomaly + synced)
+}
+
+/// The baked `"sync"` object of an offline request.
+fn sync_record(sync: &Json) -> Result<crate::nowcast::api::SyncRecord, String> {
+    let field = |name: &str| sync.number(name).map_err(|e| format!("in \"sync\": {e}"));
+    let month = match field("month")? as u32 {
+        m @ 1..=12 => m,
+        other => return Err(format!("\"sync\" \"month\" must be 1 to 12, not {other}")),
+    };
+    let day = match field("day")? as u32 {
+        d @ 1..=31 => d,
+        other => return Err(format!("\"sync\" \"day\" must be 1 to 31, not {other}")),
+    };
+    let days_ago = field("daysAgo")?;
+    if days_ago < 0.0 {
+        return Err(format!(
+            "\"sync\" \"daysAgo\" must not be negative, got {days_ago}"
+        ));
+    }
+    Ok(crate::nowcast::api::SyncRecord {
+        anomaly: field("anomaly")?,
+        month,
+        day,
+        days_ago: days_ago as u32,
+    })
+}
+
+/// The nowcast half of [`select_engine`]: fill in the offline index if
+/// the request states none, then condition the run on it.
+fn select_nowcast(tree: PathBuf, req: &mut Json) -> Result<(PathBuf, EngineChoice), String> {
+    if req.get("essn").is_none() {
+        let offline = offline_essn(req)?;
+        let Json::Obj(fields) = &mut *req else {
+            return Err("the request must be a JSON object".into());
+        };
+        fields.insert("essn".to_string(), num(offline));
     }
     let essn = req.number("essn")?;
     let (low, high) = crate::essn::ESSN_RANGE;
@@ -983,6 +1062,62 @@ mod tests {
 
     fn parsed(text: &str) -> Json {
         json::parse(text).expect("valid json")
+    }
+
+    #[test]
+    fn an_offline_request_runs_at_the_curve_over_the_shipped_table() {
+        let req = parsed(r#"{"year":2020,"month":6}"#);
+        let expected = crate::wspr::smoothed_ssn("2020-06").expect("a table entry")
+            + crate::nowcast::api::offline_anomaly(6, 15);
+        assert_eq!(offline_essn(&req).expect("offline index"), expected);
+        // A stated day moves along the curve; mid-month is only the default.
+        let dated = parsed(r#"{"year":2020,"month":6,"day":1}"#);
+        let on_day = crate::wspr::smoothed_ssn("2020-06").expect("a table entry")
+            + crate::nowcast::api::offline_anomaly(6, 1);
+        assert_eq!(offline_essn(&dated).expect("offline index"), on_day);
+    }
+
+    #[test]
+    fn an_offline_request_outside_the_table_names_the_problem() {
+        let req = parsed(r#"{"year":1990,"month":6}"#);
+        let err = offline_essn(&req).expect_err("no table entry");
+        assert!(err.contains("sunspot table"), "{err}");
+        let bad_day = parsed(r#"{"year":2020,"month":6,"day":32}"#);
+        let err = offline_essn(&bad_day).expect_err("day out of range");
+        assert!(err.contains("\"day\""), "{err}");
+    }
+
+    #[test]
+    fn a_baked_sync_record_decays_toward_the_curve() {
+        let fresh = parsed(
+            r#"{"year":2020,"month":6,"day":15,
+                "sync":{"anomaly":-30.0,"month":6,"day":14,"daysAgo":1}}"#,
+        );
+        let aged = parsed(
+            r#"{"year":2020,"month":6,"day":15,
+                "sync":{"anomaly":-30.0,"month":6,"day":14,"daysAgo":10000}}"#,
+        );
+        let bare = parsed(r#"{"year":2020,"month":6,"day":15}"#);
+        let (fresh, aged, bare) = (
+            offline_essn(&fresh).expect("fresh"),
+            offline_essn(&aged).expect("aged"),
+            offline_essn(&bare).expect("bare"),
+        );
+        // The record pulls the index toward what it measured, and the
+        // pull fades with age toward the bare curve.
+        assert!((fresh - bare).abs() > (aged - bare).abs());
+        let [_, _, floor] = crate::nowcast::api::SYNC_DECAY;
+        let relative = -30.0 - crate::nowcast::api::offline_anomaly(6, 14);
+        assert!((aged - bare - floor * relative).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_sync_record_with_a_bad_field_is_refused() {
+        let bad = parsed(
+            r#"{"year":2020,"month":6,"sync":{"anomaly":-30.0,"month":13,"day":1,"daysAgo":1}}"#,
+        );
+        let err = offline_essn(&bad).expect_err("bad sync month");
+        assert!(err.contains("\"sync\""), "{err}");
     }
 
     #[test]
