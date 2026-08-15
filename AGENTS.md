@@ -26,6 +26,12 @@ HFcast engine is for both the HFcast application, and also for software engineer
   shipped half recorded in the ledger.
 - When you defer new work, add a roadmap section describing it and why. **Check the ledger before assuming an item is open**
 - Do not create new progress-tracker docs for multi-stage builds without the user asking
+- Work tracking lives ONLY in roadmap.md and roadmap-progress.md. Every
+  other doc exists to explain how something works and show its measured
+  evidence — no requirement narratives ("the maintainer asked ..."),
+  no batch change-logs, no open-work lists. A findings doc may point at
+  the roadmap where open work is tracked, never describe it. Code-change
+  lists belong in commit messages.
 
 ## Core coding principles
 
