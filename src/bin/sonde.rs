@@ -18,6 +18,10 @@
 //! prints the held-out verdict.
 //! `--fit-offline` fits the never-online day-of-year correction curve
 //! (`OFFLINE_ANOMALY_MODEL`) the same way and prints its verdict.
+//! `--fit-sync` fits the sync-decay weight (`SYNC_DECAY`) and prints
+//! the held-out staleness-ladder verdict.
+//! `--sync-record` prints the JSON a build bakes into the app: the
+//! last measured day's index and anomaly for the given month.
 //! `--engine nowcast` replays the nowcast point API over the cached
 //! cells and fails if it disagrees with the research columns.
 //! `--ledger` prints one CSV line per month: the most recent day with
@@ -519,6 +523,239 @@ fn fit_offline_report(months: &[OfflineMonth]) {
             ea / n
         );
     }
+}
+
+/// Days since the civil epoch (1970-01-01) for a Gregorian date, so
+/// sync staleness can be counted across month and year boundaries
+/// without a calendar dependency.
+fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
+    let y = year - i64::from(month <= 2);
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let mp = i64::from((month + 9) % 12);
+    let doy = (153 * mp + 2) / 5 + i64::from(day) - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+/// The staleness buckets the sync decay is fitted over: short lags
+/// resolved finely, the long tail pooled.
+const SYNC_BUCKETS: [(u32, u32); 9] = [
+    (1, 1),
+    (2, 3),
+    (4, 7),
+    (8, 14),
+    (15, 30),
+    (31, 60),
+    (61, 120),
+    (121, 240),
+    (241, 400),
+];
+
+/// The verdict's staleness ladder: how old the baked record is.
+const SYNC_LADDER: [u32; 6] = [0, 7, 30, 90, 180, 365];
+
+/// The `--fit-sync` mode: how fast a synced index loses its value.
+/// Each archive day's curve-relative anomaly (median index minus the
+/// month's R12 minus the offline curve) is paired with the day N back;
+/// one weight per staleness bucket by least squares, then the decay
+/// `a exp(-N/tau) + c` fitted through the buckets (square-root sample
+/// weighting, so the short lags a fresh build lives at are not
+/// swamped by the huge far buckets). The verdict rescores the
+/// held-out months' foF2 samples with the record aged along a
+/// staleness ladder.
+fn run_fit_sync(args: &Args) -> ExitCode {
+    let mut months: Vec<OfflineMonth> = Vec::new();
+    if !over_months(args, &mut |month, samples| {
+        if let Some(m) = offline_month(month, samples) {
+            months.push(m);
+        }
+    }) {
+        return ExitCode::FAILURE;
+    }
+    fit_sync_report(&months);
+    ExitCode::SUCCESS
+}
+
+/// The curve-relative anomaly per epoch day, and whether that day may
+/// enter the fit (held-out and predicted-R12 months are sources for
+/// the verdict but never fit pairs).
+fn sync_series(months: &[OfflineMonth]) -> BTreeMap<i64, (f64, bool)> {
+    months
+        .iter()
+        .filter_map(|m| Some((m, year_month(&m.name)?.0)))
+        .flat_map(|(m, year)| {
+            let fittable = !HELD_OUT.contains(&m.name.as_str())
+                && m.name.as_str() < hfcast::wspr::SSN_PREDICTED_FROM;
+            m.day_indexes.iter().map(move |(day, index)| {
+                let epoch = days_from_civil(i64::from(year), m.month_number, u32::from(*day));
+                let relative =
+                    index - m.r12 - nowcast::offline_anomaly(m.month_number, u32::from(*day));
+                (epoch, (relative, fittable))
+            })
+        })
+        .collect()
+}
+
+/// One bucket's least-squares weight: (bucket midpoint, w, pairs).
+/// Only fittable days pair; the buckets come from `SYNC_BUCKETS`.
+fn sync_bucket_weights(series: &BTreeMap<i64, (f64, bool)>) -> Vec<(f64, f64, f64)> {
+    SYNC_BUCKETS
+        .iter()
+        .map(|(lo, hi)| {
+            let (mut sxy, mut sxx, mut n) = (0.0, 0.0, 0usize);
+            // Nested lag walk: a flat map over (day, lag) would build
+            // the pair list only to fold it away again.
+            for (epoch, (value, fittable)) in series {
+                if !fittable {
+                    continue;
+                }
+                for lag in *lo..=*hi {
+                    if let Some((prev, true)) = series.get(&(epoch - i64::from(lag))) {
+                        sxy += prev * value;
+                        sxx += prev * prev;
+                        n += 1;
+                    }
+                }
+            }
+            let w = if sxx > 0.0 { sxy / sxx } else { 0.0 };
+            (f64::midpoint(f64::from(*lo), f64::from(*hi)), w, n as f64)
+        })
+        .collect()
+}
+
+/// Grid search for the decay `a exp(-N/tau) + c` through the bucket
+/// weights, square-root sample weighting so the short lags a fresh
+/// build lives at are not swamped by the huge far buckets.
+fn fit_sync_decay(buckets: &[(f64, f64, f64)]) -> [f64; 3] {
+    let candidates = (2..=120u32).step_by(2).flat_map(|tau| {
+        (16..=40).flat_map(move |a| {
+            (0..=10).map(move |c| [f64::from(a) / 40.0, f64::from(tau), f64::from(c) / 40.0])
+        })
+    });
+    candidates
+        .filter(|[a, _, c]| a + c <= 1.0)
+        .map(|params| {
+            let [a, tau, c] = params;
+            let err: f64 = buckets
+                .iter()
+                .map(|(mid, w, n)| n.sqrt() * (a * (-mid / tau).exp() + c - w).powi(2))
+                .sum();
+            (err, params)
+        })
+        .min_by(|(e1, _), (e2, _)| e1.total_cmp(e2))
+        .map(|(_, params)| params)
+        .expect("the grid is not empty")
+}
+
+/// One held-out month's verdict row: MAE for climatology, the offline
+/// curve, and the sync record aged along the ladder.
+fn sync_verdict_row(
+    m: &OfflineMonth,
+    year: u32,
+    series: &BTreeMap<i64, (f64, bool)>,
+    weight: &dyn Fn(f64) -> f64,
+) -> String {
+    let mut sums = vec![(0.0, 0usize); 2 + SYNC_LADDER.len()];
+    for (day, obs, clim, essn, index) in &m.fof2 {
+        if (index - m.r12).abs() < OFFLINE_LINE_EPS {
+            continue;
+        }
+        let slope = (essn - clim) / (index - m.r12);
+        let curve = nowcast::offline_anomaly(m.month_number, u32::from(*day));
+        let epoch = days_from_civil(i64::from(year), m.month_number, u32::from(*day));
+        let mut add = |slot: usize, err: Option<f64>| {
+            if let Some(e) = err {
+                sums[slot].0 += e;
+                sums[slot].1 += 1;
+            }
+        };
+        add(0, Some((clim - obs).abs()));
+        add(1, Some((clim + slope * curve - obs).abs()));
+        for (i, lag) in SYNC_LADDER.iter().enumerate() {
+            let aged = series.get(&(epoch - i64::from(*lag))).map(|(relative, _)| {
+                let anomaly = curve + weight(f64::from(*lag)) * relative;
+                (clim + slope * anomaly - obs).abs()
+            });
+            add(2 + i, aged);
+        }
+    }
+    let cells: Vec<String> = sums
+        .iter()
+        .map(|(total, n)| {
+            if *n == 0 {
+                "-".to_string()
+            } else {
+                format!("{:.3}", total / *n as f64)
+            }
+        })
+        .collect();
+    format!(
+        "| {} (held out) | {} | {} |",
+        m.name,
+        sums[0].1,
+        cells.join(" | ")
+    )
+}
+
+fn fit_sync_report(months: &[OfflineMonth]) {
+    let series = sync_series(months);
+    let buckets = sync_bucket_weights(&series);
+    if buckets.iter().all(|(_, _, n)| *n == 0.0) {
+        println!("no fit pairs; nothing to fit");
+        return;
+    }
+    println!("| staleness | fitted w | pairs |");
+    println!("| --- | ---: | ---: |");
+    for ((lo, hi), (_, w, n)) in SYNC_BUCKETS.iter().zip(&buckets) {
+        println!("| {lo}-{hi} days | {w:.3} | {n:.0} |");
+    }
+    let [a, tau, c] = fit_sync_decay(&buckets);
+    println!();
+    println!("pub const SYNC_DECAY: [f64; 3] = [{a}, {tau:.1}, {c}];");
+    let weight = move |days: f64| a * (-days / tau).exp() + c;
+    println!();
+    let header: Vec<String> = SYNC_LADDER.iter().map(|n| format!("sync {n}d")).collect();
+    println!("| month | n | clim | offline | {} |", header.join(" | "));
+    println!(
+        "| --- | ---: | ---: | ---: |{}",
+        " ---: |".repeat(SYNC_LADDER.len())
+    );
+    months
+        .iter()
+        .filter(|m| HELD_OUT.contains(&m.name.as_str()))
+        .filter_map(|m| Some((m, year_month(&m.name)?.0)))
+        .for_each(|(m, year)| println!("{}", sync_verdict_row(m, year, &series, &weight)));
+}
+
+/// The `--sync-record` mode: the JSON a build bakes into the app so a
+/// never-connecting device still starts from a measured day. The last
+/// day with samples in the given month, exactly as the live ledger
+/// scores it; the anomaly is against the embedded smoothed sunspot
+/// table, so the app must ship the same table version.
+fn run_sync_record(args: &Args) -> ExitCode {
+    let mut printed = false;
+    if !over_months(args, &mut |month, samples| {
+        let Some(m) = offline_month(month, samples) else {
+            eprintln!("{month}: no smoothed SSN entry");
+            return;
+        };
+        let Some((day, index)) = m.day_indexes.last() else {
+            eprintln!("{month}: no days with samples");
+            return;
+        };
+        println!(
+            "{{\"date\":\"{}-{:02}\",\"index\":{index:.1},\"anomaly\":{:.1}}}",
+            m.name,
+            day,
+            index - m.r12
+        );
+        printed = true;
+    }) || !printed
+    {
+        return ExitCode::FAILURE;
+    }
+    ExitCode::SUCCESS
 }
 
 /// The `--fit-edge` mode: gather the months, fit, print the verdict.
@@ -1236,6 +1473,8 @@ struct Args {
     fit_storm: bool,
     fit_edge: bool,
     fit_offline: bool,
+    fit_sync: bool,
+    sync_record: bool,
     ledger: bool,
     daily: bool,
     engine: String,
@@ -1251,6 +1490,8 @@ fn parse_args() -> Args {
         fit_storm: false,
         fit_edge: false,
         fit_offline: false,
+        fit_sync: false,
+        sync_record: false,
         ledger: false,
         daily: false,
         engine: "parity".to_string(),
@@ -1263,21 +1504,33 @@ fn parse_args() -> Args {
                     parsed.stations = PathBuf::from(path);
                 }
             }
-            "--check" => parsed.check_only = true,
-            "--fit-storm" => parsed.fit_storm = true,
-            "--fit-edge" => parsed.fit_edge = true,
-            "--fit-offline" => parsed.fit_offline = true,
-            "--ledger" => parsed.ledger = true,
-            "--daily" => parsed.daily = true,
             "--engine" => {
                 if let Some(name) = args.next() {
                     parsed.engine = name;
                 }
             }
-            _ => parsed.months.push(PathBuf::from(arg)),
+            name => match mode_flag(&mut parsed, name) {
+                Some(flag) => *flag = true,
+                None => parsed.months.push(PathBuf::from(arg)),
+            },
         }
     }
     parsed
+}
+
+/// The mode flag a bare argument names, if it is one.
+fn mode_flag<'a>(parsed: &'a mut Args, name: &str) -> Option<&'a mut bool> {
+    match name {
+        "--check" => Some(&mut parsed.check_only),
+        "--fit-storm" => Some(&mut parsed.fit_storm),
+        "--fit-edge" => Some(&mut parsed.fit_edge),
+        "--fit-offline" => Some(&mut parsed.fit_offline),
+        "--fit-sync" => Some(&mut parsed.fit_sync),
+        "--sync-record" => Some(&mut parsed.sync_record),
+        "--ledger" => Some(&mut parsed.ledger),
+        "--daily" => Some(&mut parsed.daily),
+        _ => None,
+    }
 }
 
 /// Gathers every month and hands each to `consume`, stopping on the
@@ -1300,7 +1553,8 @@ fn main() -> ExitCode {
     let args = parse_args();
     if args.months.is_empty() || !matches!(args.engine.as_str(), "parity" | "nowcast") {
         eprintln!(
-            "usage: sonde [--check] [--fit-storm] [--fit-edge] [--fit-offline] [--ledger] [--daily] \
+            "usage: sonde [--check] [--fit-storm] [--fit-edge] [--fit-offline] [--fit-sync] \
+             [--sync-record] [--ledger] [--daily] \
              [--engine parity|nowcast] [--kp data/kp_daily.txt] \
              [--stations tools/giro-stations.tsv] data/YYYY-MM ..."
         );
@@ -1367,6 +1621,12 @@ fn fit_mode(
     }
     if args.fit_offline {
         return Some(run_fit_offline(args));
+    }
+    if args.fit_sync {
+        return Some(run_fit_sync(args));
+    }
+    if args.sync_record {
+        return Some(run_sync_record(args));
     }
     if args.ledger {
         return Some(run_ledger(args));

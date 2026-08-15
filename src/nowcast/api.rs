@@ -75,6 +75,39 @@ pub fn offline_anomaly(month: u32, day: u32) -> f64 {
     c0 + c1 * a.cos() + c2 * a.sin() + c3 * (2.0 * a).cos() + c4 * (2.0 * a).sin()
 }
 
+/// How much of a synced index survives after `days`: `a exp(-N/tau) +
+/// c` over the curve-relative anomaly (`sonde --fit-sync`; fit and
+/// held-out verdict in `docs/offline.md`). Half the value is gone in
+/// about seventeen days; the small floor is the slow memory of the
+/// cycle's current regime, measured real in the two-to-twelve-month
+/// buckets. As the weight falls the conditioning converges onto the
+/// offline curve — a stale record can never do worse than never
+/// having had one.
+pub const SYNC_DECAY: [f64; 3] = [0.575, 24.0, 0.05];
+
+/// The surviving fraction of a sync record `days_ago` days old.
+pub fn sync_weight(days_ago: f64) -> f64 {
+    let [a, tau, c] = SYNC_DECAY;
+    a * (-days_ago.max(0.0) / tau).exp() + c
+}
+
+/// One remembered sync: the fitted daily index the device last saw,
+/// as an anomaly against the shipped smoothed sunspot number of the
+/// sync month, and when that was. Bake one into a build and a device
+/// that never connects still starts from a measured day; let it age
+/// and the conditioning settles onto the offline curve.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SyncRecord {
+    /// Fitted index at sync minus the sync month's shipped ssn.
+    pub anomaly: f64,
+    /// Calendar month of the sync, 1 to 12.
+    pub month: u32,
+    /// Calendar day of the sync month.
+    pub day: u32,
+    /// Whole days between the sync and the day being predicted.
+    pub days_ago: u32,
+}
+
 impl Conditioning {
     /// Daily conditioning with one storm state for the whole day, for
     /// callers that hold a single Kp number rather than the hourly
@@ -96,6 +129,20 @@ impl Conditioning {
     /// seven of the eight held-out months (`docs/offline.md`).
     pub fn offline(shipped_ssn: f64, month: u32, day: u32) -> Self {
         Self::daily(shipped_ssn + offline_anomaly(month, day), None)
+    }
+
+    /// Offline conditioning carrying a remembered sync — from a
+    /// build-time snapshot baked into the app or the device's own
+    /// last connection. The record's value beyond the offline curve
+    /// decays by [`sync_weight`]; at age zero this sits close to the
+    /// live daily index, and as the record ages the answer slides
+    /// smoothly onto [`Conditioning::offline`], never below it
+    /// (`docs/offline.md`).
+    pub fn offline_synced(shipped_ssn: f64, month: u32, day: u32, sync: &SyncRecord) -> Self {
+        let relative = sync.anomaly - offline_anomaly(sync.month, sync.day);
+        let anomaly =
+            offline_anomaly(month, day) + sync_weight(f64::from(sync.days_ago)) * relative;
+        Self::daily(shipped_ssn + anomaly, None)
     }
 
     /// Daily conditioning with the hourly storm record.
@@ -640,6 +687,37 @@ mod tests {
             let c = Conditioning::offline(100.0, 6, 15);
             let expected = Conditioning::daily(100.0 + offline_anomaly(6, 15), None);
             assert_eq!(c, expected);
+        }
+
+        #[test]
+        fn the_sync_weight_decays_onto_its_floor() {
+            assert!(sync_weight(0.0) > sync_weight(7.0));
+            assert!(sync_weight(7.0) > sync_weight(90.0));
+            let [_, _, floor] = SYNC_DECAY;
+            assert!((sync_weight(100_000.0) - floor).abs() < 1e-9);
+            // A nonsense negative age reads as age zero, not a boost.
+            assert_eq!(sync_weight(-5.0), sync_weight(0.0));
+        }
+
+        #[test]
+        fn an_aged_sync_settles_onto_the_offline_conditioning() {
+            let sync = SyncRecord {
+                anomaly: 25.0,
+                month: 3,
+                day: 10,
+                days_ago: 100_000,
+            };
+            let aged = Conditioning::offline_synced(80.0, 6, 15, &sync);
+            let offline = Conditioning::offline(80.0, 6, 15);
+            let (Conditioning::Daily { essn: a, .. }, Conditioning::Daily { essn: b, .. }) =
+                (&aged, &offline)
+            else {
+                panic!("both are daily conditionings");
+            };
+            // Only the fitted floor of the sync weight separates them.
+            let [_, _, floor] = SYNC_DECAY;
+            let relative = 25.0 - offline_anomaly(3, 10);
+            assert!((a - b - floor * relative).abs() < 1e-9, "{a} vs {b}");
         }
 
         #[test]
