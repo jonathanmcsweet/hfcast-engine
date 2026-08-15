@@ -45,6 +45,36 @@ pub enum Conditioning {
     },
 }
 
+/// The never-online index correction as a smooth curve over the day
+/// of year: coefficients of the anomaly (fitted daily index minus the
+/// month's R12) over `[1, cos a, sin a, cos 2a, sin 2a]`,
+/// `a = 2π doy / 365`. Every calendar day gets its own value — no
+/// monthly plateaus — fitted on the 2015-2026 archive's day medians
+/// (`sonde --fit-offline`; fit and held-out verdict in
+/// `docs/offline.md`). The mean term dominates and is negative: the
+/// CCIR maps ask for a lower effective index than the sunspot record
+/// suggests, most of all in active years. A fixed 365-day table of
+/// the index itself, with no sunspot anchor, was measured and
+/// rejected — it cannot follow the solar cycle and loses to the
+/// engine's own climatology four to one.
+pub const OFFLINE_ANOMALY_MODEL: [f64; 5] = [-10.80, -3.47, 2.54, -1.81, 2.08];
+
+/// Day of year on the fit's non-leap folding, 1 to 365. February 29
+/// shares March 1's position — one day of blur against a curve this
+/// smooth.
+fn day_of_year(month: u32, day: u32) -> u32 {
+    const OFFSET: [u32; 12] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+    (OFFSET[(month as usize - 1).min(11)] + day).min(365)
+}
+
+/// The fitted offline correction for one calendar day: what a device
+/// that never goes online adds to its shipped smoothed sunspot number.
+pub fn offline_anomaly(month: u32, day: u32) -> f64 {
+    let a = std::f64::consts::TAU * f64::from(day_of_year(month, day)) / 365.0;
+    let [c0, c1, c2, c3, c4] = OFFLINE_ANOMALY_MODEL;
+    c0 + c1 * a.cos() + c2 * a.sin() + c3 * (2.0 * a).cos() + c4 * (2.0 * a).sin()
+}
+
 impl Conditioning {
     /// Daily conditioning with one storm state for the whole day, for
     /// callers that hold a single Kp number rather than the hourly
@@ -54,6 +84,18 @@ impl Conditioning {
             essn,
             kp_max24: Box::new([kp_max24; 24]),
         }
+    }
+
+    /// Conditioning for a device that never goes online: the month's
+    /// shipped smoothed sunspot number plus the fitted
+    /// [`offline_anomaly`] for that calendar day, no storm record
+    /// (the table stays the identity — a device without a Kp feed can
+    /// honestly do nothing else). Measured against ionosonde truth
+    /// this recovers roughly two fifths of the live daily index's
+    /// advantage over the engine's own climatology, and improved
+    /// seven of the eight held-out months (`docs/offline.md`).
+    pub fn offline(shipped_ssn: f64, month: u32, day: u32) -> Self {
+        Self::daily(shipped_ssn + offline_anomaly(month, day), None)
     }
 
     /// Daily conditioning with the hourly storm record.
@@ -578,6 +620,26 @@ mod tests {
                 edge_fmin_ratio(6, EDGE_INDEX_SPAN.0 - 500.0),
                 edge_fmin_ratio(6, EDGE_INDEX_SPAN.0)
             );
+        }
+
+        #[test]
+        fn the_offline_curve_gives_every_day_its_own_value() {
+            // Day granularity is the contract: adjacent days differ,
+            // and there is no plateau at a month boundary.
+            assert_ne!(offline_anomaly(6, 14), offline_anomaly(6, 15));
+            assert_ne!(offline_anomaly(6, 30), offline_anomaly(7, 1));
+            // The mean term dominates and is negative everywhere on
+            // the curve's fitted span.
+            for month in 1..=12 {
+                assert!(offline_anomaly(month, 15) < 0.0, "month {month}");
+            }
+        }
+
+        #[test]
+        fn offline_conditioning_is_daily_at_the_corrected_index_with_no_storm() {
+            let c = Conditioning::offline(100.0, 6, 15);
+            let expected = Conditioning::daily(100.0 + offline_anomaly(6, 15), None);
+            assert_eq!(c, expected);
         }
 
         #[test]

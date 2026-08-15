@@ -126,6 +126,16 @@ against ionogram fmin across eight months spanning quiet minimum to
 the 2024-05 superstorm, bias within 0.26 MHz of zero in seven of
 the eight. Source: `docs/refit.md` and `sonde --fit-edge`.
 
+## Fully offline, no network ever
+
+The new model does not need the daily feed to beat the parity
+engine. A never-online device runs `Conditioning::offline`: the
+shipped sunspot calendar plus a fitted day-of-year correction curve
+(`docs/offline.md`, 2026-08-15). Scored leave-one-year-out over the
+whole archive it improves foF2 MAE from 0.766 to 0.717 MHz — about
+two fifths of the live daily index's whole advantage, for free — and
+wins in eleven of twelve years, all but 2015.
+
 ## Link level, real radio paths
 
 WSPR reception reports, 150 paths per month, about 525,000

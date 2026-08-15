@@ -190,6 +190,7 @@ pub const SMOOTHED_SSN: &[(&str, f64)] = &[
     ("2025-12", 107.0),
     ("2026-01", 104.2),
     // Predicted (SWPC predicted-solar-cycle, fetched 2026-08-14).
+    // SSN_PREDICTED_FROM marks this boundary; move both together.
     ("2026-02", 102.6),
     ("2026-03", 100.4),
     ("2026-04", 98.3),
@@ -198,6 +199,13 @@ pub const SMOOTHED_SSN: &[(&str, f64)] = &[
     ("2026-07", 95.1),
     ("2026-08", 95.4),
 ];
+
+/// The first `SMOOTHED_SSN` month whose value is a prediction rather
+/// than an observed R12. Fits that compare a measured index against
+/// the table must stop before this month: a "miss" against a
+/// predicted number mixes the model's error with the prediction's.
+/// Kept beside the marker comment in the table; move both together.
+pub const SSN_PREDICTED_FROM: &str = "2026-02";
 
 pub fn smoothed_ssn(month: &str) -> Option<f64> {
     SMOOTHED_SSN

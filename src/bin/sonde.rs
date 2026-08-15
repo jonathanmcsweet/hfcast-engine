@@ -16,6 +16,8 @@
 //! (`EDGE_RATIO_MODEL`: ln ratio over index and season harmonics) on
 //! the given months, leaving the held-out months out of the fit, and
 //! prints the held-out verdict.
+//! `--fit-offline` fits the never-online day-of-year correction curve
+//! (`OFFLINE_ANOMALY_MODEL`) the same way and prints its verdict.
 //! `--engine nowcast` replays the nowcast point API over the cached
 //! cells and fails if it disagrees with the research columns.
 //! `--ledger` prints one CSV line per month: the most recent day with
@@ -365,6 +367,160 @@ fn day_line(month: &str, samples: &[Sample], day: u8) -> Option<String> {
     ))
 }
 
+/// One month's inputs to the offline fit and verdict: the month's
+/// smoothed sunspot number, each day's median fitted index, and every
+/// foF2 sample's own index line for rescoring.
+struct OfflineMonth {
+    name: String,
+    month_number: u32,
+    r12: f64,
+    /// (calendar day, that day's median fitted index).
+    day_indexes: Vec<(u8, f64)>,
+    /// (day, observed, climatology, essn, day index) per foF2 sample.
+    fof2: Vec<(u8, f64, f64, f64, f64)>,
+}
+
+/// Below this distance between a sample's two line points (the day
+/// index and R12), the line is undefined and the sample is scored as
+/// climatology for every model — those days the prediction barely
+/// moves with the index anyway.
+const OFFLINE_LINE_EPS: f64 = 3.0;
+
+fn offline_month(month: &str, samples: &[Sample]) -> Option<OfflineMonth> {
+    let r12 = hfcast::wspr::smoothed_ssn(month)?;
+    let (_, month_number) = year_month(month)?;
+    let limit = days_in_month(month) as u8;
+    let rows: Vec<&Sample> = samples
+        .iter()
+        .filter(|s| s.day <= limit && s.characteristic == "foF2")
+        .collect();
+    let day_indexes: Vec<(u8, f64)> = (1..=limit)
+        .filter_map(|day| {
+            let mut indexes: Vec<f64> = rows
+                .iter()
+                .filter(|s| s.day == day)
+                .filter_map(|s| s.essn_index)
+                .collect();
+            (!indexes.is_empty()).then(|| (day, hfcast::stats::median_in_place(&mut indexes)))
+        })
+        .collect();
+    let fof2 = rows
+        .iter()
+        .filter_map(|s| {
+            let (essn, index) = s.essn.zip(s.essn_index)?;
+            Some((s.day, s.observed, s.climatology, essn, index))
+        })
+        .collect();
+    Some(OfflineMonth {
+        name: month.to_string(),
+        month_number,
+        r12,
+        day_indexes,
+        fof2,
+    })
+}
+
+/// The `--fit-offline` mode: the day-of-year correction curve a
+/// never-online device adds to its shipped smoothed sunspot number —
+/// a distinct value for every calendar day, no monthly plateaus. The
+/// fit: each fit day's (median index minus the month's R12) regressed
+/// on the day-of-year's two harmonics, equal weight per day; months
+/// at or past `wspr::SSN_PREDICTED_FROM` are excluded because their
+/// R12 is itself a prediction. The verdict rescores every foF2 sample
+/// on its own index line (the essn fit's construction: foF2 is linear
+/// in the index) at R12 plus the curve.
+fn run_fit_offline(args: &Args) -> ExitCode {
+    let mut months: Vec<OfflineMonth> = Vec::new();
+    let mut skipped = Vec::new();
+    if !over_months(
+        args,
+        &mut |month, samples| match offline_month(month, samples) {
+            Some(m) => months.push(m),
+            None => skipped.push(month.to_string()),
+        },
+    ) {
+        return ExitCode::FAILURE;
+    }
+    for month in &skipped {
+        eprintln!("{month}: no smoothed SSN entry, not scored");
+    }
+    fit_offline_report(&months);
+    ExitCode::SUCCESS
+}
+
+/// The offline curve's feature row for one calendar day: the shape
+/// `nowcast::api::offline_anomaly` evaluates.
+fn offline_features(month_number: u32, day: u8) -> [f64; 5] {
+    const OFFSET: [u32; 12] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+    let doy = (OFFSET[(month_number as usize - 1).min(11)] + u32::from(day)).min(365);
+    let a = std::f64::consts::TAU * f64::from(doy) / 365.0;
+    [1.0, a.cos(), a.sin(), (2.0 * a).cos(), (2.0 * a).sin()]
+}
+
+fn fit_offline_report(months: &[OfflineMonth]) {
+    let points: Vec<([f64; 5], f64, f64)> = months
+        .iter()
+        .filter(|m| !HELD_OUT.contains(&m.name.as_str()))
+        .filter(|m| m.name.as_str() < hfcast::wspr::SSN_PREDICTED_FROM)
+        .flat_map(|m| {
+            m.day_indexes
+                .iter()
+                .map(|(day, index)| (offline_features(m.month_number, *day), index - m.r12, 1.0))
+        })
+        .collect();
+    if points.is_empty() {
+        println!("no fit days with an observed R12; nothing to fit");
+        return;
+    }
+    let model = least_squares(&points);
+    let coeffs: Vec<String> = model.iter().map(|c| format!("{c:.2}")).collect();
+    println!(
+        "pub const OFFLINE_ANOMALY_MODEL: [f64; 5] = [{}];",
+        coeffs.join(", ")
+    );
+    println!("({} day medians fitted)", points.len());
+    let anomaly_at = |month_number: u32, day: u8| -> f64 {
+        let x = offline_features(month_number, day);
+        model.iter().zip(x).map(|(c, f)| c * f).sum()
+    };
+    println!();
+    println!("| month | n | clim bias / MAE | offline bias / MAE | essn MAE |");
+    println!("| --- | ---: | --- | --- | ---: |");
+    for m in months {
+        let held = if HELD_OUT.contains(&m.name.as_str()) {
+            " (held out)"
+        } else if m.name.as_str() >= hfcast::wspr::SSN_PREDICTED_FROM {
+            " (predicted R12, not fitted)"
+        } else {
+            ""
+        };
+        let n = m.fof2.len() as f64;
+        let (mut cb, mut ca, mut ob, mut oa, mut ea) = (0.0, 0.0, 0.0, 0.0, 0.0);
+        for (day, obs, clim, essn, index) in &m.fof2 {
+            let offline = if (index - m.r12).abs() < OFFLINE_LINE_EPS {
+                *clim
+            } else {
+                clim + (essn - clim) * anomaly_at(m.month_number, *day) / (index - m.r12)
+            };
+            cb += clim - obs;
+            ca += (clim - obs).abs();
+            ob += offline - obs;
+            oa += (offline - obs).abs();
+            ea += (essn - obs).abs();
+        }
+        println!(
+            "| {}{held} | {} | {:+.2} / {:.2} | {:+.2} / {:.2} | {:.2} |",
+            m.name,
+            m.fof2.len(),
+            cb / n,
+            ca / n,
+            ob / n,
+            oa / n,
+            ea / n
+        );
+    }
+}
+
 /// The `--fit-edge` mode: gather the months, fit, print the verdict.
 fn run_fit_edge(args: &Args) -> ExitCode {
     let mut months: Vec<(String, Vec<EdgeRow>)> = Vec::new();
@@ -386,19 +542,19 @@ fn edge_features(month_number: u32, index: f64) -> [f64; 6] {
     [1.0, i, a.cos(), a.sin(), (2.0 * a).cos(), (2.0 * a).sin()]
 }
 
-/// Solves the 6x6 normal equations by Gaussian elimination with
-/// partial pivoting. Small and dense; no library earns its place.
-fn solve6(mut a: [[f64; 6]; 6], mut b: [f64; 6]) -> [f64; 6] {
+/// Solves NxN normal equations by Gaussian elimination with partial
+/// pivoting. Small and dense; no library earns its place.
+fn solve<const N: usize>(mut a: [[f64; N]; N], mut b: [f64; N]) -> [f64; N] {
     // Elimination is inherently sequential row mutation; the
     // functional form would rebuild the matrix per step.
-    for col in 0..6 {
-        let pivot = (col..6)
+    for col in 0..N {
+        let pivot = (col..N)
             .max_by(|p, q| a[*p][col].abs().total_cmp(&a[*q][col].abs()))
             .expect("a pivot row exists");
         a.swap(col, pivot);
         b.swap(col, pivot);
         let pivot_row = a[col];
-        for row in 0..6 {
+        for row in 0..N {
             if row != col && a[row][col] != 0.0 {
                 let f = a[row][col] / pivot_row[col];
                 a[row]
@@ -410,6 +566,22 @@ fn solve6(mut a: [[f64; 6]; 6], mut b: [f64; 6]) -> [f64; 6] {
         }
     }
     std::array::from_fn(|i| b[i] / a[i][i])
+}
+
+/// Fits weighted least squares over N features from (features, value,
+/// weight) points: builds the normal equations and solves them.
+fn least_squares<const N: usize>(points: &[([f64; N], f64, f64)]) -> [f64; N] {
+    let mut normal = [[0.0; N]; N];
+    let mut rhs = [0.0; N];
+    for (x, y, w) in points {
+        for p in 0..N {
+            for q in 0..N {
+                normal[p][q] += w * x[p] * x[q];
+            }
+            rhs[p] += w * x[p] * y;
+        }
+    }
+    solve(normal, rhs)
 }
 
 /// One station-day's accumulating (ratios, indexes) under the edge fit.
@@ -450,17 +622,7 @@ fn fit_edge_report(months: &[(String, Vec<EdgeRow>)]) {
         println!("no fmin rows outside the held-out months; nothing to fit");
         return;
     }
-    let mut normal = [[0.0; 6]; 6];
-    let mut rhs = [0.0; 6];
-    for (x, y, w) in &points {
-        for p in 0..6 {
-            for q in 0..6 {
-                normal[p][q] += w * x[p] * x[q];
-            }
-            rhs[p] += w * x[p] * y;
-        }
-    }
-    let model = solve6(normal, rhs);
+    let model = least_squares(&points);
     let coeffs: Vec<String> = model.iter().map(|c| format!("{c:.6}")).collect();
     println!(
         "pub const EDGE_RATIO_MODEL: [f64; 6] = [{}];",
@@ -1073,6 +1235,7 @@ struct Args {
     check_only: bool,
     fit_storm: bool,
     fit_edge: bool,
+    fit_offline: bool,
     ledger: bool,
     daily: bool,
     engine: String,
@@ -1087,6 +1250,7 @@ fn parse_args() -> Args {
         check_only: false,
         fit_storm: false,
         fit_edge: false,
+        fit_offline: false,
         ledger: false,
         daily: false,
         engine: "parity".to_string(),
@@ -1102,6 +1266,7 @@ fn parse_args() -> Args {
             "--check" => parsed.check_only = true,
             "--fit-storm" => parsed.fit_storm = true,
             "--fit-edge" => parsed.fit_edge = true,
+            "--fit-offline" => parsed.fit_offline = true,
             "--ledger" => parsed.ledger = true,
             "--daily" => parsed.daily = true,
             "--engine" => {
@@ -1135,7 +1300,7 @@ fn main() -> ExitCode {
     let args = parse_args();
     if args.months.is_empty() || !matches!(args.engine.as_str(), "parity" | "nowcast") {
         eprintln!(
-            "usage: sonde [--check] [--fit-storm] [--fit-edge] [--ledger] [--daily] \
+            "usage: sonde [--check] [--fit-storm] [--fit-edge] [--fit-offline] [--ledger] [--daily] \
              [--engine parity|nowcast] [--kp data/kp_daily.txt] \
              [--stations tools/giro-stations.tsv] data/YYYY-MM ..."
         );
@@ -1199,6 +1364,9 @@ fn fit_mode(
     }
     if args.fit_edge {
         return Some(run_fit_edge(args));
+    }
+    if args.fit_offline {
+        return Some(run_fit_offline(args));
     }
     if args.ledger {
         return Some(run_ledger(args));
