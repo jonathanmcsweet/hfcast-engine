@@ -2,15 +2,45 @@
 
 ## Your behavior
 
-- Speak to me in ASD-STE100 Simplified Technical English
-- Write documentation in ASD-STE100 Simplified Technical English
-- Be concise, articulate with your language in interactions and avoid idioms that may confuse people who don't know what they mean. Use simple language
+- Never modify this document without consulting the user first
+- Explain things in concise, plain english free of technical jargon.
+- Use technical terms accurate to the domain terms in the codebase
+- When making technical decisions, do not give weight to development cost or development hours. Instead prefer readability, quality, simplicity, robustness, scalability, testability, and long term maintainability
+- when writting commit messages, be extremely concise. Favor concision over proper grammar.
+
+## Who the users are
+
+HFcast engine is for both the HFcast application, and also for software engineers that want to build on it. HFcast is for amateur radio operators who use both new and old, cheap, low-power Android devices as assistants. Many operate in the field: field days, hikes, portable stations, etc. An old Fire HD 7 is a real target device and so high performance and high efficiency are important here.
 
 ## Open work and progress
 
-Open work is tracked by the maintainer outside this repository. Do not
-create tracker or progress documents. If you defer work or find a gap,
-describe it in the pull request and the maintainer will record it.
+`docs/roadmap.md` is the SINGLE SOURCE of open work — deferred features and known gaps, each with the constraint that motivated deferral. It must survive a compacted or cleared session, so keep it current instead of holding state in your head:
+
+- At the start of a task, read the roadmap to see current status; at the end,update it so the next agent (or the next session) picks up an accurate picture.
+- When you finish a roadmap item, record it in **`docs/roadmap-progress.md`**
+  (the completions ledger: date, section title, version, branch, short
+  as-built note) and DELETE the finished section from roadmap.md
+- NO completion notes, RESOLVED markers, or progress pointers
+  in roadmap.md, ever
+- it holds only open work. A partially finished item keeps a section describing only what is still open, with the
+  shipped half recorded in the ledger.
+- When you defer new work, add a roadmap section describing it and why. **Check the ledger before assuming an item is open**
+- Do not create new progress-tracker docs for multi-stage builds without the user asking
+- Work tracking lives ONLY in roadmap.md and roadmap-progress.md. Every
+  other doc exists to explain how something works and show its measured
+  evidence — no requirement narratives ("the maintainer asked ..."),
+  no batch change-logs, no open-work lists. A findings doc may point at
+  the roadmap where open work is tracked, never describe it. Code-change
+  lists belong in commit messages.
+
+## Core coding principles
+
+- Always use a function-first immutability-first coding style unless the developer approves of you not doing so
+- Use pure functional programming style unless the developer approves of you not doing so. A function is pure when:
+  1. the function return values are identical for identical arguments (no variation with local static variables, non-local variables, mutable reference arguments or input streams, i.e., referential transparency), and
+  2. the function has no side effects (no mutation of non-local variables, mutable reference arguments or input/output streams).
+- Effects that cannot be avoided belong at the edges of the code
+- Use the DRY principle (reducing redundancy by ensuring that every piece of knowledge has a single, authoritative representation in a system) unless the excess abstraction complicates the code by creating unnecessary layers that make it harder to understand, modify, test.
 
 ## Build and verify
 

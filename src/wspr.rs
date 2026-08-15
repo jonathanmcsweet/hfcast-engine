@@ -47,19 +47,165 @@ pub type PathKey = (String, String, i32);
 /// Deliberately a table rather than a fetch: R12 for a past month never
 /// changes once published, and a validation run should not depend on a
 /// network service being up or on which day it was run.
+///
+/// Months at the end marked predicted are for the live loop
+/// (`tools/live-check.sh`): R12 is a 13-month smooth, so the current
+/// month cannot have an observed value yet. SWPC's predicted value
+/// stands in and is replaced when the observed one lands. The daily
+/// index fit does not depend on this number (foF2 is linear in the
+/// index, so the fit finds its own level); only the climatology
+/// column's own score reads it.
 pub const SMOOTHED_SSN: &[(&str, f64)] = &[
+    ("2015-01", 89.3),
+    ("2015-02", 86.1),
     ("2015-03", 82.1),
+    ("2015-04", 78.9),
+    ("2015-05", 76.1),
+    ("2015-06", 72.1),
+    ("2015-07", 68.3),
+    ("2015-08", 66.4),
+    ("2015-09", 65.9),
+    ("2015-10", 64.3),
+    ("2015-11", 61.2),
+    ("2015-12", 57.8),
+    ("2016-01", 54.4),
+    ("2016-02", 52.5),
+    ("2016-03", 50.4),
+    ("2016-04", 47.8),
+    ("2016-05", 44.8),
+    ("2016-06", 41.5),
+    ("2016-07", 38.5),
+    ("2016-08", 36.0),
+    ("2016-09", 33.2),
+    ("2016-10", 31.5),
+    ("2016-11", 29.9),
+    ("2016-12", 28.5),
+    ("2017-01", 27.8),
+    ("2017-02", 26.5),
+    ("2017-03", 25.7),
+    ("2017-04", 24.8),
+    ("2017-05", 23.3),
+    ("2017-06", 22.2),
+    ("2017-07", 21.0),
+    ("2017-08", 19.6),
+    ("2017-09", 18.3),
+    ("2017-10", 16.7),
+    ("2017-11", 15.4),
+    ("2017-12", 15.1),
+    ("2018-01", 14.2),
+    ("2018-02", 12.6),
+    ("2018-03", 9.9),
+    ("2018-04", 7.8),
+    ("2018-05", 7.5),
+    ("2018-06", 7.2),
+    ("2018-07", 7.0),
+    ("2018-08", 6.7),
+    ("2018-09", 6.5),
+    ("2018-10", 6.8),
+    ("2018-11", 6.7),
+    ("2018-12", 6.0),
+    ("2019-01", 5.4),
+    ("2019-02", 5.0),
+    ("2019-03", 4.6),
+    ("2019-04", 4.3),
+    ("2019-05", 3.9),
     ("2019-06", 3.7),
+    ("2019-07", 3.5),
+    ("2019-08", 3.4),
+    ("2019-09", 3.1),
+    ("2019-10", 2.6),
+    ("2019-11", 2.0),
     ("2019-12", 1.8),
+    ("2020-01", 2.2),
+    ("2020-02", 2.7),
+    ("2020-03", 3.0),
+    ("2020-04", 3.6),
+    ("2020-05", 5.6),
+    ("2020-06", 7.9),
+    ("2020-07", 9.0),
+    ("2020-08", 9.5),
+    ("2020-09", 10.5),
+    ("2020-10", 11.9),
+    ("2020-11", 13.6),
+    ("2020-12", 15.3),
+    ("2021-01", 17.3),
+    ("2021-02", 19.0),
+    ("2021-03", 21.7),
+    ("2021-04", 24.8),
+    ("2021-05", 25.8),
+    ("2021-06", 27.6),
+    ("2021-07", 31.4),
+    ("2021-08", 35.4),
+    ("2021-09", 40.2),
+    ("2021-10", 45.2),
+    ("2021-11", 50.8),
+    ("2021-12", 55.9),
+    ("2022-01", 60.1),
+    ("2022-02", 64.7),
+    ("2022-03", 68.7),
+    ("2022-04", 73.0),
+    ("2022-05", 77.4),
+    ("2022-06", 81.1),
+    ("2022-07", 86.7),
+    ("2022-08", 92.6),
     ("2022-09", 96.5),
+    ("2022-10", 98.9),
+    ("2022-11", 101.2),
+    ("2022-12", 106.7),
+    ("2023-01", 113.3),
+    ("2023-02", 117.8),
+    ("2023-03", 121.1),
+    ("2023-04", 122.9),
+    ("2023-05", 124.2),
+    ("2023-06", 125.3),
+    ("2023-07", 124.6),
+    ("2023-08", 124.3),
+    ("2023-09", 124.0),
+    ("2023-10", 124.8),
+    ("2023-11", 127.9),
+    ("2023-12", 129.5),
+    ("2024-01", 131.2),
+    ("2024-02", 136.9),
+    ("2024-03", 141.4),
+    ("2024-04", 144.4),
+    ("2024-05", 149.1),
+    ("2024-06", 152.8),
+    ("2024-07", 155.0),
+    ("2024-08", 156.8),
+    ("2024-09", 159.4),
+    ("2024-10", 160.9),
+    ("2024-11", 157.2),
     ("2024-12", 151.2),
+    ("2025-01", 146.2),
+    ("2025-02", 139.8),
     ("2025-03", 135.9),
-    ("2025-04", 133.4),
+    ("2025-04", 133.3),
     ("2025-05", 128.6),
     ("2025-06", 124.7),
     ("2025-07", 122.5),
     ("2025-08", 118.4),
+    ("2025-09", 113.1),
+    ("2025-10", 108.5),
+    ("2025-11", 106.9),
+    ("2025-12", 107.0),
+    ("2026-01", 104.2),
+    // Predicted (SWPC predicted-solar-cycle, fetched 2026-08-14).
+    // SSN_PREDICTED_FROM marks this boundary; move both together.
+    ("2026-02", 102.6),
+    ("2026-03", 100.4),
+    ("2026-04", 98.3),
+    ("2026-05", 97.1),
+    ("2026-06", 97.5),
+    ("2026-07", 95.1),
+    ("2026-08", 95.4),
 ];
+
+/// The first `SMOOTHED_SSN` month whose value is a prediction rather
+/// than an observed R12. Fits that compare a measured index against
+/// the table must stop before this month: a "miss" against a
+/// predicted number mixes the model's error with the prediction's.
+/// Kept beside the marker comment in the table; move both together.
+pub const SSN_PREDICTED_FROM: &str = "2026-02";
 
 pub fn smoothed_ssn(month: &str) -> Option<f64> {
     SMOOTHED_SSN
@@ -278,6 +424,95 @@ pub fn parse_daily(text: &str) -> HashMap<PathKey, Vec<DailySample>> {
 /// Loads `daily.csv` from a month directory.
 pub fn load_daily(dir: &Path) -> io::Result<HashMap<PathKey, Vec<DailySample>>> {
     Ok(parse_daily(&fs::read_to_string(dir.join("daily.csv"))?))
+}
+
+// ---- link-level scoring ----------------------------------------------
+//
+// The conventions of docs/irtam.md, shared so every daily-model study
+// scores the same way: absolute error after one offset per path (the
+// station's antennas and local noise are unknown but constant), and
+// day-to-day deviations from each path-hour's own monthly median (where
+// a model that never varies by day scores exactly zero).
+
+/// One scored model value against one observed path-day-hour.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Scored {
+    /// Path identity: an index into the month's path list.
+    pub path: usize,
+    pub day: u8,
+    pub hour: u8,
+    pub observed: f64,
+    pub predicted: f64,
+}
+
+/// Median absolute error after removing one offset per path, dB.
+pub fn offset_adjusted_mae(samples: &[Scored]) -> f64 {
+    let mut by_path: HashMap<usize, Vec<f64>> = HashMap::new();
+    for s in samples {
+        by_path
+            .entry(s.path)
+            .or_default()
+            .push(s.observed - s.predicted);
+    }
+    let offsets: HashMap<usize, f64> = by_path
+        .into_iter()
+        .map(|(p, mut residuals)| (p, crate::stats::median_in_place(&mut residuals)))
+        .collect();
+    let mut errors: Vec<f64> = samples
+        .iter()
+        .map(|s| (s.observed - s.predicted - offsets[&s.path]).abs())
+        .collect();
+    crate::stats::median_in_place(&mut errors)
+}
+
+/// One deviation pair: how far the day sat from its path-hour's monthly
+/// median, observed and as the model predicted.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DeviationPair {
+    pub path: usize,
+    pub day: u8,
+    pub hour: u8,
+    pub observed: f64,
+    pub predicted: f64,
+}
+
+/// Deviations of observation and model from their own per-path-hour
+/// monthly medians, over path-hours with at least five scored days.
+pub fn deviations(samples: &[Scored]) -> Vec<DeviationPair> {
+    let mut obs_by_hour: HashMap<(usize, u8), Vec<f64>> = HashMap::new();
+    let mut pred_by_hour: HashMap<(usize, u8), Vec<f64>> = HashMap::new();
+    for s in samples {
+        obs_by_hour
+            .entry((s.path, s.hour))
+            .or_default()
+            .push(s.observed);
+        pred_by_hour
+            .entry((s.path, s.hour))
+            .or_default()
+            .push(s.predicted);
+    }
+    let centre = |m: &HashMap<(usize, u8), Vec<f64>>| -> HashMap<(usize, u8), f64> {
+        m.iter()
+            .filter(|(_, v)| v.len() >= 5)
+            .map(|(k, v)| (*k, crate::stats::median(v)))
+            .collect()
+    };
+    let obs_centre = centre(&obs_by_hour);
+    let pred_centre = centre(&pred_by_hour);
+    samples
+        .iter()
+        .filter_map(|s| {
+            let key = (s.path, s.hour);
+            let (oc, pc) = (obs_centre.get(&key)?, pred_centre.get(&key)?);
+            Some(DeviationPair {
+                path: s.path,
+                day: s.day,
+                hour: s.hour,
+                observed: s.observed - oc,
+                predicted: s.predicted - pc,
+            })
+        })
+        .collect()
 }
 
 pub fn parse_hourly(text: &str) -> HashMap<PathKey, HourlySnr> {

@@ -21,6 +21,13 @@ pub struct DayGeomag {
     pub kp: [f64; 8],
     /// Daily equivalent amplitude, the whole-day summary.
     pub ap: f64,
+    /// International sunspot number for the day, when the file has one.
+    /// The record starts in 1932 but this column is marked absent (-1) on
+    /// some days, so a day with good Kp is kept and this is None.
+    pub sn: Option<f64>,
+    /// Adjusted 10.7 cm solar flux for the day, when the file has one.
+    /// Absent before 1947 and on marked days, same rule as `sn`.
+    pub f107_adj: Option<f64>,
 }
 
 impl DayGeomag {
@@ -106,7 +113,26 @@ pub fn parse(text: &str) -> GeomagTable {
         if ap < 0.0 || kp.iter().any(|k| *k < 0.0) {
             continue;
         }
-        table.days.insert(day_key, DayGeomag { kp, ap });
+        // Sunspot number and adjusted F10.7 sit after the daily Ap. They are
+        // marked -1 on days that have none (all of them before 1947 for the
+        // flux), and a day with good Kp is still a good day for the storm
+        // work, so absence here does not drop the line.
+        let present = |field: Option<&&str>| {
+            field
+                .and_then(|f| f.parse::<f64>().ok())
+                .filter(|value| *value >= 0.0)
+        };
+        let sn = present(fields.get(24));
+        let f107_adj = present(fields.get(26));
+        table.days.insert(
+            day_key,
+            DayGeomag {
+                kp,
+                ap,
+                sn,
+                f107_adj,
+            },
+        );
         table.index.insert((year, month, day), day_key);
     }
     table
@@ -139,6 +165,28 @@ mod tests {
         assert!((storm.kp_at_hour(7) - 7.667).abs() < 1e-9);
         let quiet = table.get(2025, 6, 4).expect("quiet day present");
         assert_eq!(quiet.ap, 6.0);
+    }
+
+    #[test]
+    fn carries_the_solar_columns_when_the_file_has_them() {
+        let table = parse(SAMPLE);
+        let storm = table.get(2025, 6, 1).expect("storm day present");
+        assert_eq!(storm.sn, Some(124.0));
+        assert_eq!(storm.f107_adj, Some(154.6));
+    }
+
+    #[test]
+    fn a_day_with_kp_but_no_flux_is_kept_without_flux() {
+        // Before 1947 the flux column is -1 while Kp is real. Dropping the
+        // day would remove valid storm history; dropping only the flux is
+        // the honest reading.
+        let early = "\
+1933 01 02     1     1.5  818 15  1.000  1.000  1.667  2.000  2.333  2.667  2.000  1.667    4    4    6    7    9   12    7    6    6 33     -1.0     -1.0 2
+";
+        let table = parse(early);
+        let day = table.get(1933, 1, 2).expect("day with Kp present");
+        assert_eq!(day.sn, Some(33.0));
+        assert_eq!(day.f107_adj, None);
     }
 
     #[test]

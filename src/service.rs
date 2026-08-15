@@ -12,6 +12,14 @@
 //! `"itshfbc": "<embedded>"`, or `"<embedded>+/some/cache"` to have one
 //! directory searched first. See [`crate::voacap::data`].
 //!
+//! The request may also name its `"engine"`: `"voacap"` (the default —
+//! an old request predicts exactly what it always did) or `"nowcast"`,
+//! which runs the same physics conditioned on a fitted daily index
+//! (`"essn"` in place of `"ssn"`; see [`select_engine`]). Every answer
+//! carries an `"engine"` field naming which model stands behind it, so
+//! an application can offer the choice as a user preference and show
+//! the provenance.
+//!
 //! ## Why it renders a listing and reads it back
 //!
 //! The server has always consumed *printed* values: reliability to
@@ -32,11 +40,13 @@ use std::path::PathBuf;
 
 use crate::api::{listing, FoF2Model, Ionosphere, Model, Request, Site, Task};
 use crate::deck::AntennaChoice;
+use crate::irtam;
 use crate::json::{self, num, obj, Json};
 use crate::listing::{parse_listing, parse_muf_table, MUF_ROW, MUF_SLOT};
 use crate::runner::itshfbc_dir;
 use crate::voacap::area::{Grid, Projection};
 use crate::voacap::con::R;
+use crate::voacap::data;
 use crate::voacap::run::{
     run_area, run_area_daily_median, AntennaCardSpec, AreaFreq, AreaInputs, AreaMedian, AreaPoint,
 };
@@ -58,17 +68,21 @@ const ROWS: [(&str, &str); 5] = [
 ];
 
 pub fn run(input: &str) -> Result<String, String> {
-    let req = json::parse(input)?;
+    let mut req = json::parse(input)?;
     let tree = match req.get("itshfbc").and_then(Json::as_str) {
         Some(path) => PathBuf::from(path),
         None => itshfbc_dir(),
     };
+    let (tree, engine) = select_engine(tree, &mut req)?;
 
     // Two shapes of answer from one binary. A point-to-point run is the
     // default and stays the bare object it has always been, so nothing
     // that already calls this has to learn a new field.
     if req.get("mode").and_then(Json::as_str) == Some("area") {
-        let tree_json = area(&tree, &req)?;
+        let mut tree_json = area(&tree, &req)?;
+        if let Json::Obj(fields) = &mut tree_json {
+            fields.insert("engine".to_string(), Json::Str(engine.name().to_string()));
+        }
         let _perf = crate::perf::Step::new(crate::perf::WRITE);
         return Ok(tree_json.write());
     }
@@ -89,8 +103,102 @@ pub fn run(input: &str) -> Result<String, String> {
         for (key, value) in operating_window(&window) {
             fields.insert(key.to_string(), value);
         }
+        fields.insert("engine".to_string(), Json::Str(engine.name().to_string()));
     }
     Ok(out.write())
+}
+
+/// Which engine answers a request: the parity port as shipped, or the
+/// nowcast daily conditioning over the same physics.
+#[derive(Clone, Copy)]
+enum EngineChoice {
+    Voacap,
+    Nowcast,
+}
+
+impl EngineChoice {
+    /// The name the answer carries, so a consumer can show which model
+    /// stands behind the numbers.
+    fn name(self) -> &'static str {
+        match self {
+            EngineChoice::Voacap => "voacap",
+            EngineChoice::Nowcast => "nowcast",
+        }
+    }
+}
+
+/// Reads the request's `"engine"` choice and turns a nowcast choice into
+/// inputs the unchanged pipeline understands: the run's sunspot number
+/// becomes the daily index floored at zero, and below the floor a
+/// synthesized overlay pins foF2 to the fitted line — the same rule
+/// `nowcast::api::Conditioning` applies, measured in `docs/essn-wspr.md`.
+/// Absent, the parity engine answers exactly as it always has.
+///
+/// A nowcast request states `"essn"` in place of `"ssn"`; both at once
+/// would disagree about what the run should do, so the pair is refused.
+/// Below the floor the synthesis needs a writable `"workDir"` and the
+/// compiled-in root, because the overlay form shadows only the
+/// compiled-in files; a caller with its own overlay directory writes
+/// `coeffs/fof2CCIR.daw` there itself (`irtam::daw_file`).
+///
+/// The storm ratio is not applied here: it is a foF2 ratio fitted and
+/// scored at the characteristics level (`nowcast::api`), and no seam
+/// carries a per-place, per-hour ratio into a listing run yet.
+fn select_engine(tree: PathBuf, req: &mut Json) -> Result<(PathBuf, EngineChoice), String> {
+    match req.get("engine").and_then(Json::as_str) {
+        None | Some("voacap") => return Ok((tree, EngineChoice::Voacap)),
+        Some("nowcast") => {}
+        Some(other) => {
+            return Err(format!(
+                "\"engine\" must be \"voacap\" or \"nowcast\", not \"{other}\""
+            ));
+        }
+    }
+    if req.get("ssn").is_some() {
+        return Err(
+            "\"engine\":\"nowcast\" takes \"essn\"; a \"ssn\" beside it would disagree \
+             about what the run should do"
+                .into(),
+        );
+    }
+    let essn = req.number("essn")?;
+    let (low, high) = crate::essn::ESSN_RANGE;
+    if !(low..=high).contains(&essn) {
+        return Err(format!(
+            "\"essn\" must be from {low} to {high}, the range the index fit answers in, \
+             not {essn}"
+        ));
+    }
+    let month = req.number("month")? as u32;
+    let Json::Obj(fields) = req else {
+        return Err("the request must be a JSON object".into());
+    };
+    fields.insert("ssn".to_string(), num(essn.max(0.0)));
+    if essn >= 0.0 {
+        return Ok((tree, EngineChoice::Nowcast));
+    }
+
+    // Below the floor: the run stays at zero while a synthesized
+    // coefficient file holds foF2 on the fitted line.
+    if tree != data::embedded_root() {
+        return Err(
+            "below an index of zero the run needs \"itshfbc\":\"<embedded>\": the \
+             synthesized foF2 overlay shadows only the compiled-in files. A caller \
+             with its own tree or overlay writes coeffs/fof2CCIR.daw there itself"
+                .into(),
+        );
+    }
+    let Some(work_dir) = req.get("workDir").and_then(Json::as_str) else {
+        return Err(
+            "below an index of zero the run synthesizes a foF2 coefficient file; \
+             \"workDir\" must name a writable directory for it"
+                .into(),
+        );
+    };
+    let map = irtam::ccir_at(&data::embedded_root(), month, essn)?;
+    let dir = PathBuf::from(work_dir).join(format!("nowcast-fof2-{month:02}-{essn:.2}"));
+    let root = irtam::overlay_with(&map, &dir)?;
+    Ok((root, EngineChoice::Nowcast))
 }
 
 /// One `txAntenna` or `rxAntenna` object as the request states it.

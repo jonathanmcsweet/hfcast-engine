@@ -29,18 +29,23 @@
 pub mod api;
 pub mod compare;
 pub mod deck;
+pub mod essn;
 pub mod fuzz;
 pub mod geomag;
+pub mod giro;
 pub mod irtam;
 pub mod itu;
 pub mod json;
 pub mod listing;
+pub mod nowcast;
 /// Temporary step timers; see `src/perf.rs`.
 pub mod perf;
 pub mod runner;
 pub mod service;
+pub mod sonde;
 pub mod spread;
 pub mod stats;
+pub mod stormfit;
 pub mod sweep;
 pub mod voacap;
 pub mod wspr;
