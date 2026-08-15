@@ -12,9 +12,10 @@
 //! `--check <dir>` prints what a bundle holds and runs nothing.
 //! `--fit-storm` fits the storm ratio table (`src/stormfit.rs`) from the
 //! given months and prints it as Rust source instead of a report.
-//! `--fit-edge` fits the absorption-edge level (`EDGE_FMIN_RATIO`) on
-//! the given months, leaving the held-out storm months out of the fit,
-//! and prints the held-out verdict.
+//! `--fit-edge` fits the absorption-edge level model
+//! (`EDGE_RATIO_MODEL`: ln ratio over index and season harmonics) on
+//! the given months, leaving the held-out months out of the fit, and
+//! prints the held-out verdict.
 //! `--engine nowcast` replays the nowcast point API over the cached
 //! cells and fails if it disagrees with the research columns.
 //! `--ledger` prints one CSV line per month: the most recent day with
@@ -172,8 +173,12 @@ fn storm_samples(
     let Some((year, mm)) = year_month(month) else {
         return Vec::new();
     };
+    // The phantom day 31 is dropped as in `--daily` (roadmap: bound
+    // the gather) so a refit never learns from double-counted samples.
+    let limit = days_in_month(month) as u8;
     samples
         .iter()
+        .filter(|s| s.day <= limit)
         .filter(|s| s.characteristic == "foF2")
         .filter_map(|s| {
             let predicted = s.essn.filter(|value| *value > 0.0)?;
@@ -187,15 +192,52 @@ fn storm_samples(
         .collect()
 }
 
-/// The held-out storm months: never in a fit, always in the verdict.
-const HELD_OUT: [&str; 2] = ["2015-03", "2022-09"];
+/// The held-out months: never in a fit, always in the verdict.
+///
+/// Chosen by rule from the Kp record and the solar cycle before the
+/// 2026-08 whole-archive refit, so the verdict covers every stratum
+/// the table claims to serve (see `docs/refit.md`):
+/// - 2015-03, 2022-09: the original pair, held out since the first fit.
+/// - 2024-05: peak Kp 9.0, the strongest month in the record.
+/// - 2018-08: peak Kp 7.3, the only severe month of the deep minimum.
+/// - 2019-03 (quiet March, minimum) and 2024-03 (severe March,
+///   maximum): the lower-edge season verdict.
+/// - 2020-05 (peak Kp 3.3, quietest month in the record) and 2024-01
+///   (quietest solar-maximum month, winter): the quiet-safety verdict.
+const HELD_OUT: [&str; 8] = [
+    "2015-03", "2018-08", "2019-03", "2020-05", "2022-09", "2024-01", "2024-03", "2024-05",
+];
 
-/// One month's fmin pairs: (observed fmin, day-conditioned probe edge).
-fn edge_pairs(samples: &[Sample]) -> Vec<(f64, f64)> {
+/// One fmin row of the edge fit: where it was measured, when, the
+/// observed fmin, the day-conditioned probe edge, and the day's index.
+struct EdgeRow {
+    station: String,
+    day: u8,
+    observed: f64,
+    edge: f64,
+    index: f64,
+}
+
+/// One month's fmin rows: every sample with a day-conditioned probe
+/// edge and a fitted day index. The phantom day 31 is dropped as in
+/// `--daily` (roadmap: bound the gather) so a refit never learns from
+/// double-counted samples.
+fn edge_rows(month: &str, samples: &[Sample]) -> Vec<EdgeRow> {
+    let limit = days_in_month(month) as u8;
     samples
         .iter()
+        .filter(|s| s.day <= limit)
         .filter(|s| s.characteristic == "fmin" && s.observed > 0.0)
-        .filter_map(|s| s.essn.map(|edge| (s.observed, edge)))
+        .filter_map(|s| {
+            let (edge, index) = s.essn.zip(s.essn_index)?;
+            Some(EdgeRow {
+                station: s.station.clone(),
+                day: s.day,
+                observed: s.observed,
+                edge,
+                index,
+            })
+        })
         .collect()
 }
 
@@ -211,6 +253,10 @@ fn run_fit_storm(
     };
     let mut fit_samples = Vec::new();
     if !over_months(args, &mut |month, samples| {
+        if HELD_OUT.contains(&month) {
+            eprintln!("{month}: held out, not fitted");
+            return;
+        }
         fit_samples.extend(storm_samples(month, samples, table, station_meta));
     }) {
         return ExitCode::FAILURE;
@@ -226,10 +272,13 @@ fn run_ledger(args: &Args) -> ExitCode {
          essn_index,n_fmin,edge_bias,edge_mae"
     );
     let mut all = true;
-    if !over_months(args, &mut |month, samples| match ledger_line(samples) {
-        Some(line) => println!("{month},{line}"),
-        None => all = false,
-    }) || !all
+    if !over_months(
+        args,
+        &mut |month, samples| match ledger_line(month, samples) {
+            Some(line) => println!("{month},{line}"),
+            None => all = false,
+        },
+    ) || !all
     {
         return ExitCode::FAILURE;
     }
@@ -240,9 +289,9 @@ fn run_ledger(args: &Args) -> ExitCode {
 /// live day the day is partial and its numbers firm up run by run —
 /// the ledger records the scored day, so repeated lines for one day
 /// are the day filling in, not a fault.
-fn ledger_line(samples: &[Sample]) -> Option<String> {
+fn ledger_line(month: &str, samples: &[Sample]) -> Option<String> {
     let day = samples.iter().map(|s| s.day).max()?;
-    day_line(samples, day)
+    day_line(month, samples, day)
 }
 
 /// The `--daily` mode: every day of every month given, one line each —
@@ -269,7 +318,7 @@ fn run_daily(args: &Args, table: Option<&GeomagTable>) -> ExitCode {
             let kp = year_month(month)
                 .and_then(|(y, m)| table?.kp_max_lookback(y, m, day, 23, 24))
                 .map_or(String::new(), |kp| format!("{kp:.1}"));
-            if let Some(line) = day_line(samples, day) {
+            if let Some(line) = day_line(month, samples, day) {
                 println!("{month},{line},{kp}");
             }
         }
@@ -281,7 +330,8 @@ fn run_daily(args: &Args, table: Option<&GeomagTable>) -> ExitCode {
 
 /// One day scored on its own rows: both engines against the day's
 /// observations, the day's fitted index, and the calibrated edge.
-fn day_line(samples: &[Sample], day: u8) -> Option<String> {
+fn day_line(month: &str, samples: &[Sample], day: u8) -> Option<String> {
+    let (_, month_number) = year_month(month)?;
     let rows: Vec<&Sample> = samples.iter().filter(|s| s.day == day).collect();
     let against = |characteristic: &str, pick: &dyn Fn(&Sample) -> Option<f64>| {
         let pairs: Vec<(f64, f64)> = rows
@@ -297,7 +347,10 @@ fn day_line(samples: &[Sample], day: u8) -> Option<String> {
     };
     let (n_fof2, essn) = against("foF2", &|s| s.essn);
     let (_, clim) = against("foF2", &|s| Some(s.climatology));
-    let (n_fmin, edge) = against("fmin", &|s| s.essn.map(|e| e / nowcast::EDGE_FMIN_RATIO));
+    let (n_fmin, edge) = against("fmin", &|s| {
+        let (e, index) = s.essn.zip(s.essn_index)?;
+        Some(e / nowcast::edge_fmin_ratio(month_number, index))
+    });
     let mut indexes: Vec<f64> = rows.iter().filter_map(|s| s.essn_index).collect();
     let index = if indexes.is_empty() {
         String::new()
@@ -314,9 +367,9 @@ fn day_line(samples: &[Sample], day: u8) -> Option<String> {
 
 /// The `--fit-edge` mode: gather the months, fit, print the verdict.
 fn run_fit_edge(args: &Args) -> ExitCode {
-    let mut months: Vec<(String, Vec<(f64, f64)>)> = Vec::new();
+    let mut months: Vec<(String, Vec<EdgeRow>)> = Vec::new();
     if !over_months(args, &mut |month, samples| {
-        months.push((month.to_string(), edge_pairs(samples)));
+        months.push((month.to_string(), edge_rows(month, samples)));
     }) {
         return ExitCode::FAILURE;
     }
@@ -324,48 +377,127 @@ fn run_fit_edge(args: &Args) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// Fits the absorption-edge level on the months that are not held out
-/// and prints every month's raw and level-corrected error, so the
-/// held-out rows are the deployable verdict. The fit is the median of
-/// probe-edge over observed fmin — one multiplicative constant,
-/// printed for `nowcast::api::EDGE_FMIN_RATIO`.
-fn fit_edge_report(months: &[(String, Vec<(f64, f64)>)]) {
-    let mut ratios: Vec<f64> = months
+/// The edge model's feature row for one month number and day index:
+/// `[1, index, cos a, sin a, cos 2a, sin 2a]`, `a = 2π month / 12` —
+/// the shape `nowcast::api::edge_fmin_ratio` evaluates.
+fn edge_features(month_number: u32, index: f64) -> [f64; 6] {
+    let a = std::f64::consts::TAU * f64::from(month_number) / 12.0;
+    let i = index.clamp(nowcast::EDGE_INDEX_SPAN.0, nowcast::EDGE_INDEX_SPAN.1);
+    [1.0, i, a.cos(), a.sin(), (2.0 * a).cos(), (2.0 * a).sin()]
+}
+
+/// Solves the 6x6 normal equations by Gaussian elimination with
+/// partial pivoting. Small and dense; no library earns its place.
+fn solve6(mut a: [[f64; 6]; 6], mut b: [f64; 6]) -> [f64; 6] {
+    // Elimination is inherently sequential row mutation; the
+    // functional form would rebuild the matrix per step.
+    for col in 0..6 {
+        let pivot = (col..6)
+            .max_by(|p, q| a[*p][col].abs().total_cmp(&a[*q][col].abs()))
+            .expect("a pivot row exists");
+        a.swap(col, pivot);
+        b.swap(col, pivot);
+        let pivot_row = a[col];
+        for row in 0..6 {
+            if row != col && a[row][col] != 0.0 {
+                let f = a[row][col] / pivot_row[col];
+                a[row]
+                    .iter_mut()
+                    .zip(pivot_row)
+                    .for_each(|(value, p)| *value -= f * p);
+                b[row] -= f * b[col];
+            }
+        }
+    }
+    std::array::from_fn(|i| b[i] / a[i][i])
+}
+
+/// One station-day's accumulating (ratios, indexes) under the edge fit.
+type StationDayValues<'a> = BTreeMap<(&'a str, u8), (Vec<f64>, Vec<f64>)>;
+
+/// Fits the absorption-edge level model on the months that are not
+/// held out and prints every month's raw and model-corrected error, so
+/// the held-out rows are the deployable verdict. The fit: each
+/// station-day's median ln(edge over fmin) regressed on the day's
+/// index and the calendar season's two harmonics, weighted by the
+/// day's sample count — printed for `nowcast::api::EDGE_RATIO_MODEL`.
+/// Day medians rather than raw pairs so one noisy ionogram cannot
+/// steer the level.
+fn fit_edge_report(months: &[(String, Vec<EdgeRow>)]) {
+    let points: Vec<([f64; 6], f64, f64)> = months
         .iter()
         .filter(|(name, _)| !HELD_OUT.contains(&name.as_str()))
-        .flat_map(|(_, pairs)| pairs.iter().map(|(obs, edge)| edge / obs))
+        .filter_map(|(name, rows)| Some((year_month(name)?.1, rows)))
+        .flat_map(|(mnum, rows)| {
+            let mut by_day: StationDayValues = BTreeMap::new();
+            for r in rows {
+                let (ratios, indexes) = by_day.entry((r.station.as_str(), r.day)).or_default();
+                ratios.push(r.edge / r.observed);
+                indexes.push(r.index);
+            }
+            by_day
+                .into_values()
+                .map(|(mut ratios, mut indexes)| {
+                    let weight = ratios.len() as f64;
+                    let ratio = hfcast::stats::median_in_place(&mut ratios);
+                    let index = hfcast::stats::median_in_place(&mut indexes);
+                    (edge_features(mnum, index), ratio.ln(), weight)
+                })
+                .collect::<Vec<_>>()
+        })
         .collect();
-    if ratios.is_empty() {
-        println!("no fmin pairs outside the held-out months; nothing to fit");
+    if points.is_empty() {
+        println!("no fmin rows outside the held-out months; nothing to fit");
         return;
     }
-    let ratio = hfcast::stats::median_in_place(&mut ratios);
+    let mut normal = [[0.0; 6]; 6];
+    let mut rhs = [0.0; 6];
+    for (x, y, w) in &points {
+        for p in 0..6 {
+            for q in 0..6 {
+                normal[p][q] += w * x[p] * x[q];
+            }
+            rhs[p] += w * x[p] * y;
+        }
+    }
+    let model = solve6(normal, rhs);
+    let coeffs: Vec<String> = model.iter().map(|c| format!("{c:.6}")).collect();
     println!(
-        "EDGE_FMIN_RATIO: {ratio:.4} (median edge/fmin, {} pairs)",
-        ratios.len()
+        "pub const EDGE_RATIO_MODEL: [f64; 6] = [{}];",
+        coeffs.join(", ")
     );
+    println!("({} station-day medians fitted)", points.len());
+    let ratio_at = |mnum: u32, index: f64| -> f64 {
+        let x = edge_features(mnum, index);
+        model.iter().zip(x).map(|(c, f)| c * f).sum::<f64>().exp()
+    };
     println!();
-    println!("| month | n | raw bias / MAE | corrected bias / MAE |");
-    println!("| --- | ---: | --- | --- |");
-    for (name, pairs) in months {
+    println!("| month | n | own ratio | raw bias / MAE | corrected bias / MAE |");
+    println!("| --- | ---: | ---: | --- | --- |");
+    for (name, rows) in months {
+        let Some((_, mnum)) = year_month(name) else {
+            continue;
+        };
         let held = if HELD_OUT.contains(&name.as_str()) {
             " (held out)"
         } else {
             ""
         };
-        let n = pairs.len() as f64;
+        let n = rows.len() as f64;
+        let mut own: Vec<f64> = rows.iter().map(|r| r.edge / r.observed).collect();
+        let own_ratio = hfcast::stats::median_in_place(&mut own);
         let (mut rb, mut ra, mut cb, mut ca) = (0.0, 0.0, 0.0, 0.0);
-        for (obs, edge) in pairs {
-            let raw = edge - obs;
-            let corrected = edge / ratio - obs;
+        for r in rows {
+            let raw = r.edge - r.observed;
+            let corrected = r.edge / ratio_at(mnum, r.index) - r.observed;
             rb += raw;
             ra += raw.abs();
             cb += corrected;
             ca += corrected.abs();
         }
         println!(
-            "| {name}{held} | {} | {:+.2} / {:.2} | {:+.2} / {:.2} |",
-            pairs.len(),
+            "| {name}{held} | {} | {own_ratio:.3} | {:+.2} / {:.2} | {:+.2} / {:.2} |",
+            rows.len(),
             rb / n,
             ra / n,
             cb / n,

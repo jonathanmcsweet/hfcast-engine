@@ -255,22 +255,48 @@ pub fn probe_edge(
     Ok(by_hour)
 }
 
-/// The fitted level between the probe edge and the ionogram's fmin
-/// convention: the probe edge sits this factor above observed fmin.
-///
-/// Fitted 2026-08-13 as the median of probe-edge over fmin across the
-/// six fit months' fmin samples (`sonde --fit-edge`; the held-out
-/// verdict is in `docs/ionosonde.md`). Multiplicative rather than
-/// additive because a fixed decibel budget crosses the absorption
-/// wall at a fixed frequency ratio, and the additive form measured
-/// worse on the held-out months.
+/// The single fitted level of the first edge calibration (2026-08-13,
+/// six months). Kept only so dependents of that calibration still
+/// compile; the shipped level is [`edge_fmin_ratio`], which the
+/// whole-archive refit showed varies with solar activity and season
+/// (`docs/refit.md`).
+#[deprecated(note = "use edge_fmin_ratio(month, index): the level varies")]
 pub const EDGE_FMIN_RATIO: f64 = 1.6138;
+
+/// The fitted level model between the probe edge and the ionogram's
+/// fmin convention: coefficients of ln(ratio) over
+/// `[1, index, cos a, sin a, cos 2a, sin 2a]`, `a = 2π month / 12`.
+///
+/// Fitted 2026-08-15 on the whole archive's day-station medians
+/// (weighted least squares, `sonde --fit-edge`; eight held-out months
+/// never touched the fit — verdict in `docs/refit.md`). The index term
+/// is the larger effect: the level runs about 1.3 near solar minimum
+/// and past 2.0 at maximum, which a single constant split the
+/// difference on. The season term follows the calendar for every
+/// station; mirroring it for the southern hemisphere was measured and
+/// did not survive the held-out verdict (six southern stations reach
+/// only −34°, so a deeper network could reopen the question).
+pub const EDGE_RATIO_MODEL: [f64; 6] =
+    [0.428202, 0.001881, 0.096822, 0.045227, -0.074819, -0.038815];
+
+/// The span of daily indexes the model was fitted on (the archive's
+/// measured range, 2015-01 to 2026-07). Outside it the ratio holds the
+/// boundary value rather than extrapolate.
+pub const EDGE_INDEX_SPAN: (f64, f64) = (-25.0, 200.0);
+
+/// The fitted probe-edge over fmin level for one month and daily index.
+pub fn edge_fmin_ratio(month: u32, index: f64) -> f64 {
+    let i = index.clamp(EDGE_INDEX_SPAN.0, EDGE_INDEX_SPAN.1);
+    let a = std::f64::consts::TAU * f64::from(month) / 12.0;
+    let [c0, c1, c2, c3, c4, c5] = EDGE_RATIO_MODEL;
+    (c0 + c1 * i + c2 * a.cos() + c3 * a.sin() + c4 * (2.0 * a).cos() + c5 * (2.0 * a).sin()).exp()
+}
 
 /// The usable window's lower edge per UT hour over the probe path, on
 /// the ionogram's fmin convention: [`probe_edge`] at the conditioning's
 /// index (floored, as every engine channel is), divided by the fitted
-/// [`EDGE_FMIN_RATIO`]. None keeps its probe meaning — no edge above
-/// the ladder's floor, the usual night state.
+/// [`edge_fmin_ratio`] at that month and index. None keeps its probe
+/// meaning — no edge above the ladder's floor, the usual night state.
 pub fn lower_edge(
     root: &Path,
     lat_deg: f64,
@@ -278,13 +304,17 @@ pub fn lower_edge(
     month: u32,
     conditioning: &Conditioning,
 ) -> Result<Vec<Option<f64>>, String> {
+    let ratio = edge_fmin_ratio(month, conditioning.ssn());
     let edges = probe_edge(root, lat_deg, lon_deg, month, conditioning.ssn())?;
-    Ok(edges.into_iter().map(on_fmin_convention).collect())
+    Ok(edges
+        .into_iter()
+        .map(|e| on_fmin_convention(e, ratio))
+        .collect())
 }
 
 /// One probe edge onto the ionogram convention.
-fn on_fmin_convention(edge: Option<f64>) -> Option<f64> {
-    edge.map(|e| e / EDGE_FMIN_RATIO)
+fn on_fmin_convention(edge: Option<f64>, ratio: f64) -> Option<f64> {
+    edge.map(|e| e / ratio)
 }
 
 /// Where the SNR curve rises through plateau minus the drop, scanning
@@ -528,10 +558,26 @@ mod tests {
 
         #[test]
         fn the_lower_edge_is_the_probe_on_the_ionogram_convention() {
-            assert_eq!(on_fmin_convention(None), None);
+            let ratio = edge_fmin_ratio(6, 50.0);
+            assert_eq!(on_fmin_convention(None, ratio), None);
             let mapped =
-                on_fmin_convention(Some(EDGE_FMIN_RATIO * 2.5)).expect("an edge comes through");
+                on_fmin_convention(Some(ratio * 2.5), ratio).expect("an edge comes through");
             assert!((mapped - 2.5).abs() < 1e-12, "mapped {mapped}");
+        }
+
+        #[test]
+        fn the_edge_level_rises_with_the_index_and_holds_at_the_span() {
+            // The fitted sign: more solar activity, higher level.
+            assert!(edge_fmin_ratio(6, 150.0) > edge_fmin_ratio(6, 0.0));
+            // Outside the measured span the boundary value answers.
+            assert_eq!(
+                edge_fmin_ratio(6, EDGE_INDEX_SPAN.1 + 500.0),
+                edge_fmin_ratio(6, EDGE_INDEX_SPAN.1)
+            );
+            assert_eq!(
+                edge_fmin_ratio(6, EDGE_INDEX_SPAN.0 - 500.0),
+                edge_fmin_ratio(6, EDGE_INDEX_SPAN.0)
+            );
         }
 
         #[test]

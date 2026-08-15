@@ -70,12 +70,14 @@ Source: `docs/ionosonde.md`, finding 5.
 
 | month | n | parity | new (essn) | new (essn+storm) |
 | --- | ---: | ---: | ---: | ---: |
-| 2015-03 | 3006 | 0.888 | 0.763 | 0.706 |
-| 2022-09 | 1798 | 1.164 | 0.602 | 0.600 |
+| 2015-03 | 3006 | 0.888 | 0.763 | 0.727 |
+| 2022-09 | 1798 | 1.164 | 0.602 | 0.581 |
 
 (The parity column is climatology on the same storm hours, from the
 same report tables; its storm-hour bias is +0.42 and +1.11 MHz where
-the new model's is within 0.03 of zero.)
+the new model's is within 0.09 of zero. The essn+storm column is the
+2026-08-15 whole-archive table; the wider held-out verdict, including
+three more storm months, is in `refit.md`.)
 
 ## NVIS band calls — an honest null
 
@@ -86,14 +88,14 @@ Dudeney height). Source: `docs/ionosonde-output.md`, NVIS tables.
 
 | month | parity MAE / calls | new MAE / calls |
 | --- | --- | --- |
-| 2015-03 | 1.241 / 92.7% | 0.896 / 93.7% |
-| 2019-06 | 0.727 / 89.9% | 0.790 / 88.9% |
+| 2015-03 | 1.241 / 92.7% | 0.906 / 93.7% |
+| 2019-06 | 0.727 / 89.9% | 0.791 / 88.9% |
 | 2019-12 | 0.833 / 88.2% | 0.850 / 87.9% |
-| 2022-09 | 0.953 / 91.5% | 0.901 / 91.7% |
-| 2024-12 | 1.046 / 92.0% | 1.049 / 93.0% |
-| 2025-03 | 1.087 / 93.4% | 1.070 / 94.1% |
-| 2025-06 | 0.960 / 89.8% | 0.931 / 89.6% |
-| 2025-07 | 0.797 / 91.3% | 0.808 / 91.2% |
+| 2022-09 | 0.953 / 91.5% | 0.910 / 91.6% |
+| 2024-12 | 1.046 / 92.0% | 1.045 / 93.0% |
+| 2025-03 | 1.087 / 93.4% | 1.088 / 94.1% |
+| 2025-06 | 0.960 / 89.8% | 0.937 / 89.7% |
+| 2025-07 | 0.797 / 91.3% | 0.816 / 91.1% |
 
 At month scale the two models call bands at the same rate outside the
 severe storm month. This is the program's honest null: the new
@@ -118,9 +120,11 @@ The parity engine has no deployable counterpart: its LUF task floors
 at 2 MHz, has a usable-budget window of about 4 dB on an NVIS probe,
 and flips sign outside it (measured, `docs/ionosonde.md`). The new
 model answers `nowcast::api::lower_edge` — the absorption-edge probe
-behind one fitted level ratio — with held-out error 0.79 and 1.11 MHz
-MAE against ionogram fmin, bias +0.13 and +0.71. Source:
-`docs/ionosonde.md`, finding 6 and `sonde --fit-edge`.
+behind a fitted level that follows the day's index and the season
+(2026-08-15 refit) — with held-out error 0.62 to 1.04 MHz MAE
+against ionogram fmin across eight months spanning quiet minimum to
+the 2024-05 superstorm, bias within 0.26 MHz of zero in seven of
+the eight. Source: `docs/refit.md` and `sonde --fit-edge`.
 
 ## Link level, real radio paths
 

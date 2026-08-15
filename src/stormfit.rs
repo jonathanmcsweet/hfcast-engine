@@ -16,10 +16,10 @@
 //! move a quiet forecast. Low-latitude bins are never fitted either —
 //! the measured reason is at [`fit`].
 //!
-//! `FITTED` is the embedded table, fitted on the six fit months by
-//! `sonde --fit-storm` and scored on the two held-out storm months
-//! (2015-03, 2022-09). The gate it must pass, and the result, are in
-//! `docs/ionosonde.md`.
+//! `FITTED` is the embedded table, fitted on the whole 2015-2026
+//! archive by `sonde --fit-storm` and scored on the eight held-out
+//! months named there (`docs/refit.md`; the first fit's gate and
+//! result are in `docs/ionosonde.md`).
 
 /// Kp class edges: quiet below 4, active 4 to 5, storm 5 to 7, severe
 /// at 7 and above. Class 0 is the identity by construction.
@@ -159,13 +159,16 @@ pub fn correction(ratios: &[f64; N_BINS], bin: Option<usize>) -> f64 {
     bin.map(|b| ratios[b]).unwrap_or(1.0)
 }
 
-/// The embedded table: `sonde --fit-storm` over the six fit months
-/// (2019-06, 2019-12, 2024-12, 2025-03, 2025-06, 2025-07), 2026-08-13.
-/// The held-out storm months 2015-03 and 2022-09 never touched this
-/// fit. Regenerate with:
+/// The embedded table: `sonde --fit-storm` over the whole archive
+/// (every `data/YYYY-MM` bundle, 2015-01 to 2026-07 — 131 months,
+/// 1,633,875 samples), 2026-08-15. The eight held-out months
+/// (`HELD_OUT` in the sonde binary, chosen by rule before the fit — see
+/// `docs/refit.md`) skip themselves and never touched this fit; the
+/// live month is left off the command line. Every severe bin now
+/// carries its own-season samples where the first fit's six months
+/// could only pool. Regenerate with:
 /// `cargo run --release --all-features --bin sonde -- --fit-storm
-///  --kp data/kp_daily.txt data/2019-06 data/2019-12 data/2024-12
-///  data/2025-03 data/2025-06 data/2025-07`
+///  --kp data/kp_daily.txt $(ls -d data/20* | grep -v <live month>)`
 #[rustfmt::skip]
 pub const FITTED: [f64; N_BINS] = [
     1.0000, 1.0000, 1.0000, 1.0000, // quiet low summer
@@ -180,27 +183,27 @@ pub const FITTED: [f64; N_BINS] = [
     1.0000, 1.0000, 1.0000, 1.0000, // active low summer
     1.0000, 1.0000, 1.0000, 1.0000, // active low equinox
     1.0000, 1.0000, 1.0000, 1.0000, // active low winter
-    0.9914, 0.9707, 1.0052, 1.0247, // active mid summer
-    0.9586, 0.9953, 1.0149, 1.0086, // active mid equinox
-    1.0815, 1.0196, 0.9922, 1.0057, // active mid winter
+    0.9886, 0.9598, 1.0016, 1.0091, // active mid summer
+    0.9907, 0.9712, 0.9994, 1.0062, // active mid equinox
+    1.0305, 1.0153, 1.0096, 0.9912, // active mid winter
     1.0000, 1.0000, 1.0000, 1.0000, // active high summer
     1.0000, 1.0000, 1.0000, 1.0000, // active high equinox
     1.0000, 1.0000, 1.0000, 1.0000, // active high winter
     1.0000, 1.0000, 1.0000, 1.0000, // storm low summer
     1.0000, 1.0000, 1.0000, 1.0000, // storm low equinox
     1.0000, 1.0000, 1.0000, 1.0000, // storm low winter
-    0.9461, 0.9028, 1.0207, 1.0020, // storm mid summer
-    0.9041, 0.9672, 1.0609, 1.0192, // storm mid equinox
-    0.9082, 0.9923, 1.0357, 0.9205, // storm mid winter
+    0.9642, 0.9202, 0.9949, 0.9923, // storm mid summer
+    0.9641, 0.9325, 0.9901, 0.9841, // storm mid equinox
+    0.9682, 1.0066, 1.0352, 0.9713, // storm mid winter
     1.0000, 1.0000, 1.0000, 1.0000, // storm high summer
     1.0000, 1.0000, 1.0000, 1.0000, // storm high equinox
     1.0000, 1.0000, 1.0000, 1.0000, // storm high winter
     1.0000, 1.0000, 1.0000, 1.0000, // severe low summer
     1.0000, 1.0000, 1.0000, 1.0000, // severe low equinox
     1.0000, 1.0000, 1.0000, 1.0000, // severe low winter
-    0.8190, 0.8270, 1.0219, 0.8767, // severe mid summer
-    0.8190, 0.8270, 1.0219, 0.8767, // severe mid equinox
-    0.8190, 0.8270, 1.0219, 0.8767, // severe mid winter
+    0.8610, 0.8836, 1.0083, 0.9093, // severe mid summer
+    0.8650, 0.9460, 0.9915, 0.9319, // severe mid equinox
+    0.8713, 0.9588, 1.0794, 0.9541, // severe mid winter
     1.0000, 1.0000, 1.0000, 1.0000, // severe high summer
     1.0000, 1.0000, 1.0000, 1.0000, // severe high equinox
     1.0000, 1.0000, 1.0000, 1.0000, // severe high winter

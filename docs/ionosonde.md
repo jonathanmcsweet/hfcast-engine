@@ -129,13 +129,15 @@ month. Findings, in order of consequence:
 
    | month | storm n | essn | essn+storm | day corr essn → both |
    | --- | ---: | ---: | ---: | --- |
-   | 2015-03 (held out) | 3006 | 0.763 | 0.706 | +0.390 → +0.395 |
-   | 2022-09 (held out) | 1798 | 0.602 | 0.600 | +0.462 → +0.452 |
+   | 2015-03 (held out) | 3006 | 0.763 | 0.727 | +0.390 → +0.403 |
+   | 2022-09 (held out) | 1798 | 0.602 | 0.581 | +0.462 → +0.474 |
 
-   The fit months improve more (2025-06: 0.772 to 0.653) but they are
+   (Table numbers are the embedded table as shipped — since 2026-08-15
+   the whole-archive refit, whose wider held-out verdict is in
+   `refit.md`.) The fit months improve more but they are
    in sample and prove nothing. The held-out verdict: a real gain in
-   the severe month, nothing in the moderate one, quiet hours untouched
-   by construction. A first fit that also learned low-latitude bins
+   the severe month, a small one in the moderate month, quiet hours
+   untouched by construction. A first fit that also learned low-latitude bins
    gained in sample and reversed on 2015-03 (RMS 1.32 to 1.65, day
    correlation +0.390 to +0.245): the equatorial storm response turns
    on penetration-field timing a Kp class cannot carry, so `fit` holds
@@ -178,6 +180,19 @@ month. Findings, in order of consequence:
    months (2025-03 in the fit, 2015-03 held out) — an equinox-shaped
    structure that a season term could carry once more months exist to
    fit it honestly.
+
+   That refit happened (2026-08-15, the whole 2015-2026 archive;
+   method and verdict in `refit.md`). The single ratio turned out to
+   be two real structures: the level rises with the day's index
+   (about 1.3 near solar minimum, past 2.0 at maximum) and swings
+   with the calendar season. The shipped level is now the fitted
+   model `nowcast::api::edge_fmin_ratio` (ln ratio linear in index
+   plus two season harmonics), and with it the "March residual"
+   above measured as mostly the index term: held-out Marches at
+   minimum and maximum both land within 0.08 MHz of zero. Held-out
+   MAE improves in seven of eight months; the exception is the
+   2024-05 superstorm month, where storm absorption depresses the
+   level in a way index and season cannot carry (roadmap).
 
 ## Caveats
 
