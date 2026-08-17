@@ -93,8 +93,8 @@ be a different model, not VOACAP with a correction.
 
 ## The second engine
 
-That different model exists, in `src/nowcast/`, and a request selects it
-by name: `"engine": "nowcast"`. A request that says nothing gets the
+That different model exists, in `src/truecast/`, and a request selects it
+by name: `"engine": "truecast"`. A request that says nothing gets the
 parity engine, unchanged.
 
 VOACAP predicts a monthly median. The second engine conditions the same
@@ -152,7 +152,7 @@ P.533.
 | `src/compare.rs` | Measures how far two outputs differ, field by field |
 | `src/wspr.rs` | Reads collected WSPR reception reports |
 | `src/itu.rs` | Operates the ITU-R P.533 reference implementation |
-| `src/nowcast/` | The second engine: climatology conditioned on the day |
+| `src/truecast/` | The second engine: climatology conditioned on the day |
 | `src/giro.rs` | Reads GIRO ionosonde soundings, the ground truth |
 | `src/essn.rs` | Fits the daily effective sunspot index from them |
 | `src/stormfit.rs` | The fitted geomagnetic storm table |
@@ -204,14 +204,14 @@ the request, or `$HFCAST_ITSHFBC`, or `~/itshfbc`. A build with
 needs no tree.
 
 The same request selects the second engine by swapping `"ssn"` for
-`"engine":"nowcast"`. A live daily index rides in as `"essn"`; with no
+`"engine":"truecast"`. A live daily index rides in as `"essn"`; with no
 index at all the engine derives its own for the date — the offline
 form, which also takes an optional `"day"` (the 15th if absent) and an
 optional baked `"sync"` record:
 
 ```sh
 echo '{"fromLat":47.6,"fromLon":-122.3,"toLat":51.5,"toLon":-0.1,
-       "month":8,"year":2026,"day":17,"engine":"nowcast","watts":100,
+       "month":8,"year":2026,"day":17,"engine":"truecast","watts":100,
        "bands":[7.1,14.1,21.1],"requiredSnrDb":24,"noiseDbw":-145}' |
   cargo run --release --bin predict
 ```
@@ -245,7 +245,7 @@ agreement with the original.
 | [storm.md](docs/storm.md) | Geomagnetic storm widening |
 | [daily.md](docs/daily.md) | Whether a daily forecast is possible |
 | [irtam.md](docs/irtam.md) | Real-time ionospheric maps, measured |
-| [nowcast.md](docs/nowcast.md) | The second pipeline and its contract |
+| [truecast.md](docs/truecast.md) | The second pipeline and its contract |
 | [ionosonde.md](docs/ionosonde.md) | The daily index against ionosonde truth |
 | [essn-wspr.md](docs/essn-wspr.md) | The daily index against real links |
 | [comparison.md](docs/comparison.md) | The two models, side by side |

@@ -4,7 +4,7 @@
 # The current month is an ordinary month bundle (data/YYYY-MM) that is
 # still filling in, so the whole validation machinery runs on it
 # unchanged: the daily index fit, the storm conditioning, the full
-# sonde report, the nowcast API replay gate, and the absorption edge.
+# sonde report, the truecast API replay gate, and the absorption edge.
 # One run does four things:
 #
 #   1. refreshes Kp and the month-to-date GIRO soundings (GIRO revises
@@ -15,8 +15,8 @@
 #   3. writes the full report to data/live/report-<date>.txt and
 #      appends one trend line to data/live/ledger.csv
 #      (`sonde --ledger`: the most recent day, scored on its own rows);
-#   4. replays the nowcast point API against the research columns
-#      (`sonde --engine nowcast`) — the pass/fail gate. A nonzero exit
+#   4. replays the truecast point API against the research columns
+#      (`sonde --engine truecast`) — the pass/fail gate. A nonzero exit
 #      from this script means that gate failed or a fetch broke.
 #
 # The month needs a smoothed-SSN entry in src/wspr.rs (predicted for a
@@ -53,4 +53,4 @@ echo "report: ${report}"
 echo "ledger: ${line}"
 
 cargo run --release --all-features --bin sonde -- \
-  --engine nowcast --kp data/kp_daily.txt "data/${month}"
+  --engine truecast --kp data/kp_daily.txt "data/${month}"

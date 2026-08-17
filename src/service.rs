@@ -13,7 +13,7 @@
 //! directory searched first. See [`crate::voacap::data`].
 //!
 //! The request may also name its `"engine"`: `"voacap"` (the default —
-//! an old request predicts exactly what it always did) or `"nowcast"`,
+//! an old request predicts exactly what it always did) or `"truecast"`,
 //! which runs the same physics conditioned on a fitted daily index
 //! (`"essn"` in place of `"ssn"`; see [`select_engine`]). Every answer
 //! carries an `"engine"` field naming which model stands behind it, so
@@ -109,11 +109,11 @@ pub fn run(input: &str) -> Result<String, String> {
 }
 
 /// Which engine answers a request: the parity port as shipped, or the
-/// nowcast daily conditioning over the same physics.
+/// truecast daily conditioning over the same physics.
 #[derive(Clone, Copy)]
 enum EngineChoice {
     Voacap,
-    Nowcast,
+    Truecast,
 }
 
 impl EngineChoice {
@@ -122,23 +122,23 @@ impl EngineChoice {
     fn name(self) -> &'static str {
         match self {
             EngineChoice::Voacap => "voacap",
-            EngineChoice::Nowcast => "nowcast",
+            EngineChoice::Truecast => "truecast",
         }
     }
 }
 
-/// Reads the request's `"engine"` choice and turns a nowcast choice into
+/// Reads the request's `"engine"` choice and turns a truecast choice into
 /// inputs the unchanged pipeline understands: the run's sunspot number
 /// becomes the daily index floored at zero, and below the floor a
 /// synthesized overlay pins foF2 to the fitted line — the same rule
-/// `nowcast::api::Conditioning` applies, measured in `docs/essn-wspr.md`.
+/// `truecast::api::Conditioning` applies, measured in `docs/essn-wspr.md`.
 /// Absent, the parity engine answers exactly as it always has.
 ///
-/// A nowcast request states `"essn"` in place of `"ssn"`; both at once
+/// A truecast request states `"essn"` in place of `"ssn"`; both at once
 /// would disagree about what the run should do, so the pair is refused.
-/// A nowcast request with NO `"essn"` is the offline form: the index is
+/// A truecast request with NO `"essn"` is the offline form: the index is
 /// the embedded sunspot table at the request's year and month plus the
-/// fitted day-of-year correction (`nowcast::api::offline_anomaly`) at
+/// fitted day-of-year correction (`truecast::api::offline_anomaly`) at
 /// the optional `"day"` (1 to 31; absent, 15, the curve's mid-month
 /// value), plus an optional baked `"sync"` record — an object with
 /// `"anomaly"`, `"month"`, `"day"` and `"daysAgo"` — decayed exactly as
@@ -150,26 +150,26 @@ impl EngineChoice {
 /// `coeffs/fof2CCIR.daw` there itself (`irtam::daw_file`).
 ///
 /// The storm ratio is not applied here: it is a foF2 ratio fitted and
-/// scored at the characteristics level (`nowcast::api`), and no seam
+/// scored at the characteristics level (`truecast::api`), and no seam
 /// carries a per-place, per-hour ratio into a listing run yet.
 fn select_engine(tree: PathBuf, req: &mut Json) -> Result<(PathBuf, EngineChoice), String> {
     match req.get("engine").and_then(Json::as_str) {
         None | Some("voacap") => return Ok((tree, EngineChoice::Voacap)),
-        Some("nowcast") => {}
+        Some("truecast") => {}
         Some(other) => {
             return Err(format!(
-                "\"engine\" must be \"voacap\" or \"nowcast\", not \"{other}\""
+                "\"engine\" must be \"voacap\" or \"truecast\", not \"{other}\""
             ));
         }
     }
     if req.get("ssn").is_some() {
         return Err(
-            "\"engine\":\"nowcast\" takes \"essn\"; a \"ssn\" beside it would disagree \
+            "\"engine\":\"truecast\" takes \"essn\"; a \"ssn\" beside it would disagree \
              about what the run should do"
                 .into(),
         );
     }
-    select_nowcast(tree, req)
+    select_truecast(tree, req)
 }
 
 /// The offline form's index: the embedded sunspot table at the request's
@@ -192,21 +192,21 @@ fn offline_essn(req: &Json) -> Result<f64, String> {
             other => return Err(format!("\"day\" must be 1 to 31, not {other}")),
         },
     };
-    let anomaly = crate::nowcast::api::offline_anomaly(month, day);
+    let anomaly = crate::truecast::api::offline_anomaly(month, day);
     let synced = match req.get("sync") {
         None => 0.0,
         Some(sync) => {
             let record = sync_record(sync)?;
             let relative =
-                record.anomaly - crate::nowcast::api::offline_anomaly(record.month, record.day);
-            crate::nowcast::api::sync_weight(f64::from(record.days_ago)) * relative
+                record.anomaly - crate::truecast::api::offline_anomaly(record.month, record.day);
+            crate::truecast::api::sync_weight(f64::from(record.days_ago)) * relative
         }
     };
     Ok(ssn + anomaly + synced)
 }
 
 /// The baked `"sync"` object of an offline request.
-fn sync_record(sync: &Json) -> Result<crate::nowcast::api::SyncRecord, String> {
+fn sync_record(sync: &Json) -> Result<crate::truecast::api::SyncRecord, String> {
     let field = |name: &str| sync.number(name).map_err(|e| format!("in \"sync\": {e}"));
     let month = match field("month")? as u32 {
         m @ 1..=12 => m,
@@ -222,7 +222,7 @@ fn sync_record(sync: &Json) -> Result<crate::nowcast::api::SyncRecord, String> {
             "\"sync\" \"daysAgo\" must not be negative, got {days_ago}"
         ));
     }
-    Ok(crate::nowcast::api::SyncRecord {
+    Ok(crate::truecast::api::SyncRecord {
         anomaly: field("anomaly")?,
         month,
         day,
@@ -230,9 +230,9 @@ fn sync_record(sync: &Json) -> Result<crate::nowcast::api::SyncRecord, String> {
     })
 }
 
-/// The nowcast half of [`select_engine`]: fill in the offline index if
+/// The truecast half of [`select_engine`]: fill in the offline index if
 /// the request states none, then condition the run on it.
-fn select_nowcast(tree: PathBuf, req: &mut Json) -> Result<(PathBuf, EngineChoice), String> {
+fn select_truecast(tree: PathBuf, req: &mut Json) -> Result<(PathBuf, EngineChoice), String> {
     if req.get("essn").is_none() {
         let offline = offline_essn(req)?;
         let Json::Obj(fields) = &mut *req else {
@@ -254,7 +254,7 @@ fn select_nowcast(tree: PathBuf, req: &mut Json) -> Result<(PathBuf, EngineChoic
     };
     fields.insert("ssn".to_string(), num(essn.max(0.0)));
     if essn >= 0.0 {
-        return Ok((tree, EngineChoice::Nowcast));
+        return Ok((tree, EngineChoice::Truecast));
     }
 
     // Below the floor: the run stays at zero while a synthesized
@@ -275,9 +275,9 @@ fn select_nowcast(tree: PathBuf, req: &mut Json) -> Result<(PathBuf, EngineChoic
         );
     };
     let map = irtam::ccir_at(&data::embedded_root(), month, essn)?;
-    let dir = PathBuf::from(work_dir).join(format!("nowcast-fof2-{month:02}-{essn:.2}"));
+    let dir = PathBuf::from(work_dir).join(format!("truecast-fof2-{month:02}-{essn:.2}"));
     let root = irtam::overlay_with(&map, &dir)?;
-    Ok((root, EngineChoice::Nowcast))
+    Ok((root, EngineChoice::Truecast))
 }
 
 /// One `txAntenna` or `rxAntenna` object as the request states it.
@@ -1068,12 +1068,12 @@ mod tests {
     fn an_offline_request_runs_at_the_curve_over_the_shipped_table() {
         let req = parsed(r#"{"year":2020,"month":6}"#);
         let expected = crate::wspr::smoothed_ssn("2020-06").expect("a table entry")
-            + crate::nowcast::api::offline_anomaly(6, 15);
+            + crate::truecast::api::offline_anomaly(6, 15);
         assert_eq!(offline_essn(&req).expect("offline index"), expected);
         // A stated day moves along the curve; mid-month is only the default.
         let dated = parsed(r#"{"year":2020,"month":6,"day":1}"#);
         let on_day = crate::wspr::smoothed_ssn("2020-06").expect("a table entry")
-            + crate::nowcast::api::offline_anomaly(6, 1);
+            + crate::truecast::api::offline_anomaly(6, 1);
         assert_eq!(offline_essn(&dated).expect("offline index"), on_day);
     }
 
@@ -1106,8 +1106,8 @@ mod tests {
         // The record pulls the index toward what it measured, and the
         // pull fades with age toward the bare curve.
         assert!((fresh - bare).abs() > (aged - bare).abs());
-        let [_, _, floor] = crate::nowcast::api::SYNC_DECAY;
-        let relative = -30.0 - crate::nowcast::api::offline_anomaly(6, 14);
+        let [_, _, floor] = crate::truecast::api::SYNC_DECAY;
+        let relative = -30.0 - crate::truecast::api::offline_anomaly(6, 14);
         assert!((aged - bare - floor * relative).abs() < 1e-9);
     }
 

@@ -3,7 +3,7 @@
 Two prediction models live in this crate. The **parity engine** is the
 faithful VOACAP port: its contract is byte-equivalence with the
 Fortran (`portcheck`, 23,040 cells), and within a month only the hour
-changes its answer. The **new model** (`src/nowcast/`) is the same
+changes its answer. The **new model** (`src/truecast/`) is the same
 physics conditioned on live data: a daily effective sunspot index
 fitted from ionosonde readings, a Kp storm table, the corrected height
 form, and a calibrated absorption edge. This page puts the two side by
@@ -12,7 +12,7 @@ generated source named in its section; regenerate those and this page
 is stale until the copies are refreshed.
 
 The two are compatible by construction, and the compatibility is a
-test, not a claim: a nowcast run at an index at or above zero answers
+test, not a claim: a truecast run at an index at or above zero answers
 **exactly** what the parity engine answers at that number
 (`tests/request_guards.rs`, string equality), and every service answer
 names the engine behind it. The comparison below is therefore about
@@ -119,7 +119,7 @@ source (IRTAM hmF2 measured +3.5 km bias as the upper bound). Source:
 The parity engine has no deployable counterpart: its LUF task floors
 at 2 MHz, has a usable-budget window of about 4 dB on an NVIS probe,
 and flips sign outside it (measured, `docs/ionosonde.md`). The new
-model answers `nowcast::api::lower_edge` — the absorption-edge probe
+model answers `truecast::api::lower_edge` — the absorption-edge probe
 behind a fitted level that follows the day's index and the season
 (2026-08-15 refit) — with held-out error 0.62 to 1.04 MHz MAE
 against ionogram fmin across eight months spanning quiet minimum to
@@ -170,7 +170,7 @@ The new model's grid driver threads inside the engine over one shared
 setup: the application's fine globe (34,560 points, one band) in
 131 ms at eight threads against 1088 ms for the serial parity area
 driver — bit-identical answers, thread-count invariant. Source:
-`docs/nowcast.md`, `gridbench`.
+`docs/truecast.md`, `gridbench`.
 
 ## Reproduction
 

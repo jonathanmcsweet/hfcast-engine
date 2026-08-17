@@ -22,7 +22,7 @@
 //! the held-out staleness-ladder verdict.
 //! `--sync-record` prints the JSON a build bakes into the app: the
 //! last measured day's index and anomaly for the given month.
-//! `--engine nowcast` replays the nowcast point API over the cached
+//! `--engine truecast` replays the truecast point API over the cached
 //! cells and fails if it disagrees with the research columns.
 //! `--ledger` prints one CSV line per month: the most recent day with
 //! samples, scored on its own rows — the live loop's trend line
@@ -36,12 +36,12 @@ use std::process::ExitCode;
 
 use hfcast::geomag::{self, GeomagTable};
 use hfcast::giro::{self, StationMeta};
-use hfcast::nowcast::api::{self as nowcast, Conditioning};
 use hfcast::sonde::{
     self, day_to_day, errors, nvis_cells, secant_factor, BandCalls, Sample, NVIS_BANDS_MHZ,
     NVIS_RANGES_KM, STORM_KP,
 };
 use hfcast::stormfit;
+use hfcast::truecast::api::{self as truecast, Conditioning};
 
 /// How many days the bundle's month really has, so the `--check` view
 /// does not report a complete April as 30 of 31.
@@ -355,7 +355,7 @@ fn day_line(month: &str, samples: &[Sample], day: u8) -> Option<String> {
     let (_, clim) = against("foF2", &|s| Some(s.climatology));
     let (n_fmin, edge) = against("fmin", &|s| {
         let (e, index) = s.essn.zip(s.essn_index)?;
-        Some(e / nowcast::edge_fmin_ratio(month_number, index))
+        Some(e / truecast::edge_fmin_ratio(month_number, index))
     });
     let mut indexes: Vec<f64> = rows.iter().filter_map(|s| s.essn_index).collect();
     let index = if indexes.is_empty() {
@@ -453,7 +453,7 @@ fn run_fit_offline(args: &Args) -> ExitCode {
 }
 
 /// The offline curve's feature row for one calendar day: the shape
-/// `nowcast::api::offline_anomaly` evaluates.
+/// `truecast::api::offline_anomaly` evaluates.
 fn offline_features(month_number: u32, day: u8) -> [f64; 5] {
     const OFFSET: [u32; 12] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
     let doy = (OFFSET[(month_number as usize - 1).min(11)] + u32::from(day)).min(365);
@@ -590,7 +590,7 @@ fn sync_series(months: &[OfflineMonth]) -> BTreeMap<i64, (f64, bool)> {
             m.day_indexes.iter().map(move |(day, index)| {
                 let epoch = days_from_civil(i64::from(year), m.month_number, u32::from(*day));
                 let relative =
-                    index - m.r12 - nowcast::offline_anomaly(m.month_number, u32::from(*day));
+                    index - m.r12 - truecast::offline_anomaly(m.month_number, u32::from(*day));
                 (epoch, (relative, fittable))
             })
         })
@@ -662,7 +662,7 @@ fn sync_verdict_row(
             continue;
         }
         let slope = (essn - clim) / (index - m.r12);
-        let curve = nowcast::offline_anomaly(m.month_number, u32::from(*day));
+        let curve = truecast::offline_anomaly(m.month_number, u32::from(*day));
         let epoch = days_from_civil(i64::from(year), m.month_number, u32::from(*day));
         let mut add = |slot: usize, err: Option<f64>| {
             if let Some(e) = err {
@@ -772,10 +772,10 @@ fn run_fit_edge(args: &Args) -> ExitCode {
 
 /// The edge model's feature row for one month number and day index:
 /// `[1, index, cos a, sin a, cos 2a, sin 2a]`, `a = 2π month / 12` —
-/// the shape `nowcast::api::edge_fmin_ratio` evaluates.
+/// the shape `truecast::api::edge_fmin_ratio` evaluates.
 fn edge_features(month_number: u32, index: f64) -> [f64; 6] {
     let a = std::f64::consts::TAU * f64::from(month_number) / 12.0;
-    let i = index.clamp(nowcast::EDGE_INDEX_SPAN.0, nowcast::EDGE_INDEX_SPAN.1);
+    let i = index.clamp(truecast::EDGE_INDEX_SPAN.0, truecast::EDGE_INDEX_SPAN.1);
     [1.0, i, a.cos(), a.sin(), (2.0 * a).cos(), (2.0 * a).sin()]
 }
 
@@ -829,7 +829,7 @@ type StationDayValues<'a> = BTreeMap<(&'a str, u8), (Vec<f64>, Vec<f64>)>;
 /// the held-out rows are the deployable verdict. The fit: each
 /// station-day's median ln(edge over fmin) regressed on the day's
 /// index and the calendar season's two harmonics, weighted by the
-/// day's sample count — printed for `nowcast::api::EDGE_RATIO_MODEL`.
+/// day's sample count — printed for `truecast::api::EDGE_RATIO_MODEL`.
 /// Day medians rather than raw pairs so one noisy ionogram cannot
 /// steer the level.
 fn fit_edge_report(months: &[(String, Vec<EdgeRow>)]) {
@@ -963,8 +963,8 @@ fn fit_storm_report(samples: &[(usize, f64)]) {
 /// fitted to foF2 and multiplies MUFD identically, since MUFD is the
 /// foF2 line times the factor line. Unknown storm state (no Kp file,
 /// missing lookback days) leaves the prediction alone — exactly what a
-/// deployed device would do. The `--engine nowcast` check replays the
-/// nowcast API against this same function, so the deployable path and
+/// deployed device would do. The `--engine truecast` check replays the
+/// truecast API against this same function, so the deployable path and
 /// the research column cannot drift apart.
 fn essn_storm_value(
     s: &Sample,
@@ -1010,7 +1010,7 @@ impl WorstDelta {
     }
 }
 
-/// Replays the nowcast point API over every cached cell of the month and
+/// Replays the truecast point API over every cached cell of the month and
 /// measures the worst disagreement against the research columns. The
 /// climatology comparisons must agree to cache rounding (5e-5: the same
 /// engine run on both sides). The daily comparison crosses two f32
@@ -1020,7 +1020,7 @@ impl WorstDelta {
 /// series cancels at night (measured over all eight months). The faults
 /// this check exists for are an order larger: a wrong storm bin moves a
 /// storm hour by about 0.25 MHz, a shifted hour by about 1 MHz.
-fn verify_nowcast(
+fn verify_truecast(
     month: &str,
     samples: &[Sample],
     table: Option<&GeomagTable>,
@@ -1038,7 +1038,7 @@ fn verify_nowcast(
             map
         });
 
-    let mut deltas = NowcastDeltas::default();
+    let mut deltas = TruecastDeltas::default();
     // A loop over stations: each iteration runs the engine and
     // accumulates into the trackers, and an engine error ends the check.
     for (code, rows) in &by_station {
@@ -1052,7 +1052,7 @@ fn verify_nowcast(
         }
     }
 
-    println!("\n## {month}: nowcast API against the research columns\n");
+    println!("\n## {month}: truecast API against the research columns\n");
     println!(
         "{}",
         deltas.clim_fof2.line("climatology foF2", TOL_CLIMATOLOGY)
@@ -1077,9 +1077,9 @@ fn verify_nowcast(
         && deltas.daily_fof2.passes(TOL_DAILY)
 }
 
-/// The four disagreement trackers of the nowcast check.
+/// The four disagreement trackers of the truecast check.
 #[derive(Default)]
-struct NowcastDeltas {
+struct TruecastDeltas {
     clim_fof2: WorstDelta,
     clim_foe: WorstDelta,
     clim_hmf2: WorstDelta,
@@ -1096,12 +1096,12 @@ fn check_station(
     rows: &[&Sample],
     table: Option<&GeomagTable>,
     stations: &BTreeMap<String, StationMeta>,
-    deltas: &mut NowcastDeltas,
+    deltas: &mut TruecastDeltas,
 ) -> Result<(), String> {
     let root = hfcast::voacap::data::embedded_root();
     let mm = year_month(month).map(|(_, mm)| mm).ok_or("bad month")?;
     let conditioning = Conditioning::Climatology { ssn };
-    let clim_day = nowcast::day(&root, meta.lat, meta.lon, mm, &conditioning)?;
+    let clim_day = truecast::day(&root, meta.lat, meta.lon, mm, &conditioning)?;
     for s in rows {
         let answer = &clim_day[usize::from(s.hour)];
         match s.characteristic.as_str() {
@@ -1126,7 +1126,7 @@ fn check_station_days(
     rows: &[&Sample],
     table: Option<&GeomagTable>,
     stations: &BTreeMap<String, StationMeta>,
-    deltas: &mut NowcastDeltas,
+    deltas: &mut TruecastDeltas,
 ) -> Result<(), String> {
     let root = hfcast::voacap::data::embedded_root();
     let (year, mm) = year_month(month).ok_or("bad month")?;
@@ -1140,7 +1140,7 @@ fn check_station_days(
             table.and_then(|t| t.kp_max_lookback(year, mm, day, h as u8, 24))
         });
         let conditioning = Conditioning::daily_by_hour(index, kp_max24);
-        let daily = nowcast::day(&root, meta.lat, meta.lon, mm, &conditioning)?;
+        let daily = truecast::day(&root, meta.lat, meta.lon, mm, &conditioning)?;
         for s in rows
             .iter()
             .filter(|s| s.day == day && s.characteristic == "foF2")
@@ -1408,7 +1408,7 @@ fn nvis_models(
                 .collect(),
         ),
         (
-            // The full deployable pipeline: what the nowcast point
+            // The full deployable pipeline: what the truecast point
             // API answers under daily conditioning with the storm
             // state known.
             "essn+st+dud",
@@ -1551,11 +1551,11 @@ fn over_months(args: &Args, consume: &mut dyn FnMut(&str, &[Sample])) -> bool {
 
 fn main() -> ExitCode {
     let args = parse_args();
-    if args.months.is_empty() || !matches!(args.engine.as_str(), "parity" | "nowcast") {
+    if args.months.is_empty() || !matches!(args.engine.as_str(), "parity" | "truecast") {
         eprintln!(
             "usage: sonde [--check] [--fit-storm] [--fit-edge] [--fit-offline] [--fit-sync] \
              [--sync-record] [--ledger] [--daily] \
-             [--engine parity|nowcast] [--kp data/kp_daily.txt] \
+             [--engine parity|truecast] [--kp data/kp_daily.txt] \
              [--stations tools/giro-stations.tsv] data/YYYY-MM ..."
         );
         return ExitCode::FAILURE;
@@ -1586,10 +1586,10 @@ fn main() -> ExitCode {
         return code;
     }
 
-    if args.engine == "nowcast" {
+    if args.engine == "truecast" {
         let mut all_pass = true;
         if !over_months(&args, &mut |month, samples| {
-            all_pass &= verify_nowcast(month, samples, table.as_ref(), &station_meta);
+            all_pass &= verify_truecast(month, samples, table.as_ref(), &station_meta);
         }) || !all_pass
         {
             return ExitCode::FAILURE;
@@ -1607,7 +1607,7 @@ fn main() -> ExitCode {
 }
 
 /// The fit and ledger modes, in flag order. None means the ordinary
-/// report (or the nowcast replay) runs instead.
+/// report (or the truecast replay) runs instead.
 fn fit_mode(
     args: &Args,
     table: Option<&GeomagTable>,

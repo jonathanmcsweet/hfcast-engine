@@ -158,7 +158,7 @@ fn gather(dir: &Path, stations: &Path, cache_dir: &Path) -> Result<(String, Vec<
 /// The engine run behind each fitted day: the index itself at or above
 /// the map's lower plane; below it, the run floors at zero and a
 /// synthesized coefficient overlay pins foF2 to the fitted line — the
-/// same floor `Conditioning::Daily` applies (`src/nowcast/api.rs`).
+/// same floor `Conditioning::Daily` applies (`src/truecast/api.rs`).
 fn day_runs(
     index_by_day: &BTreeMap<u8, f64>,
     month: &str,

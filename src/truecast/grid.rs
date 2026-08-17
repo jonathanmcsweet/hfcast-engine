@@ -1,4 +1,4 @@
-//! The nowcast grid driver: one coverage lattice, threads inside the
+//! The truecast grid driver: one coverage lattice, threads inside the
 //! engine.
 //!
 //! The application computes its maps by cutting a lattice into strips

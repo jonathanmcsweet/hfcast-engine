@@ -78,7 +78,7 @@ fn a_label_with_multi_byte_characters_does_not_stop_the_run() {
 
 /// A point-to-point request with no sunspot field of its own, for the
 /// engine-selector cases: the parity engine states `"ssn"`, the
-/// nowcast engine `"essn"`, and the helper bakes in neither.
+/// truecast engine `"essn"`, and the helper bakes in neither.
 fn engine_point(fields: &str) -> String {
     format!(
         r#"{{"itshfbc":"<embedded>",
@@ -96,10 +96,10 @@ fn an_unknown_engine_is_refused() {
 }
 
 #[test]
-fn a_nowcast_request_with_a_ssn_beside_the_index_is_refused() {
+fn a_truecast_request_with_a_ssn_beside_the_index_is_refused() {
     // `point_with` carries "ssn":60 of its own, so this request states
     // both numbers — and must be refused, not silently resolved.
-    let answer = hfcast::service::run(&point_with(r#""engine":"nowcast","essn":60"#));
+    let answer = hfcast::service::run(&point_with(r#""engine":"truecast","essn":60"#));
     assert!(answer.is_err());
 }
 
@@ -110,22 +110,22 @@ fn every_answer_names_its_engine() {
 }
 
 #[test]
-fn a_nowcast_run_at_a_plain_index_is_the_parity_run_at_that_number() {
-    // At an index at or above zero the nowcast engine is the parity
+fn a_truecast_run_at_a_plain_index_is_the_parity_run_at_that_number() {
+    // At an index at or above zero the truecast engine is the parity
     // engine at that sunspot number: the conditioning changes the
     // input, never the physics. Only the tag may differ.
     let parity = hfcast::service::run(&engine_point(r#""ssn":60"#)).expect("runs");
-    let nowcast =
-        hfcast::service::run(&engine_point(r#""engine":"nowcast","essn":60"#)).expect("runs");
+    let truecast =
+        hfcast::service::run(&engine_point(r#""engine":"truecast","essn":60"#)).expect("runs");
     assert_eq!(
-        nowcast.replace(r#""engine":"nowcast""#, r#""engine":"voacap""#),
+        truecast.replace(r#""engine":"truecast""#, r#""engine":"voacap""#),
         parity
     );
 }
 
 #[test]
 fn below_the_floor_needs_a_work_directory() {
-    let answer = hfcast::service::run(&engine_point(r#""engine":"nowcast","essn":-10"#));
+    let answer = hfcast::service::run(&engine_point(r#""engine":"truecast","essn":-10"#));
     let message = answer.expect_err("must be refused");
     assert!(message.contains("workDir"), "{message}");
 }
@@ -136,17 +136,17 @@ fn below_the_floor_the_run_synthesizes_the_fof2_overlay() {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("temp dir");
     let field = format!(
-        r#""engine":"nowcast","essn":-10,"workDir":"{}""#,
+        r#""engine":"truecast","essn":-10,"workDir":"{}""#,
         dir.display()
     );
     let at_floor =
-        hfcast::service::run(&engine_point(r#""engine":"nowcast","essn":0"#)).expect("runs");
+        hfcast::service::run(&engine_point(r#""engine":"truecast","essn":0"#)).expect("runs");
     let below = hfcast::service::run(&engine_point(&field)).expect("runs");
-    assert!(below.contains(r#""engine":"nowcast""#), "{below}");
+    assert!(below.contains(r#""engine":"truecast""#), "{below}");
     // The synthesized file is where the request asked, and the answer
     // moved: foF2 kept following the fitted line below zero.
     let daw = dir
-        .join("nowcast-fof2-08--10.00")
+        .join("truecast-fof2-08--10.00")
         .join("coeffs")
         .join("fof2CCIR.daw");
     assert!(daw.exists(), "no synthesized overlay at {}", daw.display());

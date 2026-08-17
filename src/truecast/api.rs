@@ -1,4 +1,4 @@
-//! The nowcast point API: conditioned ionospheric answers at a place.
+//! The truecast point API: conditioned ionospheric answers at a place.
 //!
 //! One call answers "what is the ionosphere over this point at this
 //! hour" in the ionosonde's own conventions: ordinary-wave foF2 in MHz,

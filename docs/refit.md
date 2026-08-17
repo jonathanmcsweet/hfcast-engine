@@ -1,7 +1,7 @@
 # The whole-archive refit — storm table and absorption edge
 
 The first fits of the storm table (`src/stormfit.rs`) and the
-absorption-edge level (`nowcast::api`) were made on the eight original
+absorption-edge level (`truecast::api`) were made on the eight original
 validation months. The 2026-08 backfill put every month from 2015-01
 to 2026-08 on disk — about 130 months, a full solar cycle — so both
 constants were refitted on the archive (2026-08-15). This document
@@ -75,7 +75,7 @@ at solar maximum, and swings with the calendar season on top. The
 the index effect — a quiet March at minimum (2019-03) has no March
 residual at all.
 
-What ships (`nowcast::api::edge_fmin_ratio`): ln(ratio) linear in
+What ships (`truecast::api::edge_fmin_ratio`): ln(ratio) linear in
 the day's index plus the first two calendar harmonics, six
 constants, fitted by weighted least squares on each station-day's
 median ratio (66,352 station-days) so no single ionogram can steer

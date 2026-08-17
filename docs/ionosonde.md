@@ -42,7 +42,7 @@ values per hour. Two model columns so far:
 - **absorption edge** (fmin rows) — the lower edge of the usable
   window, against the ionogram's fmin. The model is the engine's own
   SNR-versus-frequency curve over the probe path
-  (`nowcast::api::probe_edge`): the lowest frequency within 6 dB of
+  (`truecast::api::probe_edge`): the lowest frequency within 6 dB of
   the hour's plateau, interpolated on a ten-rung ladder from 2 to
   10.3 MHz. Relative to the plateau rather than absolute, the way
   fmin is relative to the sounder's own echo strength; the remaining
@@ -56,7 +56,7 @@ values per hour. Two model columns so far:
   runs the same probe at the day's holdout index, floored at zero as
   the conditioning floors it. The level between the probe edge and the
   ionogram convention is one fitted multiplicative constant
-  (`nowcast::api::EDGE_FMIN_RATIO`, 1.6138): the median of edge over
+  (`truecast::api::EDGE_FMIN_RATIO`, 1.6138): the median of edge over
   fmin across the six fit months, fitted by `sonde --fit-edge` with
   the two storm months held out. Multiplicative because a fixed
   decibel budget crosses the absorption wall at a fixed frequency
@@ -111,7 +111,7 @@ month. Findings, in order of consequence:
    to zero in every month, improves MAE in seven of eight, and carries
    +0.11 to +0.46 day-to-day skill — strongest exactly where it
    matters, in the storm months. That skill uses no data from the
-   scored station: it is what a deployed nowcast could really have.
+   scored station: it is what a deployed truecast could really have.
 3. **The +61 km height bias decomposes** (2025-06). Dudeney's corrected
    form over climatology's own inputs removes about 19 km; the rest is
    the M(3000)F2 input itself. IRTAM's height map removes nearly all
@@ -186,7 +186,7 @@ month. Findings, in order of consequence:
    be two real structures: the level rises with the day's index
    (about 1.3 near solar minimum, past 2.0 at maximum) and swings
    with the calendar season. The shipped level is now the fitted
-   model `nowcast::api::edge_fmin_ratio` (ln ratio linear in index
+   model `truecast::api::edge_fmin_ratio` (ln ratio linear in index
    plus two season harmonics), and with it the "March residual"
    above measured as mostly the index term: held-out Marches at
    minimum and maximum both land within 0.08 MHz of zero. Held-out
@@ -215,11 +215,11 @@ moving bias and add day-level skill from live soundings alone. The
 storm table rides on top as a small, safe increment: identity on quiet
 days and at low latitudes, a measured gain on severe storm days at mid
 latitudes. The daily-modeling measurements are done; the conditioning
-(essn, Kp, the storm table) now has a proven shape for the nowcast
+(essn, Kp, the storm table) now has a proven shape for the truecast
 pipeline to consume.
 
 For the lower edge: ship it on the ionogram convention.
-`nowcast::api::lower_edge` answers the usable window's floor per hour —
+`truecast::api::lower_edge` answers the usable window's floor per hour —
 the probe edge at the conditioning's floored index, divided by the
 fitted `EDGE_FMIN_RATIO`. The held-out months put its error at 0.79
 and 1.11 MHz MAE with the bias near zero outside the equinox months —

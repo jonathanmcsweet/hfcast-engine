@@ -19,7 +19,7 @@
 //!   number ([`api::Conditioning::Daily`]), and
 //! - the Kp-conditioned storm table (`src/stormfit.rs`) on top of it.
 //!
-//! `sonde --engine nowcast` checks this plumbing against the research
+//! `sonde --engine truecast` checks this plumbing against the research
 //! columns of the harness cache, so the deployable API and the measured
 //! tables cannot drift apart silently. Later phases replace the inner
 //! physics with a batch-shaped form; the API and the ruler stay.

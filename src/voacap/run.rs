@@ -1878,7 +1878,7 @@ pub fn run_area_daily_median(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<Ar
 /// its own `FSECV`, its own ionosphere — so the answer is a function of
 /// the place and hour alone. This is what `run_area_daily_median` does
 /// per point, and what `run_area`'s first point does before the COMMON
-/// carry begins. The nowcast grid driver uses it for every point, which
+/// carry begins. The truecast grid driver uses it for every point, which
 /// is what makes its output independent of lattice shape, visit order
 /// and thread count.
 pub(crate) fn area_point_fresh(

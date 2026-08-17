@@ -2,7 +2,7 @@
 
 Some devices run the app with zero network access, some forever. The
 engine still gives them a better forecast than the parity engine's
-climatology through two conditionings in `nowcast::api`:
+climatology through two conditionings in `truecast::api`:
 `Conditioning::offline` (nothing but the install) and
 `Conditioning::offline_synced` (the install plus a baked snapshot).
 This page explains how both work and the measurements behind them.

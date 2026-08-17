@@ -22,13 +22,13 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use crate::nowcast::api::LayerHour;
+use crate::truecast::api::LayerHour;
 use crate::voacap::data;
 use crate::{essn, giro, irtam, stats, wspr};
 
-/// The probe geometry and the secant now live with the nowcast API, so
+/// The probe geometry and the secant now live with the truecast API, so
 /// the harness and the deployable pipeline read the same engine table.
-pub use crate::nowcast::api::{secant_factor, PROBE_OFFSET_DEG};
+pub use crate::truecast::api::{secant_factor, PROBE_OFFSET_DEG};
 
 /// NVIS ground ranges scored, in km. Zero is straight up.
 pub const NVIS_RANGES_KM: [f64; 3] = [0.0, 300.0, 600.0];
@@ -63,8 +63,8 @@ pub struct Sample {
     /// the scored station's own data stands behind it.
     pub essn: Option<f64>,
     /// The day's leave-this-station-out index itself — the input the
-    /// essn column and the nowcast `Conditioning::Daily` consume.
-    /// Cached so `sonde --engine nowcast` can replay the deployable
+    /// essn column and the truecast `Conditioning::Daily` consume.
+    /// Cached so `sonde --engine truecast` can replay the deployable
     /// API against the research columns.
     pub essn_index: Option<f64>,
 }
@@ -210,7 +210,7 @@ fn station_edge(
     index_by_day: &BTreeMap<u8, Option<f64>>,
 ) -> Result<StationEdge, String> {
     let probe = |at_ssn: f64| {
-        crate::nowcast::api::probe_edge(
+        crate::truecast::api::probe_edge(
             &data::embedded_root(),
             station.meta.lat,
             station.meta.lon,
@@ -253,7 +253,7 @@ fn station_tables(
     hmf2_maps: &BTreeMap<u8, irtam::IrtamMap>,
 ) -> Result<StationTables, String> {
     let probe = |root: &Path, at_ssn: f64| {
-        crate::nowcast::api::probe_hours(
+        crate::truecast::api::probe_hours(
             root,
             station.meta.lat,
             station.meta.lon,
@@ -396,7 +396,7 @@ pub fn essn_series(month_dir: &Path, stations_tsv: &Path) -> Result<BTreeMap<u8,
     // real fault, not a station to skip.
     for station in &observed {
         let probe = |ssn: f64| {
-            crate::nowcast::api::probe_hours(
+            crate::truecast::api::probe_hours(
                 &data::embedded_root(),
                 station.meta.lat,
                 station.meta.lon,

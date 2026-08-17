@@ -4,7 +4,7 @@ The eight validation months are archives; this loop points the same
 ruler at the present. The current month is an ordinary month bundle
 (`data/YYYY-MM`) that is still filling in, so every instrument the
 program built — the leave-one-station-out daily index, the storm
-conditioning, the ionosonde report, the absorption edge, the nowcast
+conditioning, the ionosonde report, the absorption edge, the truecast
 API replay — runs on live data unchanged. Nothing is scored against a
 special "live" path: what is tested daily is exactly what ships.
 
@@ -27,8 +27,8 @@ self-contained and decides the month from UTC):
    most recent day with samples, scored on its own rows — sample
    counts, essn and climatology foF2 bias/MAE, the day's median
    fitted index, and the calibrated lower edge against fmin.
-4. Replay the nowcast point API against the research columns
-   (`sonde --engine nowcast`). This is the pass/fail gate: a nonzero
+4. Replay the truecast point API against the research columns
+   (`sonde --engine truecast`). This is the pass/fail gate: a nonzero
    exit from the script means the deployable API and the research
    harness disagree, or a fetch broke.
 

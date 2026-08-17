@@ -27,7 +27,7 @@
 //! double a one-band globe. The header is 48 bytes and every plane
 //! starts 4-byte aligned, so a zero-copy float view is always legal.
 
-use crate::nowcast::grid::{GridPlanes, GridRequest};
+use crate::truecast::grid::{GridPlanes, GridRequest};
 
 pub const MAGIC: [u8; 4] = *b"HFB1";
 pub const VERSION: u16 = 1;

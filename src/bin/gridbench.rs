@@ -1,4 +1,4 @@
-//! Times the nowcast grid driver against the parity area driver.
+//! Times the truecast grid driver against the parity area driver.
 //!
 //! The lattice defaults to the application's fine globe: the whole
 //! world at 1.25 by 1.5 degrees, 34,560 points, one band. Needs the
@@ -8,12 +8,12 @@
 //!
 //! With `HFCAST_PERF` set, a per-stage timing table follows the runs.
 //! `--parity 0` skips the parity driver so the table covers the
-//! nowcast driver alone.
+//! truecast driver alone.
 
 use std::process::ExitCode;
 use std::time::Instant;
 
-use hfcast::nowcast::grid::{predict_grid, GridRequest};
+use hfcast::truecast::grid::{predict_grid, GridRequest};
 use hfcast::voacap::area::{Grid, Projection};
 use hfcast::voacap::coefficients::FoF2Model;
 use hfcast::voacap::data;
@@ -99,7 +99,7 @@ fn parity_run(root: &std::path::Path, area: &AreaInputs) -> Result<(), String> {
     Ok(())
 }
 
-/// Runs the nowcast driver at each requested thread count and reports
+/// Runs the truecast driver at each requested thread count and reports
 /// the scaling over one thread.
 fn bench_threads(root: &std::path::Path, cfg: &Config) -> Result<(), String> {
     let mut serial_ms = 0u128;
@@ -125,7 +125,7 @@ fn bench_threads(root: &std::path::Path, cfg: &Config) -> Result<(), String> {
         } else {
             t.to_string()
         };
-        println!("nowcast predict_grid, {label} thread(s): {ms} ms{scaling}");
+        println!("truecast predict_grid, {label} thread(s): {ms} ms{scaling}");
     }
     Ok(())
 }

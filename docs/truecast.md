@@ -1,15 +1,15 @@
-# The nowcast pipeline
+# The truecast pipeline
 
-`src/nowcast/` is the second prediction pipeline, beside the parity
+`src/truecast/` is the second prediction pipeline, beside the parity
 port. The parity engine's contract is byte-identical agreement with the
 Fortran reference, which is why it cannot become more accurate: every
-day of a month gets the same answer. The nowcast contract is different:
+day of a month gets the same answer. The truecast contract is different:
 a change ships when the measured error against ionosonde truth goes
 down (`docs/ionosonde.md`), and the parity engine does not move.
 
 ## The point API
 
-`nowcast::api::point` (and `day`, its 24-hour form) answers "what is
+`truecast::api::point` (and `day`, its 24-hour form) answers "what is
 the ionosphere over this point" in the ionosonde's own conventions:
 
 - ordinary-wave foF2 in MHz (the raw engine value carries half the
@@ -43,7 +43,7 @@ on top.
 
 ## The verification: the API cannot drift from the measurements
 
-`sonde --engine nowcast` replays the point API over every cached cell
+`sonde --engine truecast` replays the point API over every cached cell
 of the validation months and compares it with the research columns the
 accuracy claims rest on. Over all eight months (2026-08-13):
 
@@ -65,7 +65,7 @@ before a real plumbing error could hide.
 
 ## The grid driver
 
-`nowcast::grid::predict_grid` runs one coverage lattice with threads
+`truecast::grid::predict_grid` runs one coverage lattice with threads
 inside the engine: one shared read-only coefficient set and area setup,
 workers claiming rows off a shared cursor, output as structure-of-arrays
 `f32` planes (reliability, SNR, takeoff angle). Two properties are
@@ -103,7 +103,7 @@ Measured with `gridbench` on the application's fine-globe lattice
 The scaling is near linear to eight threads — the engine parallelizes;
 the application's strip sharding and JSON rendering were the loss.
 With `HFCAST_PERF` set, `gridbench` prints the per-stage table
-(`--parity 0` scopes it to the nowcast driver). Where the remaining
+(`--parity 0` scopes it to the truecast driver). Where the remaining
 time goes, single thread: the 30-point ionogram and its profile walks
 (`genion`/`gethp`) 34%, the systems frequency loop 28%, the per-point
 layer parameters (`versy` geography) 18%, per-point setup (geometry,
@@ -111,7 +111,7 @@ magnetic field, ground constants) about 10%.
 
 ## The packed answer
 
-`nowcast::packed` is HFB1: the grid planes as one little-endian byte
+`truecast::packed` is HFB1: the grid planes as one little-endian byte
 body — a 48-byte header (lattice, counts), the frequencies, then the
 reliability, SNR and takeoff planes as raw `f32`, each starting 4-byte
 aligned so a JavaScript consumer can view them as `Float32Array`
@@ -123,7 +123,7 @@ is parked with the rest of the app work.
 
 ## The lower edge
 
-`nowcast::api::lower_edge` answers the usable window's floor per UT
+`truecast::api::lower_edge` answers the usable window's floor per UT
 hour on the ionogram's fmin convention: the absorption-edge probe
 (`probe_edge` — a Systems run over a ten-rung ladder, the lowest
 frequency within 6 dB of the hour's own SNR plateau) at the
@@ -138,8 +138,8 @@ instrument floor too. The fit, the held-out verdict (0.79 and
 
 The JSON service (`src/service.rs`, the whole application boundary)
 takes an `"engine"` field: `"voacap"` — the default, so every existing
-request predicts exactly what it always did — or `"nowcast"`, which
-runs the same physics conditioned on the fitted daily index. A nowcast
+request predicts exactly what it always did — or `"truecast"`, which
+runs the same physics conditioned on the fitted daily index. A truecast
 request states `"essn"` in place of `"ssn"` (both at once is refused),
 and the run applies the floor: the engine never goes below the map's
 zero-sunspot plane, and below it a synthesized coefficient overlay
@@ -154,7 +154,7 @@ per-hour foF2 ratio into a listing run yet.
 
 ## One physics, by decision
 
-The original batch plan imagined the nowcast pipeline growing its own
+The original batch plan imagined the truecast pipeline growing its own
 structure-of-arrays physics, equivalent to the parity engine within a
 tolerance envelope. That plan is closed (2026-08-13, measured): the
 pipeline computes through the parity engine's own functions, restructured
@@ -162,7 +162,7 @@ only in ways that cannot move a bit — shared evaluations of
 position-independent work, and block layouts of independent arithmetic.
 Two reasons, in order:
 
-1. The service now proves `"engine":"nowcast"` at an index at or above
+1. The service now proves `"engine":"truecast"` at an index at or above
    zero answers exactly as the parity engine at that number. A CPU pass
    that drifted within a tolerance would break that proof and put two
    sets of physics behind one API.
