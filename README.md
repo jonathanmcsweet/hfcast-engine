@@ -18,7 +18,10 @@ The two Linux badges run the whole test suite on that architecture. The
 four Android ones are library builds: a runner cannot execute them.
 
 A radio propagation engine in Rust, and the tests that prove it is
-correct. No dependencies: everything here is `std`.
+correct. Two models: a translation of VOACAP, proved character for
+character against the original, and a second engine that conditions the
+same physics on the day's measurements. No dependencies: everything
+here is `std`.
 
 ```sh
 cargo add hfcast
@@ -61,7 +64,7 @@ compares the output character by character.
 | `paritycheck` | 7,104 fields that the application reads | 0 differ |
 | `archcheck` | this engine against itself on a different processor | identical |
 
-Plus 211 unit tests and 40 harness and integration tests.
+Plus 279 unit tests and 57 harness and integration tests.
 
 A [daily job](docs/soak.md) runs 200 paths through both engines with the
 space weather of that day. It fails if one number is different.
@@ -87,6 +90,31 @@ A change that touches everything — `f32` to `f64`, the order of
 arithmetic, state that stays between hours — is **not** behind that
 switch. A flag cannot describe such a change honestly. The result would
 be a different model, not VOACAP with a correction.
+
+## The second engine
+
+That different model exists, in `src/nowcast/`, and a request selects it
+by name: `"engine": "nowcast"`. A request that says nothing gets the
+parity engine, unchanged.
+
+VOACAP predicts a monthly median. The second engine conditions the same
+climatology on the day itself, three ways:
+
+- a **daily effective sunspot index**, fitted from ionosonde soundings,
+  replaces the monthly smoothed number when the caller has one;
+- a **geomagnetic storm table** widens the forecast when the measured
+  Kp says the ionosphere is disturbed;
+- with **no network at all** — no index, nothing — the engine derives
+  its own estimate for the date from its embedded sunspot table and a
+  fitted day-of-year correction, and an optional baked `"sync"` record
+  lets a build carry the last known state to a device that will never
+  go online.
+
+Each piece is fitted on a ~130-month ionosonde archive and judged only
+on eight held-out months the fits never saw.
+[docs/comparison.md](docs/comparison.md) puts the two models side by
+side; [docs/offline.md](docs/offline.md) is the measured case that the
+offline form beats the monthly median on individual days.
 
 ## Why keep the defects
 
@@ -124,7 +152,11 @@ P.533.
 | `src/compare.rs` | Measures how far two outputs differ, field by field |
 | `src/wspr.rs` | Reads collected WSPR reception reports |
 | `src/itu.rs` | Operates the ITU-R P.533 reference implementation |
-| `src/bin/` | The tests, `predict`, and `spacewx` |
+| `src/nowcast/` | The second engine: climatology conditioned on the day |
+| `src/giro.rs` | Reads GIRO ionosonde soundings, the ground truth |
+| `src/essn.rs` | Fits the daily effective sunspot index from them |
+| `src/stormfit.rs` | The fitted geomagnetic storm table |
+| `src/bin/` | The tests, `predict`, `sonde`, and `spacewx` |
 | `embedded/` | The 560 KB of data the engine needs, compiled in |
 
 **There are no dependencies, on purpose.** This crate is the reference
@@ -171,6 +203,19 @@ the request, or `$HFCAST_ITSHFBC`, or `~/itshfbc`. A build with
 `--features embedded-coefficients` accepts `"itshfbc":"<embedded>"` and
 needs no tree.
 
+The same request selects the second engine by swapping `"ssn"` for
+`"engine":"nowcast"`. A live daily index rides in as `"essn"`; with no
+index at all the engine derives its own for the date — the offline
+form, which also takes an optional `"day"` (the 15th if absent) and an
+optional baked `"sync"` record:
+
+```sh
+echo '{"fromLat":47.6,"fromLon":-122.3,"toLat":51.5,"toLon":-0.1,
+       "month":8,"year":2026,"day":17,"engine":"nowcast","watts":100,
+       "bands":[7.1,14.1,21.1],"requiredSnrDb":24,"noiseDbw":-145}' |
+  cargo run --release --bin predict
+```
+
 [docs/port.md](docs/port.md) has the complete list of tests, the options
 each one takes, and a "Traps" section that records each way a result has
 been wrong here before. Read it before you trust a result.
@@ -200,6 +245,14 @@ agreement with the original.
 | [storm.md](docs/storm.md) | Geomagnetic storm widening |
 | [daily.md](docs/daily.md) | Whether a daily forecast is possible |
 | [irtam.md](docs/irtam.md) | Real-time ionospheric maps, measured |
+| [nowcast.md](docs/nowcast.md) | The second pipeline and its contract |
+| [ionosonde.md](docs/ionosonde.md) | The daily index against ionosonde truth |
+| [essn-wspr.md](docs/essn-wspr.md) | The daily index against real links |
+| [comparison.md](docs/comparison.md) | The two models, side by side |
+| [offline.md](docs/offline.md) | The forecast with no network at all |
+| [refit.md](docs/refit.md) | The whole-archive refit, held-out verified |
+| [reliability.md](docs/reliability.md) | The claimed day-to-day spread, checked |
+| [live.md](docs/live.md) | Daily validation against the present |
 | [licence.md](docs/licence.md) | Where the code and the data come from |
 | [soak.md](docs/soak.md) | The daily parity job |
 
