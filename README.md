@@ -14,39 +14,22 @@ Built for, each checked on its own:
 [![android x86_64](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/jonathanmcsweet/hfcast-engine/badges/android-x86-64.json)](https://github.com/jonathanmcsweet/hfcast-engine/actions/workflows/arch.yml)
 [![android x86](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/jonathanmcsweet/hfcast-engine/badges/android-x86.json)](https://github.com/jonathanmcsweet/hfcast-engine/actions/workflows/arch.yml)
 
-The two Linux badges run the whole test suite on that architecture. The
-four Android ones are library builds: a runner cannot execute them.
+## What this is
 
-A radio propagation engine in Rust, and the tests that prove it is
-correct. Two models: a translation of VOACAP, proved character for
-character against the original, and a second engine that conditions the
-same physics on the day's measurements. No dependencies: everything
-here is `std`.
+High frequency radio signals travel long distances because the
+ionosphere reflects them but can be unpredictable due to all of the variables involved. How well they travel changes with the hour,
+the season, and the activity of the sun.
+
+A radio propagation engine written in Rust with a faithful port of VOACAP, a bug-corrected VOACAP, or our custom Nowcast engine. Nowcast uses VOACAP's physics but is properly fitted to daily data instead of a monthly average, daily effective sunspot index, geomagnetic storm table, and proper LUF calculation. 
+
+## Quick start
+
+No dependencies: everything here is `std`.
 
 ```sh
 cargo add hfcast
 ```
 
-## What this is
-
-High frequency radio signals travel long distances because the
-ionosphere reflects them. How well they travel changes with the hour,
-the season, and the activity of the sun. VOACAP is the model that
-predicts this. The US Institute for Telecommunication Sciences wrote it,
-and much of the world still uses it.
-
-VOACAP is approximately 22,800 lines of FORTRAN 77 in 195 files. It has
-783 `GOTO` statements. It does not use `IMPLICIT NONE`. Almost all of
-its data moves through `COMMON` blocks and not through arguments. It is
-correct, and it is very difficult to change.
-
-This is a translation of that model into Rust. The translation gives the
-same answer as the original, to the last printed character. Then it
-gives a second answer, with the defects of the original corrected.
-
-The application that uses it is
-[HFcast](https://github.com/jonathanmcsweet/hfcast), which puts the engine on a
-telephone.
 
 ## The proof
 
@@ -69,46 +52,38 @@ Plus 279 unit tests and 57 harness and integration tests.
 A [daily job](docs/soak.md) runs 200 paths through both engines with the
 space weather of that day. It fails if one number is different.
 
-## The two behaviours
+## Our engines
 
 Select with `api::Request::model`:
 
-- **`Model::Compatible`** is the default. It is VOACAP as it is, with
-  the defects included. The tests above can judge only this behaviour,
-  which is why it is the default. A caller who says nothing gets
-  numbers that are proved.
-- **`Model::Corrected`** is VOACAP with six recorded defects corrected.
-  It is not the same as the original, on purpose.
+### VOACAP
 
-`src/voacap/model.rs` has one method for each defect. It is the complete
-list of the ways the two can be different.
-[docs/corrected.md](docs/corrected.md) records what each correction
-moves, and says which corrections have no measurement of accuracy behind
-them.
+**`Model::Compatible`**
+VOACAP is approximately 22,800 lines of FORTRAN 77 in 195 files. It has
+783 `GOTO` statements. It does not use `IMPLICIT NONE`. Almost all of
+its data moves through `COMMON` blocks and not through arguments. 
 
-A change that touches everything — `f32` to `f64`, the order of
-arithmetic, state that stays between hours — is **not** behind that
-switch. A flag cannot describe such a change honestly. The result would
-be a different model, not VOACAP with a correction.
+This is a translation of that model into Rust including the original defects. The translation gives the
+same answer as the original, to the last printed character. 
 
-## The second engine
+**`Model::Corrected`** VOACAP with six recorded defects corrected.
 
-That different model exists, in `src/truecast/`, and a request selects it
-by name: `"engine": "truecast"`. A request that says nothing gets the
-parity engine, unchanged.
+[docs/corrected.md](docs/corrected.md) records what each correction changes
+
+
+**`Model::TrueCast`**
+
+Found in `src/truecast/`, and a request selected with: `"engine": "truecast"`. 
 
 VOACAP predicts a monthly median. The second engine conditions the same
-climatology on the day itself, three ways:
+climatology on a finder day by day basis:
 
 - a **daily effective sunspot index**, fitted from ionosonde soundings,
   replaces the monthly smoothed number when the caller has one;
+
 - a **geomagnetic storm table** widens the forecast when the measured
   Kp says the ionosphere is disturbed;
-- with **no network at all** — no index, nothing — the engine derives
-  its own estimate for the date from its embedded sunspot table and a
-  fitted day-of-year correction, and an optional baked `"sync"` record
-  lets a build carry the last known state to a device that will never
-  go online.
+
 
 Each piece is fitted on a ~130-month ionosonde archive and judged only
 on eight held-out months the fits never saw.
@@ -116,27 +91,9 @@ on eight held-out months the fits never saw.
 side; [docs/offline.md](docs/offline.md) is the measured case that the
 offline form beats the monthly median on individual days.
 
-## Why keep the defects
-
-If the engine copies the defects, then "the same as the original" is
-something you can test. If it does not, it is an opinion. That test is
-what the whole method depends on.
-
-Corrections then live in one named place, where each one can be measured
-alone.
-
 ## How accurate is it
 
-The engine gives the same answers as VOACAP, so it is exactly as
-accurate as VOACAP. That is a separate question, and this repository
-measures it against real radio reports:
-
-VOACAP puts the good hours and the bad hours in the correct places
-(correlation +0.76 against measured WSPR reports). It exaggerates the
-difference between them by approximately four and a half times (slope
-+0.22). [docs/accuracy.md](docs/accuracy.md) has the measurements, and
-[docs/validation.md](docs/validation.md) has the comparison with ITU-R
-P.533.
+// todo 
 
 ## Layout
 
@@ -163,7 +120,7 @@ P.533.
 that a translation is judged against, so its own supply chain is empty.
 Everything is `std`.
 
-## Operate it
+## Testing
 
 You need a Rust toolchain, `gfortran`, and a copy of `voacapl` in
 `vendor/voacapl`.
@@ -284,7 +241,7 @@ let answer = hfcast::service::run(r#"{"itshfbc": "/home/you/itshfbc", ...}"#)?;
 ```
 
 A build from this repository can compile them in instead, which is what
-the telephone application does, because a telephone has no tree to read:
+the HFcast phone app does:
 
 ```sh
 cargo build --features embedded-coefficients
@@ -298,8 +255,7 @@ array, and [docs/licence.md](docs/licence.md) records how that was
 measured and what it does and does not settle. In short: ITU-R Study
 Group 3 publishes the CCIR Report 322 and 340 data itself, for
 implementers, free from copyright assertions, in its P.372 and P.533
-reference software. The crate does not rely on that — it carries none of
-it — but the repository and the telephone application do.
+reference software.
 
 ## Licence
 
