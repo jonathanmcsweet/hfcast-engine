@@ -27,8 +27,8 @@ use hfcast::geomag::{self, GeomagTable};
 use hfcast::irtam;
 use hfcast::listing::parse_listing;
 use hfcast::runner::{map_limit, run_deck, variant_bin, IsolatedRoot};
-use hfcast::stats::{correlation, fit_line, median, median_in_place};
-use hfcast::wspr::{self, smoothed_ssn};
+use hfcast::stats::{correlation, fit_line, median_in_place};
+use hfcast::wspr::{self, smoothed_ssn, DeviationPair, Scored};
 
 const VOACAP_VARIANT: &str = "O2";
 const CONCURRENCY: usize = 4;
@@ -261,79 +261,18 @@ fn load_cache(path: &Path) -> Option<Vec<Sample>> {
     Some(samples)
 }
 
-/// Median absolute error after removing one offset per path.
-fn offset_adjusted_mae(samples: &[Sample], pick: &dyn Fn(&Sample) -> f64) -> f64 {
-    let mut by_path: HashMap<usize, Vec<f64>> = HashMap::new();
-    for s in samples {
-        by_path
-            .entry(s.path)
-            .or_default()
-            .push(s.observed - pick(s));
-    }
-    let offsets: HashMap<usize, f64> = by_path
-        .into_iter()
-        .map(|(p, mut residuals)| (p, median_in_place(&mut residuals)))
-        .collect();
-    let mut errors: Vec<f64> = samples
+/// One model's samples as the shared scoring shape (`src/wspr.rs`).
+fn scored(samples: &[Sample], pick: &dyn Fn(&Sample) -> f64) -> Vec<Scored> {
+    samples
         .iter()
-        .map(|s| (s.observed - pick(s) - offsets[&s.path]).abs())
-        .collect();
-    median_in_place(&mut errors)
-}
-
-/// One deviation pair: how far the day sat from its path-hour's monthly
-/// median, observed and as the model predicted, plus the day's Kp history
-/// and the path's frequency.
-struct DeviationPair {
-    observed: f64,
-    predicted: f64,
-    kp_max_24h: Option<f64>,
-    freq_mhz: f64,
-}
-
-/// Deviations of observation and of a model from their own per-path-hour
-/// monthly medians. This is where climatology is zero by construction.
-fn deviations(
-    samples: &[Sample],
-    pick: &dyn Fn(&Sample) -> f64,
-    kp: impl Fn(&Sample) -> Option<f64>,
-    freqs: &[f64],
-) -> Vec<DeviationPair> {
-    let mut obs_by_hour: HashMap<(usize, u8), Vec<f64>> = HashMap::new();
-    let mut pred_by_hour: HashMap<(usize, u8), Vec<f64>> = HashMap::new();
-    for s in samples {
-        obs_by_hour
-            .entry((s.path, s.hour))
-            .or_default()
-            .push(s.observed);
-        pred_by_hour
-            .entry((s.path, s.hour))
-            .or_default()
-            .push(pick(s));
-    }
-    let centre = |m: &HashMap<(usize, u8), Vec<f64>>| -> HashMap<(usize, u8), f64> {
-        m.iter()
-            .filter(|(_, v)| v.len() >= 5)
-            .map(|(k, v)| (*k, median(v)))
-            .collect()
-    };
-    let obs_centre = centre(&obs_by_hour);
-    let pred_centre = centre(&pred_by_hour);
-
-    let mut pairs = Vec::new();
-    for s in samples {
-        let key = (s.path, s.hour);
-        let (Some(oc), Some(pc)) = (obs_centre.get(&key), pred_centre.get(&key)) else {
-            continue;
-        };
-        pairs.push(DeviationPair {
-            observed: s.observed - oc,
-            predicted: pick(s) - pc,
-            kp_max_24h: kp(s),
-            freq_mhz: freqs.get(s.path).copied().unwrap_or(0.0),
-        });
-    }
-    pairs
+        .map(|s| Scored {
+            path: s.path,
+            day: s.day,
+            hour: s.hour,
+            observed: s.observed,
+            predicted: pick(s),
+        })
+        .collect()
 }
 
 fn deviation_row(label: &str, pairs: &[&DeviationPair]) {
@@ -354,25 +293,23 @@ fn deviation_row(label: &str, pairs: &[&DeviationPair]) {
 fn report(month: &str, samples: &[Sample], freqs: &[f64], table: Option<&GeomagTable>) {
     println!("## {month} ({} path-day-hours)\n", samples.len());
 
-    let clim = |s: &Sample| s.climatology;
-    let irt = |s: &Sample| s.irtam;
+    let clim = scored(samples, &|s| s.climatology);
+    let irt = scored(samples, &|s| s.irtam);
 
     println!("Absolute error, one offset per path (median absolute error, dB):\n");
     println!("| model | error |");
     println!("| --- | --: |");
-    println!(
-        "| climatology | {:.2} |",
-        offset_adjusted_mae(samples, &clim)
-    );
-    println!("| IRTAM foF2 | {:.2} |", offset_adjusted_mae(samples, &irt));
+    println!("| climatology | {:.2} |", wspr::offset_adjusted_mae(&clim));
+    println!("| IRTAM foF2 | {:.2} |", wspr::offset_adjusted_mae(&irt));
 
     let (year, month_no) = month
         .split_once('-')
         .and_then(|(y, m)| Some((y.parse::<u32>().ok()?, m.parse::<u32>().ok()?)))
         .unwrap_or((0, 0));
-    let kp_of =
-        |s: &Sample| table.and_then(|t| t.kp_max_lookback(year, month_no, s.day, s.hour, 24));
-    let pairs = deviations(samples, &irt, kp_of, freqs);
+    let kp_of = |p: &DeviationPair| {
+        table.and_then(|t| t.kp_max_lookback(year, month_no, p.day, p.hour, 24))
+    };
+    let pairs = wspr::deviations(&irt);
 
     println!("\nDay-to-day deviations from each path-hour's monthly median.");
     println!("Climatology predicts zero deviation for every day, so any");
@@ -386,7 +323,7 @@ fn report(month: &str, samples: &[Sample], freqs: &[f64], table: Option<&GeomagT
         let group = |lo: f64, hi: f64| {
             pairs
                 .iter()
-                .filter(|p| p.kp_max_24h.is_some_and(|k| k >= lo && k < hi))
+                .filter(|p| kp_of(p).is_some_and(|k| k >= lo && k < hi))
                 .collect::<Vec<_>>()
         };
         deviation_row("quiet (Kp < 3)", &group(0.0, 3.0));
@@ -396,10 +333,11 @@ fn report(month: &str, samples: &[Sample], freqs: &[f64], table: Option<&GeomagT
     // Higher bands run closer to the MUF, where foF2 decides everything;
     // low bands are ruled by absorption and noise instead. If the real-time
     // map helps anywhere, it is at the top.
+    let freq_of = |p: &DeviationPair| freqs.get(p.path).copied().unwrap_or(0.0);
     let band = |lo: f64, hi: f64| {
         pairs
             .iter()
-            .filter(|p| p.freq_mhz >= lo && p.freq_mhz < hi)
+            .filter(|p| freq_of(p) >= lo && freq_of(p) < hi)
             .collect::<Vec<_>>()
     };
     deviation_row("bands up to 8 MHz", &band(0.0, 8.0));

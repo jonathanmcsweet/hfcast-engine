@@ -42,7 +42,7 @@ const DEFAULT_MIN_HOURS: usize = 8;
 
 /// Kp at or above this counts the day as geomagnetically disturbed. The
 /// same threshold the soak uses, and close to where the storm-spread
-/// widening in `docs/storm.md` begins to bite.
+/// widening in `docs/reliability.md` begins to bite.
 const DISTURBED_KP: f64 = 5.0;
 
 /// One path's series of daily mean residuals, in day order with gaps kept

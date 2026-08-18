@@ -10,9 +10,9 @@ Two measurements per fix:
 
 - **What moved.** `correctcheck --fix NAME --corpus NAME` runs a corpus
   twice, once compatible and once with only that fix on, and reports
-  which printed cells differ. The corpus has to reach the fix's site:
-  a corpus that cannot reports no movement, which reads exactly like a
-  fix that changes nothing.
+  which printed cells differ. The corpus has to reach the fix's site.
+  If it can't, the report shows no movement, and a reader has no way
+  to tell whether the fix did nothing or was simply never exercised.
 - **Whether it helped.** `validate --fix NAME` scores the ported engine
   against measured WSPR reception across the eight validation months,
   beside `validate --ported` as the control. Same engine both sides, so

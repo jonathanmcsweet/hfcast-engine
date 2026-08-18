@@ -1,4 +1,4 @@
-# VOACAP evaluation-order sensitivity — the port tolerance envelope
+# VOACAP evaluation-order sensitivity: the port tolerance envelope
 
 Measured with the sporadic-E layer enabled, matching the validated server
 configuration; the earlier sporadic-E-off derivation is in git history and
@@ -160,11 +160,11 @@ Widest disagreement between IEEE-conformant builds (O0, O1, O3). A port that sta
 
 ## Path regimes
 
-- `short-eu` — very short, single hop
-- `med-eu` — medium mid-latitude, the vendor test circuit
-- `long-ew` — long east-west, wide local-time spread, multi-hop
-- `long-ns` — long north-south crossing the equator
-- `polar` — trans-polar, auroral absorption
-- `equatorial` — equatorial, near the anomaly crests
-- `antipodal` — near-antipodal, the longest path the model handles
-- `south-am` — long north-south in the western hemisphere
+- `short-eu`: very short, single hop
+- `med-eu`: medium mid-latitude, the vendor test circuit
+- `long-ew`: long east-west, wide local-time spread, multi-hop
+- `long-ns`: long north-south crossing the equator
+- `polar`: trans-polar, auroral absorption
+- `equatorial`: equatorial, near the anomaly crests
+- `antipodal`: near-antipodal, the longest path the model handles
+- `south-am`: long north-south in the western hemisphere
