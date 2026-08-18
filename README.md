@@ -5,7 +5,7 @@
 [![Licence](https://img.shields.io/badge/licence-Apache--2.0-blue)](LICENSE)
 [![No dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)](Cargo.toml)
 
-Built for, each checked on its own:
+Built for these platforms, each checked on its own:
 
 [![linux x86_64](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/jonathanmcsweet/hfcast-engine/badges/linux-x86-64.json)](https://github.com/jonathanmcsweet/hfcast-engine/actions/workflows/arch.yml)
 [![linux aarch64](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/jonathanmcsweet/hfcast-engine/badges/linux-aarch64.json)](https://github.com/jonathanmcsweet/hfcast-engine/actions/workflows/arch.yml)
@@ -14,42 +14,83 @@ Built for, each checked on its own:
 [![android x86_64](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/jonathanmcsweet/hfcast-engine/badges/android-x86-64.json)](https://github.com/jonathanmcsweet/hfcast-engine/actions/workflows/arch.yml)
 [![android x86](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/jonathanmcsweet/hfcast-engine/badges/android-x86.json)](https://github.com/jonathanmcsweet/hfcast-engine/actions/workflows/arch.yml)
 
-The two Linux badges run the whole test suite on that architecture. The
-four Android ones are library builds: a runner cannot execute them.
+## What this is
 
-A radio propagation engine in Rust, and the tests that prove it is
-correct. No dependencies: everything here is `std`.
+High frequency radio signals (HF) travel long distances under differeing conditions making their reach hard to predict: it changes with the hour, the season, and the activity of the sun. 
+
+This libary offers three models to predict HF propagation: 
+
+1. A faithful port of VOACAP written by the US Institute for Telecommunication Sciences
+2. VOACAP Corrected, a VOACAP implementation with defects fixed,
+3. Truecast, which runs VOACAP's physics against a more granular daily average, the effective sunspot index, a geomagnetic storm table, a corrected
+layer height, and a lower edge of the usable window that the original
+cannot give.
+
+## Quick start
+
+No dependencies: everything here is `std`.
 
 ```sh
 cargo add hfcast
 ```
 
-## What this is
+## Our engines
 
-High frequency radio signals travel long distances because the
-ionosphere reflects them. How well they travel changes with the hour,
-the season, and the activity of the sun. VOACAP is the model that
-predicts this. The US Institute for Telecommunication Sciences wrote it,
-and much of the world still uses it.
+Two of the three are forms of the port, chosen with
+`api::Request::model`. The third is a separate engine, chosen by the
+request itself.
+
+### VOACAP `Model::Compatible`
 
 VOACAP is approximately 22,800 lines of FORTRAN 77 in 195 files. It has
 783 `GOTO` statements. It does not use `IMPLICIT NONE`. Almost all of
-its data moves through `COMMON` blocks and not through arguments. It is
-correct, and it is very difficult to change.
+its data moves through `COMMON` blocks and not through arguments. 
 
-This is a translation of that model into Rust. The translation gives the
-same answer as the original, to the last printed character. Then it
-gives a second answer, with the defects of the original corrected.
+This is that model translated into Rust, defects included, and it gives
+the same answer as the original to the last printed character.
 
-The application that uses it is
-[HFcast](https://github.com/jonathanmcsweet/hfcast), which puts the engine on a
-telephone.
+### VOACAP with defects fixed `Model::Corrected`
 
-## The proof
+The same engine with six recorded defects corrected, and nothing else
+changed. `src/voacap/model.rs` has one method per defect, which is the
+complete list of ways the two can differ.
+[docs/corrected.md](docs/corrected.md) records what each correction
+moves, and says which ones have no measurement of accuracy behind them.
 
-A translation is only useful if you can show it is faithful. Each test
-below runs the original Fortran and this engine on the same input, and
-compares the output character by character.
+### Truecast `"engine": "truecast"`
+
+The third model lives in `src/truecast/`. It's chosen by the request
+rather than by `Model`, because it's a second engine rather than a
+variant of the port.
+
+VOACAP predicts a monthly median, so every day of a month gets the same
+answer. Truecast conditions that same climatology on the day itself:
+
+- a **daily effective sunspot index**, fitted from ionosonde soundings,
+  replaces the monthly smoothed number when the caller has one
+- a **geomagnetic storm table** widens the forecast when the measured
+  Kp says the ionosphere is disturbed
+- with **no network at all** the engine derives its own index for the
+  date, from the embedded sunspot table and a fitted day-of-year
+  correction, so a device that never goes online still beats the
+  monthly median.
+
+Each piece is fitted on a ~130-month ionosonde archive and judged only
+on eight held-out months the fits never saw.
+[docs/comparison.md](docs/comparison.md) puts the two models side by
+side; [docs/offline.md](docs/offline.md) is the measured case that the
+offline form beats the monthly median on individual days.
+
+### Why keep the defects
+
+If the engine copies the defects, then "the same as the original" is
+something you can test. If it does not, it is an opinion, and that test
+is what the whole method depends on. Corrections then live in one named
+place, where each one can be measured alone.
+
+## The proof for the orignial VOACAP model
+
+Each test below runs the original Fortran and this engine on the same input, and compares the output character by character.
 
 | Test | What it compares | Result |
 | --- | --- | --- |
@@ -58,57 +99,32 @@ compares the output character by character.
 | `areacheck` | 749 area points and 17,791 cells | identical |
 | `lufcheck` | 1,152 rows of the lowest usable frequency table | identical |
 | `antcheck` | each antenna type, against the gain files of the original | identical |
-| `paritycheck` | 7,104 fields that the application reads | 0 differ |
+| `paritycheck` | 7,104 fields the [HFcast](https://github.com/jonathanmcsweet/hfcast) app reads | 0 differ |
 | `archcheck` | this engine against itself on a different processor | identical |
 
-Plus 211 unit tests and 40 harness and integration tests.
+Plus 279 unit tests and 57 harness and integration tests.
 
 A [daily job](docs/soak.md) runs 200 paths through both engines with the
 space weather of that day. It fails if one number is different.
 
-## The two behaviours
-
-Select with `api::Request::model`:
-
-- **`Model::Compatible`** is the default. It is VOACAP as it is, with
-  the defects included. The tests above can judge only this behaviour,
-  which is why it is the default. A caller who says nothing gets
-  numbers that are proved.
-- **`Model::Corrected`** is VOACAP with six recorded defects corrected.
-  It is not the same as the original, on purpose.
-
-`src/voacap/model.rs` has one method for each defect. It is the complete
-list of the ways the two can be different.
-[docs/corrected.md](docs/corrected.md) records what each correction
-moves, and says which corrections have no measurement of accuracy behind
-them.
-
-A change that touches everything — `f32` to `f64`, the order of
-arithmetic, state that stays between hours — is **not** behind that
-switch. A flag cannot describe such a change honestly. The result would
-be a different model, not VOACAP with a correction.
-
-## Why keep the defects
-
-If the engine copies the defects, then "the same as the original" is
-something you can test. If it does not, it is an opinion. That test is
-what the whole method depends on.
-
-Corrections then live in one named place, where each one can be measured
-alone.
-
 ## How accurate is it
 
-The engine gives the same answers as VOACAP, so it is exactly as
-accurate as VOACAP. That is a separate question, and this repository
-measures it against real radio reports:
+The port gives the same answers as VOACAP, so it is exactly as accurate
+as VOACAP. That is a separate question, and this repository measures it
+against real radio reports: VOACAP puts the good hours and the bad
+hours in the correct places (correlation +0.76 against measured WSPR
+reports), and exaggerates the difference between them by approximately
+four and a half times (slope +0.22).
+[docs/accuracy.md](docs/accuracy.md) has the measurements, including
+the comparison with ITU-R P.533.
 
-VOACAP puts the good hours and the bad hours in the correct places
-(correlation +0.76 against measured WSPR reports). It exaggerates the
-difference between them by approximately four and a half times (slope
-+0.22). [docs/accuracy.md](docs/accuracy.md) has the measurements, and
-[docs/validation.md](docs/validation.md) has the comparison with ITU-R
-P.533.
+Truecast is measured against ionosonde soundings, which observe the
+ionosphere directly where the WSPR record can only infer it. Over the
+eight held-out months it removes the port's month-to-month bias and
+improves foF2 error in seven of the eight; on storm hours it improves
+on the port by 0.16 and 0.58 MHz. Fully offline, with no reading of any
+kind, it still improves on the port in eleven of twelve years.
+[docs/comparison.md](docs/comparison.md) has the tables.
 
 ## Layout
 
@@ -124,14 +140,18 @@ P.533.
 | `src/compare.rs` | Measures how far two outputs differ, field by field |
 | `src/wspr.rs` | Reads collected WSPR reception reports |
 | `src/itu.rs` | Operates the ITU-R P.533 reference implementation |
-| `src/bin/` | The tests, `predict`, and `spacewx` |
+| `src/truecast/` | The second engine: climatology conditioned on the day |
+| `src/giro.rs` | Reads GIRO ionosonde soundings, the ground truth |
+| `src/essn.rs` | Fits the daily effective sunspot index from them |
+| `src/stormfit.rs` | The fitted geomagnetic storm table |
+| `src/bin/` | The tests, `predict`, `sonde`, and `spacewx` |
 | `embedded/` | The 560 KB of data the engine needs, compiled in |
 
-**There are no dependencies, on purpose.** This crate is the reference
-that a translation is judged against, so its own supply chain is empty.
+There are no dependencies, on purpose because this crate faithfully replicates the reference VOACAP model
+
 Everything is `std`.
 
-## Operate it
+## Testing
 
 You need a Rust toolchain, `gfortran`, and a copy of `voacapl` in
 `vendor/voacapl`.
@@ -171,6 +191,19 @@ the request, or `$HFCAST_ITSHFBC`, or `~/itshfbc`. A build with
 `--features embedded-coefficients` accepts `"itshfbc":"<embedded>"` and
 needs no tree.
 
+The same request selects Truecast by swapping `"ssn"` for
+`"engine":"truecast"`. A live daily index is passed as `"essn"`. With
+no index at all the engine derives its own for the date — the offline
+form, which also takes an optional `"day"` (the 15th if absent) and an
+optional baked `"sync"` record:
+
+```sh
+echo '{"fromLat":47.6,"fromLon":-122.3,"toLat":51.5,"toLon":-0.1,
+       "month":8,"year":2026,"day":17,"engine":"truecast","watts":100,
+       "bands":[7.1,14.1,21.1],"requiredSnrDb":24,"noiseDbw":-145}' |
+  cargo run --release --bin predict
+```
+
 [docs/port.md](docs/port.md) has the complete list of tests, the options
 each one takes, and a "Traps" section that records each way a result has
 been wrong here before. Read it before you trust a result.
@@ -182,8 +215,9 @@ tools/analyze.sh          # clippy, complexity, duplication, coverage
 tools/analyze.sh --gate   # the same, but it fails on a broken gate
 ```
 
-[docs/analysis.md](docs/analysis.md) explains which warnings must never
-be applied. Some of them would change the arithmetic and break the
+The script's own header says what each step is for, and the comment
+above `parity_allows` records which clippy suggestions must never be
+applied. Some of them would change the arithmetic and break the
 agreement with the original.
 
 ## Documents
@@ -191,17 +225,16 @@ agreement with the original.
 | Document | What it covers |
 | --- | --- |
 | [port.md](docs/port.md) | How the translation is proved, and the traps |
-| [analysis.md](docs/analysis.md) | The static analysis suite |
 | [corrected.md](docs/corrected.md) | Each corrected defect and what it moves |
 | [sensitivity.md](docs/sensitivity.md) | The measured tolerance |
-| [accuracy.md](docs/accuracy.md) | Both engines against measured radio |
-| [validation.md](docs/validation.md) | The scores against WSPR reports |
-| [engines.md](docs/engines.md) | VOACAP against ITU-R P.533 |
-| [storm.md](docs/storm.md) | Geomagnetic storm widening |
-| [daily.md](docs/daily.md) | Whether a daily forecast is possible |
-| [irtam.md](docs/irtam.md) | Real-time ionospheric maps, measured |
+| [accuracy.md](docs/accuracy.md) | VOACAP against measured radio, and against P.533 |
+| [reliability.md](docs/reliability.md) | The day-to-day spread, and storm days |
+| [truecast.md](docs/truecast.md) | The second pipeline and its contract |
+| [ionosonde.md](docs/ionosonde.md) | Truecast against ionosonde truth, and the fits |
+| [comparison.md](docs/comparison.md) | The two models, side by side |
+| [offline.md](docs/offline.md) | The forecast with no network at all |
+| [soak.md](docs/soak.md) | The recurring daily checks |
 | [licence.md](docs/licence.md) | Where the code and the data come from |
-| [soak.md](docs/soak.md) | The daily parity job |
 
 ## Data files
 
@@ -231,7 +264,7 @@ let answer = hfcast::service::run(r#"{"itshfbc": "/home/you/itshfbc", ...}"#)?;
 ```
 
 A build from this repository can compile them in instead, which is what
-the telephone application does, because a telephone has no tree to read:
+the [HFcast](https://github.com/jonathanmcsweet/hfcast) phone app does:
 
 ```sh
 cargo build --features embedded-coefficients
@@ -245,8 +278,7 @@ array, and [docs/licence.md](docs/licence.md) records how that was
 measured and what it does and does not settle. In short: ITU-R Study
 Group 3 publishes the CCIR Report 322 and 340 data itself, for
 implementers, free from copyright assertions, in its P.372 and P.533
-reference software. The crate does not rely on that — it carries none of
-it — but the repository and the telephone application do.
+reference software.
 
 ## Licence
 

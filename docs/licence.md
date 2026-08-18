@@ -52,11 +52,11 @@ What is **not** needed, which is most of the 8.1 MB source tree:
   opens the binaries.
 - `coeffNN.bin` without the `w`. The port reads only the `w` variant,
   as the reference does.
-- `database/north_pole.txt`. It is never read — the reference builds
+- `database/north_pole.txt`. It is never read, because the reference builds
   its path without a separator, so the built-in pole always wins (see
   the defects list). Only a user-supplied `run/north_pole.txt`
   overrides it.
-- `geocity`, `geonatio`, `geostate`, `news` — 3.1 MB belonging to the
+- `geocity`, `geonatio`, `geostate`, `news`: 3.1 MB belonging to the
   interactive front end.
 
 **The open question is the coefficients.** `coeff01.asc` to
@@ -64,7 +64,7 @@ What is **not** needed, which is most of the 8.1 MB source tree:
 maps, which originate in CCIR Report 340 and URSI publications rather
 than with NTIA/ITS. The ITU asserts copyright over its publications.
 These same files ship inside VOACAP, ICEPAC, REC533, ITURHFProp and
-several Python packages, and have for years — but wide redistribution
+several Python packages, and have for years, but wide redistribution
 is not the same as a cleared licence, and this is the one item that
 needs a decision rather than more research.
 
@@ -125,7 +125,7 @@ through `COEFF12W.BIN` and the same files as text, under this statement:
 > copyright assertions.
 
 Checked against what is embedded here: not byte-identical, because `makeitshfbc`
-packs its own binary format and the ITU's is different — ours is little-endian
+packs its own binary format and the ITU's is different: ours is little-endian
 `f32` after an integer header, theirs is not. Comparing the ITU's ASCII form
 against our binary, 57.6% of its values appear in ours at five significant
 figures, and the remainder is layout rather than different numbers. Same
@@ -147,7 +147,7 @@ these are not files whose distribution the ITU restricts.
 All 45 files, 653 KB, were put in `embedded/` and compiled in by
 `src/voacap/data.rs` when the `embedded-coefficients` feature is on. The
 engine then runs with no external tree, which is what the application on a
-phone needs — a phone user cannot be asked to build the Fortran and run
+phone needs, since a phone user cannot be asked to build the Fortran and run
 `makeitshfbc`.
 
 The reasoning for going ahead while the licence question is open is that
@@ -162,7 +162,7 @@ The decision below narrows this: 44 files, not 45.
 **The crate is published, and it does not carry the coefficients.**
 
 `publish = false` is gone. What ships to crates.io is the engine, the 30
-antenna files and the version file — all NTIA/ITS work, all US Government
+antenna files and the version file, all NTIA/ITS work, all US Government
 work, none of it in question. `embedded/coeffs/` is behind the
 `embedded-coefficients` feature, which is off by default and whose files
 are excluded from the package by `Cargo.toml`. A dependent from crates.io
@@ -196,7 +196,7 @@ What goes:
   `fuzz --coeffs URSI88` sets it. `fuzz` drives a real `itshfbc` tree
   through `runner.rs`, so it is unaffected. A caller that asks
   `<embedded>` for the URSI maps gets a message saying they are in no
-  build and that a real root is needed — deliberately not a message
+  build and that a real root is needed, deliberately not a message
   naming the feature, which would send the reader in a circle.
 
 The removal costs nothing this project uses and takes the weakest item
@@ -212,9 +212,9 @@ it is the file that travels with the code.
 the feature on, because a telephone has no `itshfbc` tree, so every APK
 holds the 544 KB. Handing that APK to other people through F-Droid,
 Accrescent, Obtainium or a download is redistribution. The position for
-it is the same as for the repository — the ITU publishes the CCIR data
-itself — and it now rests on that rather than on "building for one's own
-devices", which only ever covered a private build.
+it is the same as for the repository, that the ITU publishes the CCIR
+data itself, and it now rests on that rather than on "building for one's
+own devices", which only ever covered a private build.
 
 The enquiry to ITU-R Study Group 3 has not been sent. It is free and
 slow, it blocks nothing, and it is recorded as open work.
@@ -230,5 +230,5 @@ directory through the overlay root the module already supports.
 
 Whatever is decided, the crate should credit NTIA/ITS for VOACAP,
 Greg Hand as its maintainer, and J.A. Watson for the Linux port,
-and carry the NTIA/ITS disclaimer — it asks for no warranty claims
+and carry the NTIA/ITS disclaimer, which asks for no warranty claims
 and no implication of US Government endorsement.

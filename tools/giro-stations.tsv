@@ -1,0 +1,37 @@
+# Candidate GIRO stations for the validation bundles, tab-separated:
+# ursi	name	lat	lon (degrees east, -180..180)
+#
+# The first six are the stations the app queries live (confirmed answering
+# on 2026-07-28). The rest are DIDBase stations with long archives, chosen
+# to spread latitude and longitude: mid-latitude both hemispheres, the
+# auroral edge, and the equatorial anomaly. A station that answers nothing
+# for a month is an ordinary outcome — coverage in 2015 or 2019 is not
+# coverage in 2025 — and the readers tolerate absence. Codes and positions
+# are from the GIRO station directory; a wrong entry costs one empty
+# directory, not a wrong number.
+AT138	Athens	38.0	23.5
+EB040	Roquetes	40.8	0.5
+JR055	Juliusruh	54.6	13.4
+RO041	Rome	41.8	12.5
+SO148	Sopron	47.6	16.7
+GR13L	Grahamstown	-33.3	26.5
+BC840	Boulder	40.0	-105.3
+MHJ45	Millstone Hill	42.6	-71.5
+EG931	Eglin AFB	30.5	-86.5
+WP937	Wallops Island	37.9	-75.5
+AL945	Alpena	45.1	-83.6
+PA836	Point Arguello	34.8	-120.5
+PRJ18	Ramey	18.5	-67.1
+AU930	Austin	30.4	-97.7
+PQ052	Pruhonice	50.0	14.6
+DB049	Dourbes	50.1	4.6
+FF051	Fairford	51.7	-1.5
+TR170	Tromso	69.6	19.2
+MO155	Moscow	55.5	37.3
+TO536	Kokubunji	35.7	139.5
+WK546	Wakkanai	45.2	141.7
+LM42B	Learmonth	-21.8	114.1
+BR52P	Brisbane	-27.1	153.1
+JI91J	Jicamarca	-12.0	-76.8
+SAA0K	Sao Luis	-2.6	-44.2
+HE13N	Hermanus	-34.4	19.2

@@ -555,17 +555,25 @@ pub fn gethp(s: &IonoState, fxx: R) -> (R, R) {
         return (s.htr[0], s.htr[0]);
     }
     let mut ht = profile_interpolate(&s.fnsq, &s.htr, fr);
-    let mut hp: R = 0.0;
     ht -= s.htr[0];
     let hrmz = ht * TWDIV * XNPL;
     let ysq = gethp_densities(s, ht, fr);
-    for ig in 0..20 {
-        let mut mup = [0.0 as R; 2];
-        for (ib, m) in mup.iter_mut().enumerate() {
-            let zg = if ib == 0 { 1.0 - XT[ig] } else { 1.0 + XT[ig] };
-            *m = (1.0 / (1.0 - ysq[ig][ib]).sqrt()) * zg.powi(NPL - 1);
+    // Every integrand is independent, so they are computed as two flat
+    // blocks — the compiler can evaluate the square roots and divisions
+    // several at a time, and both are correctly rounded in a vector
+    // lane exactly as out of one. `NPL` is 1, so the Fortran's
+    // `ZG**(NPL-1)` factor is 1 and only the density term remains. The
+    // sum below still runs in `ig` order, because the order
+    // floating-point terms are added in decides the last bits.
+    let mut mup = [[0.0 as R; 20]; 2];
+    for (ib, block) in mup.iter_mut().enumerate() {
+        for (ig, slot) in block.iter_mut().enumerate() {
+            *slot = 1.0 / (1.0 - ysq[ig][ib]).sqrt();
         }
-        hp += WT[ig] * (mup[0] + mup[1]);
+    }
+    let mut hp: R = 0.0;
+    for ig in 0..20 {
+        hp += WT[ig] * (mup[0][ig] + mup[1][ig]);
     }
     (s.htr[0] + hrmz * hp, s.htr[0] + ht)
 }
