@@ -26,7 +26,7 @@
 //! cells and fails if it disagrees with the research columns.
 //! `--ledger` prints one CSV line per month: the most recent day with
 //! samples, scored on its own rows — the live loop's trend line
-//! (`tools/live-check.sh`, `docs/live.md`).
+//! (`tools/live-check.sh`, `docs/soak.md`).
 //! `--daily` prints one CSV line for every day of every month given —
 //! the whole-archive daily comparison (`tools/backfill.sh`).
 
@@ -202,7 +202,7 @@ fn storm_samples(
 ///
 /// Chosen by rule from the Kp record and the solar cycle before the
 /// 2026-08 whole-archive refit, so the verdict covers every stratum
-/// the table claims to serve (see `docs/refit.md`):
+/// the table claims to serve (see `docs/ionosonde.md`):
 /// - 2015-03, 2022-09: the original pair, held out since the first fit.
 /// - 2024-05: peak Kp 9.0, the strongest month in the record.
 /// - 2018-08: peak Kp 7.3, the only severe month of the deep minimum.

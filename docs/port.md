@@ -18,7 +18,8 @@ the systems-model stage must port both paths and the smoothing blend.
 
 ## Why the port
 
-Not accuracy — a faithful port produces the same numbers by definition, and
+Accuracy is not the reason — a faithful port produces the same numbers by
+definition, and
 the corrected model built on those numbers is already validated
 (`accuracy.md`). The port buys: no Fortran toolchain, no fixed-width card
 decks, no per-run private-directory workaround for the engine's shared
@@ -34,7 +35,8 @@ scratch files, deployment anywhere Rust runs, and code a person can read.
    worst difference per field. A porting mistake surfaces in the first
    stage that contains it.
 2. **Randomized decks.** `fuzz` generates valid decks from a seed and
-   requires the two engines to write the same listing file, byte for
+   requires HFcast Compatible and the reference to write the same
+   listing file, byte for
    byte — banner, echoed deck, header blocks, page breaks and body rows. The sweep only
    holds combinations somebody chose; this covers the rest, cycles
    through six distance bands so short and near-antipodal paths are
@@ -136,7 +138,7 @@ Then, from the repository root:
 | `mufcheck`     | methods 1, 3 and 7 tables                             | `--method 1\|3\|7` `--cases N` `--from N` `--jobs J`                                                                                           |
 | `areacheck`    | area coverage rows and antennas against the grid file | `--jobs J`                                                                                                                                     |
 | `paritycheck`  | the fields an application reads, both production paths | `--jobs J` `--paths FILE --month M --year Y --ssn S` `--dump DIR`                                                                              |
-| `archcheck`    | this engine's own listings and area grids elsewhere    | `--cases N` `--full`                                                                                                                           |
+| `archcheck`    | HFcast Compatible's own listings and area grids elsewhere | `--cases N` `--full`                                                                                                                           |
 | `correctcheck` | what one corrected-tier fix changes                   | `--fix NAME` `--corpus sweep\|luf\|curtain\|area` `--cases N` `--jobs J`                                                                       |
 
 `archcheck` is the only harness that does not involve the reference. It
@@ -171,7 +173,8 @@ libm the app will use, and the thing actually at risk.
 `porttest --fuzz` is not currently usable: it reports stage mismatches
 on generated decks where `fuzz` finds the finished listings identical,
 so the fault is in how the harness pairs its dumps, not in the engine.
-`porttest` over the 96 sweep cases is clean and is the mode to trust.
+`porttest` over the 96 sweep cases shows no differences, and is the
+mode to trust.
 
 `fuzz`'s `--method`, `--coeffs`, `--fprob`, `--botlines` and
 `--toplines` are applied
@@ -250,7 +253,8 @@ The ported families match on every cell: 196,386 compared — 71 of
 the 73 definition files. The two Harris files (types 90+) cannot be
 computed by anyone: the reference shells out to an external
 `anttypNN` program that is not in the distribution and STOPs without
-it ("Fatal error in subroutine harris"), so both engines refusing
+it ("Fatal error in subroutine harris"), so HFcast Compatible and the
+reference both refusing
 those files is agreement. Unported
 families return an error rather than a number, so the report lists
 remaining work instead of passing silently.
@@ -448,7 +452,8 @@ Three routines write it.
 The version is not a constant. The reference reads
 `database/version.w32` and takes the eight characters after `Version`,
 so the port reads the same file from the same tree and a tree with a
-different version file changes both engines together.
+different version file changes HFcast Compatible and the reference
+together.
 
 ### Which lines print
 
@@ -582,7 +587,8 @@ the counter far below the page limit for all 24 hours.
 **The listing does not print everything.** A difference in a value the
 listing never shows is invisible to `portcheck` and `fuzz`. That is what
 `porttest --seed N` and `porttest --fuzz N` are for, and how the
-sporadic-E-off disagreement was found: the two engines printed the same
+sporadic-E-off disagreement was found: HFcast Compatible and the
+reference printed the same
 table while disagreeing about the Es layer's MUF hop count.
 
 **Formatted output rounds half to even.** The Fortran runtime's `F`

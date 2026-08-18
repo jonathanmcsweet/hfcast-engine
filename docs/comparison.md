@@ -22,8 +22,9 @@ physics.
 ## Day by day, across the archive
 
 The monthly tables below aggregate; the daily view does not.
-`sonde --daily` prints one CSV line per day — both engines scored
-against that day's own soundings (sample count, bias and MAE for the
+`sonde --daily` prints one CSV line per day, with HFcast Compatible and
+HFcast Truecast both scored against that day's own soundings (sample
+count, bias and MAE for the
 fitted-index model and for climatology, the day's fitted index, the
 calibrated lower edge against fmin, and the day's peak Kp).
 `tools/backfill.sh 2015-01 <now>` builds the month bundles across the
@@ -77,9 +78,9 @@ Source: `docs/ionosonde.md`, finding 5.
 same report tables; its storm-hour bias is +0.42 and +1.11 MHz where
 the new model's is within 0.09 of zero. The essn+storm column is the
 2026-08-15 whole-archive table; the wider held-out verdict, including
-three more storm months, is in `refit.md`.)
+three more storm months, is in `ionosonde.md`.)
 
-## NVIS band calls — an honest null
+## NVIS band calls: an honest null
 
 MUF at 600 km ground range, and the band-call question the
 application asks (was 80/60/40/30 m usable this hour). The new model's
@@ -99,8 +100,8 @@ Dudeney height). Source: `docs/ionosonde-output.md`, NVIS tables.
 
 At month scale the two models call bands at the same rate outside the
 severe storm month. This is the program's honest null: the new
-model's value at NVIS ranges is day-level and storm-hour — the hours
-a monthly average gets wrong — not the monthly totals, where
+model's value at NVIS ranges is day-level and storm-hour, the hours
+a monthly average gets wrong, rather than the monthly totals, where
 climatology is already calibrated. (The upper-bound columns using
 assimilated maps, in the source tables, show 94-96% is reachable with
 better height input; that is measurement, not deployment.)
@@ -108,8 +109,8 @@ better height input; that is measurement, not deployment.)
 ## Heights
 
 The parity engine's hmF2 ran +61.5 km high in 2025-06. The corrected
-Dudeney form over the engine's own M(3000)F2 — what the new model's
-point answers use — removes about 19 km of it; the rest is the
+Dudeney form over the engine's own M(3000)F2, which is what the new
+model's point answers use, removes about 19 km of it; the rest is the
 M(3000)F2 input itself, and closing it needs an assimilated height
 source (IRTAM hmF2 measured +3.5 km bias as the upper bound). Source:
 `docs/ionosonde.md`, finding 3.
@@ -119,12 +120,12 @@ source (IRTAM hmF2 measured +3.5 km bias as the upper bound). Source:
 The parity engine has no deployable counterpart: its LUF task floors
 at 2 MHz, has a usable-budget window of about 4 dB on an NVIS probe,
 and flips sign outside it (measured, `docs/ionosonde.md`). The new
-model answers `truecast::api::lower_edge` — the absorption-edge probe
+model answers `truecast::api::lower_edge`, the absorption-edge probe
 behind a fitted level that follows the day's index and the season
-(2026-08-15 refit) — with held-out error 0.62 to 1.04 MHz MAE
+(2026-08-15 refit), with held-out error 0.62 to 1.04 MHz MAE
 against ionogram fmin across eight months spanning quiet minimum to
 the 2024-05 superstorm, bias within 0.26 MHz of zero in seven of
-the eight. Source: `docs/refit.md` and `sonde --fit-edge`.
+the eight. Source: `docs/ionosonde.md` and `sonde --fit-edge`.
 
 ## Fully offline, no network ever
 
@@ -132,18 +133,21 @@ The new model does not need the daily feed to beat the parity
 engine. A never-online device runs `Conditioning::offline`: the
 shipped sunspot calendar plus a fitted day-of-year correction curve
 (`docs/offline.md`, 2026-08-15). Scored leave-one-year-out over the
-whole archive it improves foF2 MAE from 0.766 to 0.717 MHz — about
-two fifths of the live daily index's whole advantage, for free — and
-wins in eleven of twelve years, all but 2015.
+whole archive it improves foF2 MAE from 0.766 to 0.717 MHz, about
+two fifths of the live daily index's whole advantage and for free, and
+it wins in eleven of twelve years, all but 2015.
 
 ## Link level, real radio paths
 
 WSPR reception reports, 150 paths per month, about 525,000
 path-day-hours: each model's predicted SNR against the day's median
 report, offset-adjusted MAE in dB, and the correlation between
-predicted and observed day-to-day movement. Source:
-`docs/essn-wspr.md` and `docs/essn-wspr-output.md`
-(`essn_validate`).
+predicted and observed day-to-day movement. Two engine runs per
+path-day question, identical but for one number: the sunspot number is
+either the month's smoothed value or the day's fitted index from GIRO
+soundings (`sonde::essn_series`, the all-station fit, since the WSPR
+paths are independent of the ionosonde network). Reproduce with
+`tools/fetch-wspr.sh <month> data/<month>` then `essn_validate`.
 
 | month | parity MAE | new MAE | day corr, new | storm-day corr, new |
 | --- | ---: | ---: | ---: | ---: |
@@ -156,12 +160,39 @@ predicted and observed day-to-day movement. Source:
 | 2025-06 | 4.76 | 4.36 | +0.024 | +0.054 |
 | 2025-07 | 4.51 | 4.23 | +0.059 | +0.149 |
 
-Active months improve 0.17-0.40 dB; the two deep-solar-minimum months
-cost 0.03-0.04 dB at the ruler's resolution (the conditioning floor
-holds the engine at the map's zero plane there); the storm-day
-correlations are where the daily index shows on real links. The
-parity engine's day-to-day link correlation is zero by construction,
-as with foF2.
+Active months improve 0.17-0.40 dB, on a ruler where the whole observed
+day-to-day spread is about 2.5 dB and most of it is not ionospheric.
+The two deep-solar-minimum months cost 0.03-0.04 dB, which is the
+ruler's own resolution. The storm-day correlations are where the daily
+index shows on real links, and the parity engine's day-to-day link
+correlation is zero by construction, as with foF2.
+
+That solar-minimum cost was the engine below its map, not the fit. The
+first run of this study (0.79.0) found both 2019 months 0.03 to 0.07 dB
+worse and blamed fit noise. Diagnosed 2026-08-13: the solar-minimum fit
+is the best-sampled of all eight months (up to 496 samples per day,
+standard error 0.7 index units), and shrinking its day-to-day movement
+recovered nothing. The cost sat in the persistent offset, which ran the
+whole engine at an index near -17, below the map's zero-sunspot plane,
+where foE, absorption and noise have no measured state to extrapolate
+into. The floor, where foF2 follows the fitted line while every other
+channel stops at zero, removed half the 2019-06 cost and raised its day
+correlation from +0.018 to +0.025 while leaving every non-negative
+index untouched, so the regenerated cache for an active month is
+byte-identical. The floor has no fitted constant, so there is nothing
+to overfit and nothing to re-tune.
+
+Day-level link skill is small and lives on storm days, +0.15 to +0.17
+where storms happened and near zero on quiet months. That sits against
+a ceiling measured on these same paths: the daily residuals carry a
+lag-1 autocorrelation of +0.340, so even a perfect next-day predictor
+would shrink a typical 1.29 dB residual to 1.21 dB, a gain of 0.08 dB.
+What structure there is concentrates on disturbed days, +0.424 after a
+day reaching Kp 5 against +0.328 after a quiet one, and the IRTAM map
+scores +0.1 on the same ruler. This is why the day-level case rests on
+ionosonde truth rather than on link reports. Link-level SNR error is
+dominated by station factors the engine cannot know; the calibration
+phase (WSPR and RBN offsets) remains the tool for that layer.
 
 ## Performance
 
@@ -169,7 +200,7 @@ The same physics serves both models, so per-point cost is identical.
 The new model's grid driver threads inside the engine over one shared
 setup: the application's fine globe (34,560 points, one band) in
 131 ms at eight threads against 1088 ms for the serial parity area
-driver — bit-identical answers, thread-count invariant. Source:
+driver, with bit-identical answers and thread-count invariance. Source:
 `docs/truecast.md`, `gridbench`.
 
 ## Reproduction
@@ -184,5 +215,5 @@ driver — bit-identical answers, thread-count invariant. Source:
 - The compatibility proof: `cargo test --all-features
   request_guards`.
 - The live continuation of this comparison: `tools/live-check.sh`
-  (`docs/live.md`), which appends the same essn-versus-climatology
+  (`docs/soak.md`), which appends the same essn-versus-climatology
   scoring to `data/live/ledger.csv` daily.

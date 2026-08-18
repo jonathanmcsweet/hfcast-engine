@@ -88,7 +88,6 @@ something you can test. If it does not, it is an opinion, and that test
 is what the whole method depends on. Corrections then live in one named
 place, where each one can be measured alone.
 
-
 ## The proof for the orignial VOACAP model
 
 Each test below runs the original Fortran and this engine on the same input, and compares the output character by character.
@@ -116,9 +115,8 @@ against real radio reports: VOACAP puts the good hours and the bad
 hours in the correct places (correlation +0.76 against measured WSPR
 reports), and exaggerates the difference between them by approximately
 four and a half times (slope +0.22).
-[docs/accuracy.md](docs/accuracy.md) has the measurements, and
-[docs/validation.md](docs/validation.md) the comparison with ITU-R
-P.533.
+[docs/accuracy.md](docs/accuracy.md) has the measurements, including
+the comparison with ITU-R P.533.
 
 Truecast is measured against ionosonde soundings, which observe the
 ionosphere directly where the WSPR record can only infer it. Over the
@@ -217,8 +215,9 @@ tools/analyze.sh          # clippy, complexity, duplication, coverage
 tools/analyze.sh --gate   # the same, but it fails on a broken gate
 ```
 
-[docs/analysis.md](docs/analysis.md) explains which warnings must never
-be applied. Some of them would change the arithmetic and break the
+The script's own header says what each step is for, and the comment
+above `parity_allows` records which clippy suggestions must never be
+applied. Some of them would change the arithmetic and break the
 agreement with the original.
 
 ## Documents
@@ -226,25 +225,16 @@ agreement with the original.
 | Document | What it covers |
 | --- | --- |
 | [port.md](docs/port.md) | How the translation is proved, and the traps |
-| [analysis.md](docs/analysis.md) | The static analysis suite |
 | [corrected.md](docs/corrected.md) | Each corrected defect and what it moves |
 | [sensitivity.md](docs/sensitivity.md) | The measured tolerance |
-| [accuracy.md](docs/accuracy.md) | Both engines against measured radio |
-| [validation.md](docs/validation.md) | The scores against WSPR reports |
-| [engines.md](docs/engines.md) | VOACAP against ITU-R P.533 |
-| [storm.md](docs/storm.md) | Geomagnetic storm widening |
-| [daily.md](docs/daily.md) | Whether a daily forecast is possible |
-| [irtam.md](docs/irtam.md) | Real-time ionospheric maps, measured |
+| [accuracy.md](docs/accuracy.md) | VOACAP against measured radio, and against P.533 |
+| [reliability.md](docs/reliability.md) | The day-to-day spread, and storm days |
 | [truecast.md](docs/truecast.md) | The second pipeline and its contract |
-| [ionosonde.md](docs/ionosonde.md) | The daily index against ionosonde truth |
-| [essn-wspr.md](docs/essn-wspr.md) | The daily index against real links |
+| [ionosonde.md](docs/ionosonde.md) | Truecast against ionosonde truth, and the fits |
 | [comparison.md](docs/comparison.md) | The two models, side by side |
 | [offline.md](docs/offline.md) | The forecast with no network at all |
-| [refit.md](docs/refit.md) | The whole-archive refit, held-out verified |
-| [reliability.md](docs/reliability.md) | The claimed day-to-day spread, checked |
-| [live.md](docs/live.md) | Daily validation against the present |
+| [soak.md](docs/soak.md) | The recurring daily checks |
 | [licence.md](docs/licence.md) | Where the code and the data come from |
-| [soak.md](docs/soak.md) | The daily parity job |
 
 ## Data files
 

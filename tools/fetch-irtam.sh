@@ -8,7 +8,7 @@
 # of that whole day. See src/irtam.rs for the format.
 #
 # foF2 and hmF2 both come down. foF2 replaces the engine's foF2 map through
-# the overlay; hmF2 needs the M(3000)F2 conversion recorded in docs/irtam.md
+# the overlay; hmF2 needs the M(3000)F2 conversion recorded in docs/ionosonde.md
 # before the engine can consume it, and is fetched now so the archive is on
 # hand when that lands. The archive holds hmF2 as far back as foF2 (checked
 # 2026-08-12 for 2015-03 and 2019-06).

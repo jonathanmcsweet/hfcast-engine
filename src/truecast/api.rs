@@ -15,7 +15,7 @@
 //! multiplies foF2 by the embedded storm ratio (`src/stormfit.rs`).
 //! Both were scored held-out against ionosonde truth before this API
 //! existed; the numbers are in `docs/ionosonde.md`, and the floor's
-//! link-level justification is in `docs/essn-wspr.md`.
+//! link-level justification is in `docs/comparison.md`.
 
 use std::path::Path;
 
@@ -157,7 +157,7 @@ impl Conditioning {
     /// is floored: below the map's lower plane there is no measured
     /// state for foE, absorption, noise or heights to extrapolate into,
     /// and the link study measured that extrapolation as the whole
-    /// solar-minimum cost (`docs/essn-wspr.md`). Only foF2 follows the
+    /// solar-minimum cost (`docs/comparison.md`). Only foF2 follows the
     /// fitted line below zero ([`day`]), because the fit inverts that
     /// same line.
     fn ssn(&self) -> f64 {
@@ -348,7 +348,7 @@ pub fn probe_edge(
 /// six months). Kept only so dependents of that calibration still
 /// compile; the shipped level is [`edge_fmin_ratio`], which the
 /// whole-archive refit showed varies with solar activity and season
-/// (`docs/refit.md`).
+/// (`docs/ionosonde.md`).
 #[deprecated(note = "use edge_fmin_ratio(month, index): the level varies")]
 pub const EDGE_FMIN_RATIO: f64 = 1.6138;
 
@@ -358,7 +358,7 @@ pub const EDGE_FMIN_RATIO: f64 = 1.6138;
 ///
 /// Fitted 2026-08-15 on the whole archive's day-station medians
 /// (weighted least squares, `sonde --fit-edge`; eight held-out months
-/// never touched the fit — verdict in `docs/refit.md`). The index term
+/// never touched the fit — verdict in `docs/ionosonde.md`). The index term
 /// is the larger effect: the level runs about 1.3 near solar minimum
 /// and past 2.0 at maximum, which a single constant split the
 /// difference on. The season term follows the calendar for every

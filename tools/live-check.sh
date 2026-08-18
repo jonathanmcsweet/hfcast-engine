@@ -20,7 +20,7 @@
 #      from this script means that gate failed or a fetch broke.
 #
 # The month needs a smoothed-SSN entry in src/wspr.rs (predicted for a
-# live month; see the table's comment). See docs/live.md.
+# live month; see the table's comment). See docs/soak.md.
 #
 # Usage: tools/live-check.sh  (no arguments; UTC decides the month)
 set -euo pipefail

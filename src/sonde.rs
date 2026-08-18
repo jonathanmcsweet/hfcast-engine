@@ -1,6 +1,6 @@
 //! Scores predicted ionospheric characteristics against ionosonde truth.
 //!
-//! This is the instrument `docs/irtam.md` names as open work: WSPR medians
+//! This is the instrument `docs/ionosonde.md` names as open work: WSPR medians
 //! cap how much skill any model can show, because a handful of noisy
 //! reports per path-hour is a blunt ruler. An ionosonde measures foF2,
 //! foE, hmF2 and MUF(3000) directly, in the model's own units, over a
@@ -197,7 +197,7 @@ fn holdout_indexes(solutions: &[essn::Solution], station: &str) -> BTreeMap<u8, 
 /// edge over the probe path at the smoothed number, and at each fitted
 /// day's index. The day runs floor the index at zero — the deployable
 /// rule: the engine's absorption never runs below the map's
-/// zero-sunspot plane (`docs/essn-wspr.md`).
+/// zero-sunspot plane (`docs/comparison.md`).
 struct StationEdge {
     climatology: Vec<Option<f64>>,
     by_day: BTreeMap<u8, Vec<Option<f64>>>,

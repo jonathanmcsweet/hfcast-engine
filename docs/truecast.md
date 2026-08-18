@@ -22,9 +22,9 @@ the ionosphere over this point" in the ionosonde's own conventions:
 
 The conditioning input is the day knob:
 
-- `Conditioning::Climatology { ssn }` — the engine as shipped, at the
+- `Conditioning::Climatology { ssn }`: the engine as shipped, at the
   month's smoothed sunspot number.
-- `Conditioning::Daily { essn, kp_max24 }` — a daily index fitted from
+- `Conditioning::Daily { essn, kp_max24 }`: a daily index fitted from
   live soundings (`src/essn.rs`), plus the trailing-24-hour Kp maximum
   per UT hour. Where Kp is known, foF2 is multiplied by the embedded
   storm ratio (`src/stormfit.rs`); a missing hour gets the identity,
@@ -33,7 +33,7 @@ The conditioning input is the day knob:
   follows the fitted line wherever the fit put it: below the map's
   zero-sunspot plane there is no measured state for foE, absorption or
   noise to extrapolate into, and the link study measured that
-  extrapolation as the whole solar-minimum cost (`docs/essn-wspr.md`).
+  extrapolation as the whole solar-minimum cost (`docs/comparison.md`).
 
 Both conditionings were scored held-out against ionosonde truth before
 this API existed; the numbers live in `docs/ionosonde.md`. The skeleton
@@ -55,10 +55,10 @@ accuracy claims rest on. Over all eight months (2026-08-13):
 | daily foF2 vs the essn+storm column | 0.028 MHz | 0.05 |
 
 The climatology rows agree to cache rounding: same engine run on both
-sides. The daily row crosses two f32 rounding paths — the research
+sides. The daily row crosses two f32 rounding paths: the research
 column interpolates the answer line between the two sunspot planes,
-the API blends coefficients and then evaluates — which differ most
-where the harmonic series cancels at night. The faults the check
+while the API blends coefficients and then evaluates. The two differ
+most where the harmonic series cancels at night. The faults the check
 exists for are an order larger (a wrong storm bin: ~0.25 MHz on storm
 hours; a shifted hour: ~1 MHz), so the mode fails the build well
 before a real plumbing error could hide.
@@ -72,20 +72,20 @@ workers claiming rows off a shared cursor, output as structure-of-arrays
 tests, not intentions:
 
 - **Thread counts cannot move the answer.** Every point is computed
-  with fresh state — a pure function of the place and hour — and the
+  with fresh state, as a pure function of the place and hour, and the
   planes are assembled by row index. One thread and three threads
   produce bit-identical planes.
 - **The parity anchor holds.** The parity area driver carries COMMON
   state from point to point because the Fortran does. Its first point
   has no carry yet and must match the fresh-state driver exactly; over
   a test lattice, the carry moved reliability by at most 0.011 and SNR
-  by at most 2 dB — the class of spread the -ffast-math study measured,
+  by at most 2 dB, the class of spread the -ffast-math study measured,
   not signal.
 
 The driver shares everything a grid point cannot change. Beyond the
 coefficient set, the antennas and the magnetic pole (shared since the
 driver landed), the whole lattice now reads one `COFION` flattening of
-the maps and one `VIRTIM` evaluation of the diurnal series — both are
+the maps and one `VIRTIM` evaluation of the diurnal series. Both are
 functions of the maps and the hour alone, and both were previously
 recomputed at every point. The per-point values are bit-identical
 either way; `portcheck` (23,040 cells) stays zero-drift.
@@ -100,7 +100,7 @@ Measured with `gridbench` on the application's fine-globe lattice
 | `predict_grid`, 4 threads | 249 ms (3.9x) |
 | `predict_grid`, 8 threads | 131 ms (7.4x) |
 
-The scaling is near linear to eight threads — the engine parallelizes;
+The scaling is near linear to eight threads, so the engine parallelizes;
 the application's strip sharding and JSON rendering were the loss.
 With `HFCAST_PERF` set, `gridbench` prints the per-stage table
 (`--parity 0` scopes it to the truecast driver). Where the remaining
@@ -112,7 +112,7 @@ magnetic field, ground constants) about 10%.
 ## The packed answer
 
 `truecast::packed` is HFB1: the grid planes as one little-endian byte
-body — a 48-byte header (lattice, counts), the frequencies, then the
+body: a 48-byte header (lattice, counts), the frequencies, then the
 reliability, SNR and takeoff planes as raw `f32`, each starting 4-byte
 aligned so a JavaScript consumer can view them as `Float32Array`
 without parsing. A one-band fine globe is about 405 KB against the
@@ -125,11 +125,11 @@ is parked with the rest of the app work.
 
 `truecast::api::lower_edge` answers the usable window's floor per UT
 hour on the ionogram's fmin convention: the absorption-edge probe
-(`probe_edge` — a Systems run over a ten-rung ladder, the lowest
+(`probe_edge`, a Systems run over a ten-rung ladder taking the lowest
 frequency within 6 dB of the hour's own SNR plateau) at the
 conditioning's floored index, divided by the fitted level
 `EDGE_FMIN_RATIO`. `None` is a real answer: the whole ladder sits
-within the drop — the night state, where a sounder's fmin is its
+within the drop, which is the night state, where a sounder's fmin is its
 instrument floor too. The fit, the held-out verdict (0.79 and
 1.11 MHz MAE) and the known March residual are in
 `docs/ionosonde.md`; the fit reruns with `sonde --fit-edge`.
@@ -137,8 +137,9 @@ instrument floor too. The fit, the held-out verdict (0.79 and
 ## The service selector
 
 The JSON service (`src/service.rs`, the whole application boundary)
-takes an `"engine"` field: `"voacap"` — the default, so every existing
-request predicts exactly what it always did — or `"truecast"`, which
+takes an `"engine"` field. `"voacap"` is the default, so every existing
+request predicts exactly what it always did. `"truecast"` is the other,
+which
 runs the same physics conditioned on the fitted daily index. A truecast
 request states `"essn"` in place of `"ssn"` (both at once is refused),
 and the run applies the floor: the engine never goes below the map's
@@ -146,7 +147,7 @@ zero-sunspot plane, and below it a synthesized coefficient overlay
 holds foF2 on the fitted line. The below-floor synthesis needs a
 writable `"workDir"` and the compiled-in root; a caller with its own
 overlay directory writes `coeffs/fof2CCIR.daw` there itself. Every
-answer — point-to-point and area — carries `"engine"` naming the model
+answer, point-to-point and area alike, carries `"engine"` naming the model
 behind it, which is the seam an application needs to offer the model
 as a user preference. The storm ratio stays at the characteristics
 level where it was fitted and scored; no seam carries a per-place,
@@ -158,7 +159,7 @@ The original batch plan imagined the truecast pipeline growing its own
 structure-of-arrays physics, equivalent to the parity engine within a
 tolerance envelope. That plan is closed (2026-08-13, measured): the
 pipeline computes through the parity engine's own functions, restructured
-only in ways that cannot move a bit — shared evaluations of
+only in ways that cannot move a bit: shared evaluations of
 position-independent work, and block layouts of independent arithmetic.
 Two reasons, in order:
 
@@ -169,7 +170,7 @@ Two reasons, in order:
 2. The measured headroom did not justify the fork. After the shared
    evaluations, the fine globe runs 970 ms single-thread / 131 ms at
    eight threads, and the remainder is pointwise physics that is
-   memory- and branch-bound, not arithmetic-bound — restructuring it
+   memory- and branch-bound, not arithmetic-bound, and restructuring it
    without moving bits was measured at zero gain. The batch plan's
    80 ms target assumed arithmetic the vectorizer could recover;
    there is none to recover. That memory-bound remainder is the

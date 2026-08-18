@@ -18,7 +18,7 @@
 //!
 //! `FITTED` is the embedded table, fitted on the whole 2015-2026
 //! archive by `sonde --fit-storm` and scored on the eight held-out
-//! months named there (`docs/refit.md`; the first fit's gate and
+//! months named there (`docs/ionosonde.md`; the first fit's gate and
 //! result are in `docs/ionosonde.md`).
 
 /// Kp class edges: quiet below 4, active 4 to 5, storm 5 to 7, severe
@@ -163,7 +163,7 @@ pub fn correction(ratios: &[f64; N_BINS], bin: Option<usize>) -> f64 {
 /// (every `data/YYYY-MM` bundle, 2015-01 to 2026-07 — 131 months,
 /// 1,633,875 samples), 2026-08-15. The eight held-out months
 /// (`HELD_OUT` in the sonde binary, chosen by rule before the fit — see
-/// `docs/refit.md`) skip themselves and never touched this fit; the
+/// `docs/ionosonde.md`) skip themselves and never touched this fit; the
 /// live month is left off the command line. Every severe bin now
 /// carries its own-season samples where the first fit's six months
 /// could only pool. Regenerate with:

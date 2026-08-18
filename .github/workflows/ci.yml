@@ -109,7 +109,8 @@ jobs:
       #
       # The rest of what this script runs is reports, and jscpd,
       # cargo-llvm-cov and tokei are absent on the runner. It names the
-      # ones it skipped and does not fail for them. See docs/analysis.md.
+      # ones it skipped and does not fail for them. The script header says
+      # what each step is for.
       - name: Static analysis gates
         run: tools/analyze.sh --gate
 

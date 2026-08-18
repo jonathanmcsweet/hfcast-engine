@@ -428,7 +428,7 @@ pub fn load_daily(dir: &Path) -> io::Result<HashMap<PathKey, Vec<DailySample>>> 
 
 // ---- link-level scoring ----------------------------------------------
 //
-// The conventions of docs/irtam.md, shared so every daily-model study
+// The conventions of docs/ionosonde.md, shared so every daily-model study
 // scores the same way: absolute error after one offset per path (the
 // station's antennas and local noise are unknown but constant), and
 // day-to-day deviations from each path-hour's own monthly median (where

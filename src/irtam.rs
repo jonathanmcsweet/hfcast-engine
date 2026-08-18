@@ -92,7 +92,7 @@ pub fn hmf2_dudeney(m3000: f64, fof2_mhz: f64, foe_mhz: f64) -> f64 {
 
 /// Dudeney's relation, inverted: the M(3000)F2 factor a legacy-shaped
 /// consumer needs so that its `1490/(M + dM) - 176` lands on a known
-/// hmF2. This is the conversion step docs/irtam.md named for feeding
+/// hmF2. This is the conversion step docs/ionosonde.md named for feeding
 /// IRTAM's height map to an engine that eats M(3000)F2.
 pub fn m3000_from_hmf2(hmf2_km: f64, fof2_mhz: f64, foe_mhz: f64) -> f64 {
     1490.0 / (hmf2_km + 176.0) - dudeney_dm(fof2_mhz, foe_mhz)

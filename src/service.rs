@@ -131,7 +131,7 @@ impl EngineChoice {
 /// inputs the unchanged pipeline understands: the run's sunspot number
 /// becomes the daily index floored at zero, and below the floor a
 /// synthesized overlay pins foF2 to the fitted line — the same rule
-/// `truecast::api::Conditioning` applies, measured in `docs/essn-wspr.md`.
+/// `truecast::api::Conditioning` applies, measured in `docs/comparison.md`.
 /// Absent, the parity engine answers exactly as it always has.
 ///
 /// A truecast request states `"essn"` in place of `"ssn"`; both at once

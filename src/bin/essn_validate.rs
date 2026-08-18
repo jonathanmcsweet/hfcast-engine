@@ -2,7 +2,7 @@
 //!
 //! `docs/ionosonde.md` scores the daily conditioning against ionosonde
 //! truth. This program asks the user-level question with the ruler
-//! `docs/irtam.md` used: predicted SNR against per-day WSPR medians on
+//! `docs/ionosonde.md` used: predicted SNR against per-day WSPR medians on
 //! real paths. Two engine runs per path-day question, both through the
 //! Rust engine's own API: as shipped (the month's smoothed sunspot
 //! number), and conditioned on the day's fitted index from the same

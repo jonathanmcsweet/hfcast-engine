@@ -1,4 +1,4 @@
-# Agents.md — guidance for AI agents working in this repo
+# Agents.md: guidance for AI agents working in this repo
 
 ## Your behavior
 
@@ -14,7 +14,7 @@ HFcast engine is for both the HFcast application, and also for software engineer
 
 ## Open work and progress
 
-`docs/roadmap.md` is the SINGLE SOURCE of open work — deferred features and known gaps, each with the constraint that motivated deferral. It must survive a compacted or cleared session, so keep it current instead of holding state in your head:
+`docs/roadmap.md` is the SINGLE SOURCE of open work: deferred features and known gaps, each with the constraint that motivated deferral. It must survive a compacted or cleared session, so keep it current instead of holding state in your head:
 
 - At the start of a task, read the roadmap to see current status; at the end,update it so the next agent (or the next session) picks up an accurate picture.
 - When you finish a roadmap item, record it in **`docs/roadmap-progress.md`**
@@ -28,7 +28,7 @@ HFcast engine is for both the HFcast application, and also for software engineer
 - Do not create new progress-tracker docs for multi-stage builds without the user asking
 - Work tracking lives ONLY in roadmap.md and roadmap-progress.md. Every
   other doc exists to explain how something works and show its measured
-  evidence — no requirement narratives ("the maintainer asked ..."),
+  evidence. No requirement narratives ("the maintainer asked ..."),
   no batch change-logs, no open-work lists. A findings doc may point at
   the roadmap where open work is tracked, never describe it. Code-change
   lists belong in commit messages.
@@ -94,8 +94,9 @@ git config core.hooksPath .githooks
 
 - Keep text descriptions short without excessive details unless necessary to prevent confusion
 - Refrain from using jargon or idiomatic language such as "clobber," "belt and suspenders," etc. which may be read differently by different people
+- Never use em dashes. Use a comma, a colon, or a new sentence.
 
-## Branches and Commit messages — use Conventional Commits
+## Branches and commit messages: use Conventional Commits
 
 - follow the instructions in the ##Documentation section for writing commit messages
 
@@ -126,7 +127,7 @@ git config core.hooksPath .githooks
 - Run all linting
 - Never commit items in `.gitignore`.
 
-## No inline foreign-language code — extract to its own file
+## No inline foreign-language code: extract to its own file
 
 - NEVER embed another language (Python, etc.) inline in any other file
 

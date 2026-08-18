@@ -11,7 +11,8 @@ The fits are reproduced by `sonde --fit-offline` and
 
 ## What a never-online device has
 
-Both engines need one solar-activity input. VOACAP's is the month's
+HFcast Compatible and HFcast Truecast each need one solar-activity
+input. VOACAP's is the month's
 smoothed sunspot number, and offline devices already carry it: the
 predictions are published years ahead and ship inside the app. So the
 question is not "can we predict with nothing" but "can we turn the
@@ -65,11 +66,11 @@ never contains the scored year), 1.5 million samples:
 | 2026 | 0.949 | 0.896 | — |
 | all | 0.766 | 0.717 | 0.652 |
 
-Better in eleven of twelve years, and by the most exactly where
-climatology is worst — the active years. Overall the correction
-recovers about two fifths of the full live-data advantage. The
-exception is 2015, the one year whose offset sits on the other side
-of the archive's; it is in the table, not hidden.
+Better in eleven of twelve years, and the gains are largest exactly
+where climatology is worst: the active years. Overall the correction
+recovers about two fifths of what live data buys. The one exception is
+2015, whose own offset falls on the opposite side of the archive's
+average.
 
 The held-out months (never in any fit; full table in the
 `sonde --fit-offline` output):

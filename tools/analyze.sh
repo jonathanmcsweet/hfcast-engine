@@ -5,10 +5,10 @@
 #   tools/analyze.sh          # run everything, print the findings
 #   tools/analyze.sh --gate   # also fail if a gate is broken
 #
-# There is no single tool for this. SonarQube does not do Rust, and
-# `rust-code-analysis` needs a host C++ toolchain to build its grammars, which
-# not every machine has. So this runs several tools and says plainly which ones
-# were not available.
+# No single tool covers this for Rust. `rust-code-analysis` reports the
+# per-function metrics but needs a host C++ toolchain to build its grammars,
+# which not every machine has. So this runs several tools and says plainly
+# which ones were not available.
 #
 # Two of the steps are gates and the rest are reports. The difference matters:
 # most of `src/voacap/` is one Rust function per Fortran subroutine, and the
@@ -24,7 +24,23 @@
 #   report coverage               (needs cargo-llvm-cov; skipped if absent)
 #   report size                   (needs tokei; skipped if absent)
 #
-# See docs/analysis.md for what to do with each of them.
+# The optional tools, which are skipped rather than failed when absent:
+#
+#   cargo install cargo-llvm-cov tokei
+#   rustup component add llvm-tools
+#   npm install -g jscpd
+#
+# The complexity gate can also be run on its own:
+#
+#   cargo run --release --bin complexity             # the report
+#   cargo run --release --bin complexity -- --check  # the gate
+#   cargo run --release --bin complexity -- --update # rewrite the baseline
+#
+# Run --update only when a function is legitimately restructured, and say in
+# the commit message why the new figure is right. Cyclomatic complexity counts
+# branches, not difficulty: a dispatch over byte or token classes scores high
+# and is not hard to read, which is why `complexity`'s own `walk` and `measure`
+# are in the baseline.
 
 set -uo pipefail
 
@@ -50,7 +66,7 @@ heading() {
 #
 # Casts and float comparisons are the Fortran's own; rewriting them would
 # describe different arithmetic. `suboptimal_flops` and `imprecise_flops`
-# suggest fused multiply-add and `ln_1p`, which round differently — that is
+# suggest fused multiply-add and `ln_1p`, which round differently. That is
 # exactly the class of change the parity harnesses exist to catch. The rest
 # are documentation and naming preferences that say nothing about this code.
 parity_allows=(
@@ -116,7 +132,7 @@ done
 if [[ -s "$out/deadcode.txt" ]]; then
   echo "$(wc -l <"$out/deadcode.txt") item(s) with no reference outside their own definition:"
   sed 's/^/  /' "$out/deadcode.txt"
-  echo "check each by hand — a name reached only through a macro reads the same way"
+  echo "check each by hand: a name reached only through a macro reads the same way"
 else
   echo "none"
 fi
@@ -145,7 +161,7 @@ fi
 
 heading "coverage"
 if command -v cargo-llvm-cov >/dev/null 2>&1; then
-  echo "unit and integration tests only — the parity harnesses are separate"
+  echo "unit and integration tests only; the parity harnesses are separate"
   echo "binaries and reach much more than this shows"
   cargo llvm-cov --lib --tests --summary-only 2>&1 | tee "$out/coverage.txt" | tail -25
 else
