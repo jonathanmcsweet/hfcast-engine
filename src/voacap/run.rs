@@ -12,6 +12,7 @@
 //! on these printed cells.
 
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::deck::DeckCase;
 
@@ -1843,13 +1844,83 @@ pub struct AreaMedian {
 /// of the place alone: carried state would make the same place answer
 /// differently on a coarse lattice than on a fine one, and this number is
 /// computed on one lattice and read on another.
-pub fn run_area_daily_median(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<AreaMedian>, String> {
+pub fn run_area_daily_median(
+    itshfbc: &Path,
+    area: &AreaInputs,
+    threads: usize,
+) -> Result<Vec<AreaMedian>, String> {
     let set: CoefficientSet =
         redmap(itshfbc, area.fof2, area.month, area.ssn).map_err(|e| e.to_string())?;
     let prep = AreaPrep::new(itshfbc, area, &set)?;
-    let mut out = Vec::with_capacity(area.grid.nx * area.grid.ny);
-    for iy in 1..=area.grid.ny {
-        for ix in 1..=area.grid.nx {
+    let ny = area.grid.ny;
+    let workers = match threads {
+        0 => std::thread::available_parallelism().map_or(1, |n| n.get()),
+        n => n,
+    }
+    .min(ny.max(1));
+
+    // The diurnal series depends on the maps and the hour, never on the
+    // grid point, so the whole lattice reads 24 evaluations rather than
+    // one per point per hour.
+    let ab: Vec<[R; 318]> = (1..=24).map(|jt| prep.ab_at(jt as R)).collect();
+
+    let cursor = AtomicUsize::new(0);
+    let mut rows: Vec<(usize, Result<Vec<AreaMedian>, String>)> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..workers)
+            .map(|_| median_work(itshfbc, area, &prep, &ab, &cursor, ny))
+            .map(|w| scope.spawn(w))
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|h| h.join().expect("a median worker never panics"))
+            .collect()
+    });
+    // Sorted, so the answer is the same whatever order the workers
+    // finished in and however many there were.
+    rows.sort_by_key(|(row, _)| *row);
+    let mut out = Vec::with_capacity(area.grid.nx * ny);
+    for (_, row) in rows {
+        out.extend(row?);
+    }
+    Ok(out)
+}
+
+/// One worker's life: claim the next row off the shared cursor, compute
+/// it, repeat until no rows remain. Points carry nothing between them
+/// here, so a row is a whole unit of work.
+fn median_work<'a>(
+    itshfbc: &'a Path,
+    area: &'a AreaInputs,
+    prep: &'a AreaPrep<'a>,
+    ab: &'a [[R; 318]],
+    cursor: &'a AtomicUsize,
+    ny: usize,
+) -> impl FnOnce() -> Vec<(usize, Result<Vec<AreaMedian>, String>)> + 'a {
+    move || {
+        let mut mine = Vec::new();
+        // A loop because each pass claims the next row; the claim is the
+        // iteration.
+        loop {
+            let row = cursor.fetch_add(1, Ordering::Relaxed);
+            if row >= ny {
+                break;
+            }
+            mine.push((row, median_row(itshfbc, area, prep, ab, row + 1)));
+        }
+        mine
+    }
+}
+
+/// One row of the lattice: the middle of the day at each of its points.
+fn median_row(
+    itshfbc: &Path,
+    area: &AreaInputs,
+    prep: &AreaPrep<'_>,
+    ab: &[[R; 318]],
+    iy: usize,
+) -> Result<Vec<AreaMedian>, String> {
+    (1..=area.grid.nx)
+        .map(|ix| {
             let (glat, glon, inp, s) = prep.at(itshfbc, area, ix, iy)?;
             let mut lp = ModeLoopState::default();
             let mut fsecv = [0.0 as R; 3];
@@ -1859,19 +1930,25 @@ pub fn run_area_daily_median(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<Ar
             // its own previous hour. Skipping hours would not just cost
             // accuracy in the median, it would change the hours kept.
             for jt in 1..=24i32 {
-                let h = hour_body(&s, jt, &mut lp, &mut fsecv, &mut iono, None);
+                let h = hour_body(
+                    &s,
+                    jt,
+                    &mut lp,
+                    &mut fsecv,
+                    &mut iono,
+                    Some(&ab[jt as usize - 1]),
+                );
                 for (band, son) in h.son.iter().take(prep.nf).enumerate() {
                     day[band].push(freq_answer(son).snr_db);
                 }
             }
-            out.push(AreaMedian {
+            Ok(AreaMedian {
                 lat: glat,
                 lon: glon,
                 median_snr_db: day.iter().map(|hours| median_db(hours)).collect(),
-            });
-        }
-    }
-    Ok(out)
+            })
+        })
+        .collect()
 }
 
 /// One grid point computed with fresh state — its own mode-loop state,

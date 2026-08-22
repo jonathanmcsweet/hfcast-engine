@@ -723,7 +723,7 @@ fn area(tree: &std::path::Path, req: &Json) -> Result<Json, String> {
     if daily {
         let medians = {
             let _perf = crate::perf::Step::new(crate::perf::AREA_POINTS);
-            run_area_daily_median(tree, &inputs)?
+            run_area_daily_median(tree, &inputs, 0)?
         };
         let _answer = crate::perf::Step::new(crate::perf::ANSWER);
         return Ok(steps.answer(median_rows(&medians, steps.many())));
