@@ -721,9 +721,17 @@ fn area(tree: &std::path::Path, req: &Json) -> Result<Json, String> {
     let steps = GridSteps::of(lat_step, lon_step, grid, &inputs.freqs_mhz);
 
     if daily {
+        // One worker unless the caller asks for more. A caller that
+        // already runs several of these at once, as a batch of latitude
+        // strips does, would otherwise put its own pool and this one on
+        // the same cores.
+        let workers = req
+            .get("threads")
+            .and_then(Json::as_f64)
+            .map_or(1, |n| n.max(0.0) as usize);
         let medians = {
             let _perf = crate::perf::Step::new(crate::perf::AREA_POINTS);
-            run_area_daily_median(tree, &inputs, 0)?
+            run_area_daily_median(tree, &inputs, workers)?
         };
         let _answer = crate::perf::Step::new(crate::perf::ANSWER);
         return Ok(steps.answer(median_rows(&medians, steps.many())));
