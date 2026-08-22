@@ -24,7 +24,12 @@ pub const AREA_POINTS: usize = 5;
 pub const ANSWER: usize = 6;
 pub const WRITE: usize = 7;
 pub const FIELDS: usize = 8;
-const STEPS: usize = 9;
+pub const FOBBY: usize = 9;
+pub const LECDEN: usize = 10;
+pub const ALOSFV: usize = 11;
+pub const GMLOSS: usize = 12;
+pub const SETTXR: usize = 13;
+const STEPS: usize = 14;
 
 const NAMES: [&str; STEPS] = [
     "genion",
@@ -36,6 +41,11 @@ const NAMES: [&str; STEPS] = [
     "answer json",
     "write",
     "area fields",
+    "fobby",
+    "lecden",
+    "alosfv",
+    "gmloss",
+    "settxr",
 ];
 
 static ON: AtomicBool = AtomicBool::new(false);
@@ -49,8 +59,18 @@ static NS: [AtomicU64; STEPS] = [
     AtomicU64::new(0),
     AtomicU64::new(0),
     AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
 ];
 static CALLS: [AtomicU64; STEPS] = [
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
     AtomicU64::new(0),
     AtomicU64::new(0),
     AtomicU64::new(0),

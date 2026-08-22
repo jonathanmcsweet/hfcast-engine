@@ -1891,6 +1891,7 @@ fn mpath(lp: &mut ModeLoopState, ifx: usize, deck: &DeckParams, gcdkm: R) {
 // The loops walk several parallel Fortran arrays by index.
 #[allow(clippy::needless_range_loop)]
 fn settxr(lp: &mut ModeLoopState, ctx: &PassCtx, muf: &MufHour, freq: R, itxrcp: [usize; 2]) {
+    let _perf = crate::perf::Step::new(crate::perf::SETTXR);
     let ModeLoopState {
         areas,
         reflectrix,
@@ -2122,6 +2123,7 @@ fn seltxr(lp: &mut ModeLoopState, ctx: &PassCtx, itxrcp: [usize; 2]) -> [i32; 2]
 /// Port of `GMLOSS`: presets `/ZON/` and calls `SETTXR`. (The
 /// `TXRGML` fill is omitted: nothing reads it.)
 fn gmloss(lp: &mut ModeLoopState, ctx: &PassCtx, muf: &MufHour, freq: R, itxrcp: [usize; 2]) {
+    let _perf = crate::perf::Step::new(crate::perf::GMLOSS);
     for im in 0..7 {
         lp.zon.obf[im] = 1000.0;
         lp.zon.adv[im] = 1000.0;

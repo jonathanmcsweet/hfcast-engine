@@ -195,6 +195,7 @@ pub fn genion(s: &IonoState, k: usize) -> Ionogram {
 /// integers, exactly the Fortran's `IFOB`) per scan angle and ionogram
 /// point.
 pub fn fobby(ion: &Ionogram, nang: usize) -> Vec<[i32; 30]> {
+    let _perf = crate::perf::Step::new(crate::perf::FOBBY);
     (0..nang)
         .map(|ia| {
             let del = ANG[ia] * D2R;
@@ -217,6 +218,7 @@ pub fn fobby(ion: &Ionogram, nang: usize) -> Vec<[i32; 30]> {
 /// Nonzero only for reflections from above the height at each layer's
 /// MUF; the exponential continuity constants follow the source.
 pub fn alosfv(s: &IonoState, k: usize, ion: &mut Ionogram, layers: &[LayerMuf; 4]) {
+    let _perf = crate::perf::Step::new(crate::perf::ALOSFV);
     let a1: R = 0.2;
     // E layer.
     let hm1 = layers[0].hpmuf - layers[0].htmuf;

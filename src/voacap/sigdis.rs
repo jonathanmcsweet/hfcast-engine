@@ -22,11 +22,11 @@ use super::muf::{IonoState, MufHour};
 /// Port of `XLIN`: linear interpolation of `yn` at `x` over the `xn`
 /// grid, with the source's exact handling of flat and decreasing
 /// segments.
-pub fn xlin(x: R, xn: &[R], yn: &[R]) -> R {
+pub fn xlin<const N: usize>(x: R, xn: &[R; N], yn: &[R; N]) -> R {
     if xn[0] - x > 0.0 {
         return yn[0];
     }
-    for j in 0..xn.len() - 1 {
+    for j in 0..N - 1 {
         let d = xn[j] - xn[j + 1];
         let interpolate =
             |j: usize| yn[j] + (x - xn[j]) * (yn[j + 1] - yn[j]) / (xn[j + 1] - xn[j]);
@@ -46,7 +46,7 @@ pub fn xlin(x: R, xn: &[R], yn: &[R]) -> R {
             return interpolate(j);
         }
     }
-    yn[yn.len() - 1]
+    yn[N - 1]
 }
 
 /// Port of `PRBMUF`: the probability that the operating frequency is

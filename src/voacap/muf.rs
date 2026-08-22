@@ -69,23 +69,6 @@ const WT: [R; 20] = [
     0.0104982845,
     0.0045212771,
 ];
-/// `voacapw.for` integration setup: NT=20 points, linear transformation.
-/// The 40 sample points in rising height order.
-///
-/// `(ig, ib)` pairs: the `1 + XT` half read backwards, then the
-/// `1 - XT` half forwards, which is all 40 rising because `XT` rises.
-/// A constant because it is one — it was being rebuilt on each of the
-/// 163,830 `gethp` calls an area run makes.
-const RISING_ORDER: [(usize, usize); 40] = {
-    let mut order = [(0usize, 0usize); 40];
-    let mut i = 0;
-    while i < 20 {
-        order[i] = (19 - i, 1);
-        order[20 + i] = (i, 0);
-        i += 1;
-    }
-    order
-};
 
 const NPL: i32 = 1;
 const XNPL: R = 1.0;
@@ -234,6 +217,7 @@ pub fn ionset(s: &mut IonoState) {
 /// slot `k` (0-based) into `htr`/`fnsq`, reshaping the slot's F1 layer
 /// where the source does.
 pub fn lecden(s: &mut IonoState, k: usize) {
+    let _perf = crate::perf::Step::new(crate::perf::LECDEN);
     if s.ielect {
         return;
     }
@@ -536,13 +520,24 @@ fn gethp_densities(s: &IonoState, ht: R, fr: R) -> [[R; 2]; 20] {
         };
         ysq[ig][ib] = (y / fr).min(0.9999);
     };
+    // The rising order, as two ranges rather than a table of pairs: the
+    // `1 + XT` half backwards, then the `1 - XT` half forwards. Written
+    // this way because a range carries its bound and a table of indices
+    // does not, so `XT[ig]` and `ysq[ig][ib]` stop being checked at run
+    // time. Worth 4.7 percent of an area run.
     if ht >= 0.0 {
-        for &(ig, ib) in RISING_ORDER.iter() {
-            read(ig, ib, &mut ysq, &mut ih);
+        for ig in (0..20).rev() {
+            read(ig, 1, &mut ysq, &mut ih);
+        }
+        for ig in 0..20 {
+            read(ig, 0, &mut ysq, &mut ih);
         }
     } else {
-        for &(ig, ib) in RISING_ORDER.iter().rev() {
-            read(ig, ib, &mut ysq, &mut ih);
+        for ig in (0..20).rev() {
+            read(ig, 0, &mut ysq, &mut ih);
+        }
+        for ig in 0..20 {
+            read(ig, 1, &mut ysq, &mut ih);
         }
     }
     ysq
