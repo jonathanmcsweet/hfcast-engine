@@ -111,15 +111,33 @@ fn every_answer_names_its_engine() {
 
 #[test]
 fn a_truecast_run_at_a_plain_index_is_the_parity_run_at_that_number() {
-    // At an index at or above zero the truecast engine is the parity
-    // engine at that sunspot number: the conditioning changes the
-    // input, never the physics. Only the tag may differ.
+    // At an index at or above zero the conditioning changes the input,
+    // never the physics, so the two runs answer the same question. They
+    // are no longer byte-equal: truecast also takes its own numerics,
+    // which evaluate the virtual height instead of approximating it.
+    // That is a deliberate second difference and it is small. What this
+    // guards is that the conditioning did not smuggle in a third.
     let parity = hfcast::service::run(&engine_point(r#""ssn":60"#)).expect("runs");
     let truecast =
         hfcast::service::run(&engine_point(r#""engine":"truecast","essn":60"#)).expect("runs");
-    assert_eq!(
-        truecast.replace(r#""engine":"truecast""#, r#""engine":"voacap""#),
-        parity
+
+    let numbers = |s: &str| -> Vec<f64> {
+        s.split(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-'))
+            .filter_map(|t| t.parse::<f64>().ok())
+            .collect()
+    };
+    let (a, b) = (numbers(&parity), numbers(&truecast));
+    assert_eq!(a.len(), b.len(), "the two answers have different shapes");
+    let worst = a
+        .iter()
+        .zip(&b)
+        .map(|(x, y)| (x - y).abs())
+        .fold(0.0f64, f64::max);
+    // One decibel of signal, or a few tenths of a degree of takeoff
+    // angle. Anything larger is a physics change, not the numerics.
+    assert!(
+        worst <= 1.0,
+        "the two runs differ by {worst}, which is too much for numerics alone"
     );
 }
 

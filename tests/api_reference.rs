@@ -27,6 +27,7 @@ const ALL_TASKS: [Task; 7] = [
 
 fn a_request() -> Request {
     Request {
+        numerics: Default::default(),
         tx: Site {
             name: "TANGIER".to_string(),
             lat_deg: 35.8,

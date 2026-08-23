@@ -58,6 +58,7 @@ struct Sample {
 /// The engine request for one WSPR path at one sunspot number.
 fn path_request(path: &WsprPath, month: u32, ssn: f64) -> Request {
     Request {
+        numerics: Default::default(),
         tx: Site {
             name: path.tx.clone(),
             lat_deg: path.tx_lat,

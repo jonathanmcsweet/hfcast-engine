@@ -88,7 +88,13 @@ pub fn run(input: &str) -> Result<String, String> {
         return Ok(tree_json.write());
     }
 
-    let (request, freqs) = build_request(&req)?;
+    let (mut request, freqs) = build_request(&req)?;
+    // The same choice the area path makes: a truecast run takes
+    // truecast's numerics, so a band table and a map agree.
+    request.numerics = match engine {
+        EngineChoice::Voacap => crate::api::Numerics::Reference,
+        EngineChoice::Truecast => crate::api::Numerics::Truecast,
+    };
     let text = listing(&tree, &request, Task::Systems)?;
     let mut out = prediction(&text, &freqs);
 
@@ -963,6 +969,7 @@ fn build_request(req: &Json) -> Result<(Request, Vec<f64>), String> {
     }
 
     let request = Request {
+        numerics: Numerics::Reference,
         tx: Site {
             name: req.string("fromLabel").unwrap_or_default(),
             lat_deg: req.number("fromLat")?,

@@ -58,9 +58,22 @@ fn cases_moved_by(cases: Vec<DeckCase>, fixes: Fixes, tag: &str) -> Option<usize
     let mut moved = 0;
     for case in cases {
         let deck = build_deck(&case).expect("deck");
-        let base = render(root.path(), &case, &deck, Model::Compatible).expect("compatible run");
-        let fixed = render(root.path(), &case, &deck, Model::from_fixes(fixes))
-            .expect("run with the fix on");
+        let base = render(
+            root.path(),
+            &case,
+            &deck,
+            Model::Compatible,
+            Default::default(),
+        )
+        .expect("compatible run");
+        let fixed = render(
+            root.path(),
+            &case,
+            &deck,
+            Model::from_fixes(fixes),
+            Default::default(),
+        )
+        .expect("run with the fix on");
         if base != fixed {
             moved += 1;
         }

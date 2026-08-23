@@ -19,7 +19,7 @@
 
 use std::path::Path;
 
-use crate::api::{predict, FoF2Model, Ionosphere, Model, Report, Request, Site, Task};
+use crate::api::{predict, FoF2Model, Ionosphere, Model, Numerics, Report, Request, Site, Task};
 use crate::{irtam, stormfit};
 
 /// Half the probe path's latitude span. The path runs from half a
@@ -246,6 +246,7 @@ fn probe_request(lat_deg: f64, lon_deg: f64, month: u32, ssn: f64) -> Request {
         lon_deg,
     };
     Request {
+        numerics: Numerics::Reference,
         tx: site("n", lat_deg + PROBE_OFFSET_DEG),
         rx: site("s", lat_deg - PROBE_OFFSET_DEG),
         month,

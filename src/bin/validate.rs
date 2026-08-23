@@ -277,7 +277,17 @@ fn listing_text(
                 IsolatedRoot::create(&format!("val-{index}")).map_err(|e| format!("tree: {e}"))?;
             run_deck(voacap_bin, root.path(), deck).map_err(|e| format!("voacapl: {e}"))
         }
-        Engine::Ported(model) => render(&itshfbc_dir(), case, deck, model),
+        Engine::Ported(model) => render(
+            &itshfbc_dir(),
+            case,
+            deck,
+            model,
+            if std::env::args().any(|a| a == "--truecast-numerics") {
+                hfcast::voacap::fastmath::Numerics::Truecast
+            } else {
+                hfcast::voacap::fastmath::Numerics::Reference
+            },
+        ),
     }
 }
 

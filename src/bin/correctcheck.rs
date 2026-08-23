@@ -447,7 +447,13 @@ fn main() -> ExitCode {
             }
         };
 
-        let base = match render(root.path(), case, &deck, Model::Compatible) {
+        let base = match render(
+            root.path(),
+            case,
+            &deck,
+            Model::Compatible,
+            Default::default(),
+        ) {
             Ok(t) => t,
             Err(e) => {
                 out.failure = Some(format!("compatible: {e}"));
@@ -480,7 +486,13 @@ fn render_with(
     deck: &str,
     fixes: Fixes,
 ) -> Result<String, String> {
-    render(root, case, deck, Model::from_fixes(fixes))
+    render(
+        root,
+        case,
+        deck,
+        Model::from_fixes(fixes),
+        Default::default(),
+    )
 }
 
 fn compare(corpus: Corpus, base: &str, fixed: &str, out: &mut Outcome) {

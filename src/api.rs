@@ -56,6 +56,7 @@ use crate::voacap::run::{run_ion, run_listing, run_luf, run_muf, run_par, RunInp
 // nothing forces them into the harness or engine modules.
 pub use crate::deck::{AntennaChoice, Edp, EfVar, EsVar, FREQ_SLOTS};
 pub use crate::voacap::coefficients::FoF2Model;
+pub use crate::voacap::fastmath::Numerics;
 pub use crate::voacap::model::Model;
 pub use crate::voacap::modes::{AllModesOut, Son};
 pub use crate::voacap::run::{HourPrediction, IonPlot, MufHourOut, ParRow, PathReport, Prediction};
@@ -215,6 +216,9 @@ pub struct Request {
     /// fixes them. [`Model::Compatible`] by default, which is the
     /// only tier proven identical to the reference.
     pub model: Model,
+    /// Which engine's numerics the run uses. A parity request leaves
+    /// this at the default; a truecast one asks for truecast's.
+    pub numerics: Numerics,
 }
 
 /// What a [`Task`] computed.
@@ -238,6 +242,7 @@ pub fn predict(itshfbc: &Path, req: &Request, task: Task) -> Result<Report, Stri
     let case = deck_case(req, task)?;
     let mut inp = RunInputs::from(&case);
     inp.model = req.model;
+    inp.numerics = req.numerics;
     let inp = inp;
     match task {
         Task::Parameters => run_par(itshfbc, &inp).map(Report::Parameters),
@@ -254,7 +259,7 @@ pub fn predict(itshfbc: &Path, req: &Request, task: Task) -> Result<Report, Stri
 pub fn listing(itshfbc: &Path, req: &Request, task: Task) -> Result<String, String> {
     let case = deck_case(req, task)?;
     let deck = build_deck(&case).map_err(|e| e.to_string())?;
-    render(itshfbc, &case, &deck, req.model)
+    render(itshfbc, &case, &deck, req.model, req.numerics)
 }
 
 /// The card deck this request resolves to: what the reference program
@@ -349,6 +354,7 @@ mod tests {
 
     fn a_request() -> Request {
         Request {
+            numerics: Numerics::Reference,
             tx: Site {
                 name: "TANGIER".to_string(),
                 lat_deg: 35.8,
