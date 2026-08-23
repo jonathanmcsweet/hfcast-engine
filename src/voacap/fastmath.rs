@@ -69,34 +69,34 @@ pub fn cos(x: R) -> R {
     }
 }
 
-/// Which arithmetic a run's hot path uses.
+/// Which engine's numerics a run uses.
 ///
 /// The parity engine has to reproduce the reference down to the last
-/// digit, so it takes the library's. `portcheck` measured what happens
-/// otherwise: eleven fields leave the envelope. Truecast is not bound to
-/// the reference and takes the cheaper versions, worth 4.3 percent of a
-/// world grid on a 32-bit device.
+/// digit. `portcheck` measured what happens otherwise: eleven fields
+/// leave the envelope. Truecast is not bound to it, so where the
+/// reference made a compromise for 1970s hardware, Truecast may not.
 ///
 /// Carried in the call rather than kept beside it. A caller runs several
 /// requests at once and two of them can want different arithmetic, so a
 /// shared switch would hand one of them the other's answers.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub enum Arithmetic {
+pub enum Numerics {
     /// The library's, which is what the parity gate is measured against.
     #[default]
     Reference,
-    /// Fixed-purpose, for engines that do not owe the reference their
-    /// last digit.
-    Fast,
+    /// Truecast's, which is free to differ from the reference where
+    /// differing is better. Some of it trades a little accuracy for
+    /// speed, and some of it is both faster and more accurate.
+    Truecast,
 }
 
-impl Arithmetic {
+impl Numerics {
     /// `x.cos()`, by whichever route this run asked for.
     #[inline(always)]
     pub fn cos(self, x: R) -> R {
         match self {
             Self::Reference => x.cos(),
-            Self::Fast => cos(x),
+            Self::Truecast => cos(x),
         }
     }
 }

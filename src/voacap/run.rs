@@ -11,7 +11,7 @@
 //! surface — the tolerance envelope in `docs/sensitivity.md` is defined
 //! on these printed cells.
 
-use crate::voacap::fastmath::Arithmetic;
+use crate::voacap::fastmath::Numerics;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -127,7 +127,7 @@ pub struct RunInputs {
     pub model: Model,
     /// Which arithmetic the hot path takes. The parity engine owes the
     /// reference its last digit and leaves this at the default.
-    pub arith: Arithmetic,
+    pub numerics: Numerics,
 }
 
 /// Asks the engine the same question the deck card asks.
@@ -139,7 +139,7 @@ pub struct RunInputs {
 impl From<&DeckCase> for RunInputs {
     fn from(c: &DeckCase) -> Self {
         Self {
-            arith: Arithmetic::Reference,
+            numerics: Numerics::Reference,
             from_lat_deg: c.from_lat,
             from_lon_deg: c.from_lon,
             to_lat_deg: c.to_lat,
@@ -210,6 +210,7 @@ fn resolved_ab(ab: Option<&[R; 318]>, cof: &[R], set: &CoefficientSet, gmt: R) -
 /// runs; whatever it skips keeps the previous hour's values, or the
 /// `blkdat` presets that an `EFVAR` or `ESVAR` card may have replaced.
 struct IonoCarry {
+    numerics: Numerics,
     ab: [R; 318],
     params: Vec<LayerParams>,
     /// `/ES/` `FS(3,5)` and `HS(5)`. Five slots whatever the path's
@@ -243,6 +244,7 @@ impl IonoCarry {
             e.hs = *hs;
         }
         IonoCarry {
+            numerics: inp.numerics,
             ab: [0.0; 318],
             params,
             es,
@@ -321,6 +323,7 @@ impl IonoCarry {
     /// profile in place if the deck gave one.
     fn state(&self, iedp: i32, edp: Option<&([R; 50], [R; 50])>) -> IonoState {
         let mut state = IonoState::from_layers(&self.params);
+        state.numerics = self.numerics;
         state.iedp = iedp;
         if let Some((htr, fnsq)) = edp {
             state.htr = *htr;
@@ -916,7 +919,7 @@ pub fn run_luf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<MufHourOut>, Strin
         );
         geog.apply_sigdis(&sd);
         let ctx = PassCtx {
-            arith: inp.arith,
+            numerics: inp.numerics,
             state: &state,
             ants: &ants,
             fs: &fs,
@@ -1015,7 +1018,7 @@ struct HourSetup<'a> {
     iedp: i32,
     /// `KRUN` from the `EXECUTE` card.
     krun: i32,
-    arith: Arithmetic,
+    numerics: Numerics,
     /// The `EDP` card's profile.
     edp: Option<([R; 50], [R; 50])>,
     /// Whether the area driver's own comparison applies: `HFAREA` tests
@@ -1085,7 +1088,7 @@ fn hour_setup<'a>(
         *slot = *f;
     }
     Ok(HourSetup {
-        arith: inp.arith,
+        numerics: inp.numerics,
         set,
         cof,
         geo,
@@ -1354,7 +1357,7 @@ fn hour_body(
             let sd = sd_last.as_ref().expect("just set");
             geog.apply_sigdis(sd);
             let ctx = PassCtx {
-                arith: s.arith,
+                numerics: s.numerics,
                 state: &state,
                 ants,
                 fs: &fs,
@@ -1381,7 +1384,7 @@ fn hour_body(
         if plans.len() == 2 {
             let sd = sd_last.as_ref().expect("two passes ran");
             let ctx = PassCtx {
-                arith: s.arith,
+                numerics: s.numerics,
                 state: &state,
                 ants,
                 fs: &fs,
@@ -1525,7 +1528,7 @@ pub struct AreaInputs {
     pub model: Model,
     /// Which arithmetic the hot path takes. A driver that owes the
     /// reference its last digit leaves this at the default.
-    pub arith: Arithmetic,
+    pub numerics: Numerics,
 }
 
 /// One frequency's answer at one grid point, before `OUTAREA` collapses
@@ -1742,7 +1745,7 @@ impl<'a> AreaPrep<'a> {
             ((fixed_lat, fixed_lon), (glat, glon))
         };
         let inp = RunInputs {
-            arith: area.arith,
+            numerics: area.numerics,
             from_lat_deg: f64::from(from.0),
             from_lon_deg: f64::from(from.1),
             to_lat_deg: f64::from(to.0),

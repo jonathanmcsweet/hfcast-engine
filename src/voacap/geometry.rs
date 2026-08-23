@@ -8,7 +8,7 @@
 //! The Fortran's numeric quirks are kept on purpose: its own PI constant,
 //! clamped ACOS arguments, the 31.85-metre minimum distance, the nudge that
 //! separates a receiver sitting on top of the transmitter, and the special
-//! cases for endpoints within 1e-7 of a pole. Arithmetic follows the source
+//! cases for endpoints within 1e-7 of a pole. Numerics follows the source
 //! expression by expression in `f32`.
 
 use super::con::{MagneticPole, D2R, PI, PI2, PIO2, R, R2D, RZ};

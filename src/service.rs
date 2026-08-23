@@ -47,7 +47,7 @@ use crate::runner::itshfbc_dir;
 use crate::voacap::area::{Grid, Projection};
 use crate::voacap::con::R;
 use crate::voacap::data;
-use crate::voacap::fastmath::Arithmetic;
+use crate::voacap::fastmath::Numerics;
 use crate::voacap::run::{
     run_area, run_area_daily_median, AntennaCardSpec, AreaFreq, AreaInputs, AreaMedian, AreaPoint,
 };
@@ -701,9 +701,9 @@ fn area(tree: &std::path::Path, req: &Json, engine: EngineChoice) -> Result<Json
         // The parity engine owes the reference its last digit and takes
         // the library's arithmetic. Truecast does not, and takes the
         // cheaper versions.
-        arith: match engine {
-            EngineChoice::Voacap => Arithmetic::Reference,
-            EngineChoice::Truecast => Arithmetic::Fast,
+        numerics: match engine {
+            EngineChoice::Voacap => Numerics::Reference,
+            EngineChoice::Truecast => Numerics::Truecast,
         },
         grid,
         tx_lat_deg: req.number("fromLat")?,

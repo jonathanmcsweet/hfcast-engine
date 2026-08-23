@@ -432,7 +432,7 @@ fn main() -> ExitCode {
             return out;
         }
         let inputs = AreaInputs {
-            arith: Default::default(),
+            numerics: Default::default(),
             grid: case.grid,
             tx_lat_deg: f64::from(case.grid.plat),
             tx_lon_deg: f64::from(case.grid.plon),

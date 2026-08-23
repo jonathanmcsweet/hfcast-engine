@@ -32,7 +32,7 @@ use super::model::Model;
 use super::muf::{IonoState, MufHour};
 use super::noise::NoiseResult;
 use super::sigdis::{prbmuf, xlin, SignalDistribution};
-use crate::voacap::fastmath::Arithmetic;
+use crate::voacap::fastmath::Numerics;
 
 /// `/LPATH/` constants from `blkdat`.
 const DELOPT: R = 3.0;
@@ -462,7 +462,7 @@ pub struct PassCtx<'a> {
     /// `IPFG = 200`: the long-path model.
     pub long: bool,
     /// Which arithmetic the hot path takes.
-    pub arith: Arithmetic,
+    pub numerics: Numerics,
 }
 
 /// Fills the `/ES/` five-slot arrays from the per-point Es parameters
@@ -534,12 +534,12 @@ pub fn setlng(
 /// `GAIN` with `ITR < 0`: the Fresnel ground-reflection loss between
 /// hops. `delta` in radians; `sigma`/`er` are the point's ground
 /// constants. Zero conductivity returns zero loss.
-pub fn gain_ground(delta: R, fmc: R, sigma: R, er: R, arith: Arithmetic) -> R {
+pub fn gain_ground(delta: R, fmc: R, sigma: R, er: R, numerics: Numerics) -> R {
     if sigma <= 0.0 {
         return 0.0;
     }
     let x = 18000.0 * sigma / fmc;
-    let t = arith.cos(delta);
+    let t = numerics.cos(delta);
     let q = delta.sin();
     let r = q * q;
     let s = r * r;
@@ -550,10 +550,10 @@ pub fn gain_ground(delta: R, fmc: R, sigma: R, er: R, arith: Arithmetic) -> R {
     let u = er * er + x * x;
     let v = u.sqrt();
     let asxv = (x / v).asin();
-    let cv = (rho * rho + u * u * s - 2.0 * rho * u * r * arith.cos(alpha + 2.0 * asxv)).sqrt()
-        / (rho + u * r + 2.0 * rho12 * v * q * arith.cos(alpha * 0.5 + asxv));
-    let ch = (rho * rho + s - 2.0 * rho * r * arith.cos(alpha)).sqrt()
-        / (rho + r + 2.0 * rho12 * q * arith.cos(alpha * 0.5));
+    let cv = (rho * rho + u * u * s - 2.0 * rho * u * r * numerics.cos(alpha + 2.0 * asxv)).sqrt()
+        / (rho + u * r + 2.0 * rho12 * v * q * numerics.cos(alpha * 0.5 + asxv));
+    let ch = (rho * rho + s - 2.0 * rho * r * numerics.cos(alpha)).sqrt()
+        / (rho + r + 2.0 * rho12 * q * numerics.cos(alpha * 0.5));
     let mut rain = 4.3429 * (0.5 * (ch * ch + cv * cv)).ln();
     rain = rain.abs();
     if delta <= 0.000_000_01 {
@@ -572,7 +572,7 @@ fn ground_loss_avg(ctx: &PassCtx, del: R, freq: R, km: usize) -> R {
             freq,
             ctx.geog.sigpat[ig],
             ctx.geog.epspat[ig],
-            ctx.arith,
+            ctx.numerics,
         );
     }
     y / km as R
@@ -2006,7 +2006,7 @@ fn settxr(lp: &mut ModeLoopState, ctx: &PassCtx, muf: &MufHour, freq: R, itxrcp:
                     freq,
                     ctx.geog.sigpat[ig],
                     ctx.geog.epspat[ig],
-                    ctx.arith,
+                    ctx.numerics,
                 );
             }
             rfx.grlosx[ia] = y / ctx.state.km as R;
@@ -3210,14 +3210,11 @@ mod tests {
 
     #[test]
     fn gain_ground_returns_zero_without_conductivity_and_six_at_grazing() {
-        assert_eq!(gain_ground(0.1, 10.0, 0.0, 4.0, Arithmetic::Reference), 0.0);
+        assert_eq!(gain_ground(0.1, 10.0, 0.0, 4.0, Numerics::Reference), 0.0);
         // At zero elevation the loss is pinned to 6 dB.
-        assert_eq!(
-            gain_ground(0.0, 10.0, 5.0, 80.0, Arithmetic::Reference),
-            6.0
-        );
+        assert_eq!(gain_ground(0.0, 10.0, 5.0, 80.0, Numerics::Reference), 6.0);
         // Sea water at a moderate angle loses little.
-        let sea = gain_ground(0.3, 10.0, 5.0, 80.0, Arithmetic::Reference);
+        let sea = gain_ground(0.3, 10.0, 5.0, 80.0, Numerics::Reference);
         assert!(sea > 0.0 && sea < 1.0, "got {sea}");
     }
 

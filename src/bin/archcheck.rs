@@ -80,7 +80,7 @@ fn area_cases() -> Vec<AreaCase> {
     let base = |id: &'static str, grid: Grid, beam_deg: f32, hour: i32| AreaCase {
         id,
         inputs: AreaInputs {
-            arith: Default::default(),
+            numerics: Default::default(),
             grid,
             tx_lat_deg: f64::from(grid.plat),
             tx_lon_deg: f64::from(grid.plon),

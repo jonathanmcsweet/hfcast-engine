@@ -147,7 +147,7 @@ mod tests {
     fn request(nx: usize, ny: usize, freqs: Vec<f32>) -> GridRequest {
         GridRequest {
             area: AreaInputs {
-                arith: Default::default(),
+                numerics: Default::default(),
                 grid: Grid {
                     projection: Projection::LatLon,
                     plat: 47.0,

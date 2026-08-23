@@ -1497,7 +1497,7 @@ fn main() -> ExitCode {
                 }
                 geog.apply_sigdis(sd);
                 let ctx = PassCtx {
-                    arith: Default::default(),
+                    numerics: Default::default(),
                     state: &state,
                     ants: &ants,
                     fs: &fs,
@@ -1557,7 +1557,7 @@ fn main() -> ExitCode {
             if plans.len() == 2 {
                 let sd = sd_last.as_ref().expect("two passes ran");
                 let ctx = PassCtx {
-                    arith: Default::default(),
+                    numerics: Default::default(),
                     state: &state,
                     ants: &ants,
                     fs: &fs,

@@ -29,7 +29,8 @@ struct Config {
 
 fn world(nx: usize, ny: usize) -> AreaInputs {
     AreaInputs {
-        arith: Default::default(),
+        // The truecast driver, so truecast numerics.
+        numerics: hfcast::voacap::fastmath::Numerics::Truecast,
         grid: Grid {
             projection: Projection::LatLon,
             plat: 47.0,
