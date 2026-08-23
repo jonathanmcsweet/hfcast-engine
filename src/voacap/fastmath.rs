@@ -34,10 +34,9 @@ const COS: [R; 6] = [
 const INV_PI: R = 0.31830987;
 
 /// Pi in three pieces, each with enough trailing zeros that `n * piece`
-/// is exact for the `|n| <= 16` this engine reaches.
-const PI_A: R = 3.140625;
-const PI_B: R = 0.00096702576;
-const PI_C: R = 6.277114e-07;
+/// is exact for the `|n| <= 16` this engine reaches. Subtracted in this
+/// order, largest first, so the cancellation happens once.
+const PI: [R; 3] = [3.140625, 0.00096702576, 6.277114e-07];
 
 /// `1.5 * 2^23`: adding it forces a float to its nearest integer in the
 /// low mantissa bits, a rounding the hardware does without a library
@@ -58,11 +57,9 @@ pub fn cos(x: R) -> R {
     // half-turn count, which is the sign of the answer.
     let odd = t.to_bits() & 1 == 1;
     let n = t - MAGIC;
-    // Three steps rather than one, so each cancellation happens against
-    // a piece of pi that `n` multiplies exactly.
-    let r = x - n * PI_A;
-    let r = r - n * PI_B;
-    let r = r - n * PI_C;
+    // Pi in pieces rather than whole, so each cancellation happens
+    // against a piece that `n` multiplies exactly.
+    let r = PI.iter().fold(x, |r, &piece| r - n * piece);
     let u = r * r;
     let p = COS.iter().rev().fold(0.0, |acc, &c| acc * u + c);
     if odd {
@@ -72,16 +69,35 @@ pub fn cos(x: R) -> R {
     }
 }
 
-/// `cos_fast` as a method, so a call site changes by its name alone and
-/// the expression in front of it is left as it was.
-pub trait FastTrig {
-    /// [`cos`], spelled the way the call sites read.
-    fn cos_fast(self) -> Self;
+/// Which arithmetic a run's hot path uses.
+///
+/// The parity engine has to reproduce the reference down to the last
+/// digit, so it takes the library's. `portcheck` measured what happens
+/// otherwise: eleven fields leave the envelope. Truecast is not bound to
+/// the reference and takes the cheaper versions, worth 4.3 percent of a
+/// world grid on a 32-bit device.
+///
+/// Carried in the call rather than kept beside it. A caller runs several
+/// requests at once and two of them can want different arithmetic, so a
+/// shared switch would hand one of them the other's answers.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Arithmetic {
+    /// The library's, which is what the parity gate is measured against.
+    #[default]
+    Reference,
+    /// Fixed-purpose, for engines that do not owe the reference their
+    /// last digit.
+    Fast,
 }
 
-impl FastTrig for R {
-    fn cos_fast(self) -> Self {
-        cos(self)
+impl Arithmetic {
+    /// `x.cos()`, by whichever route this run asked for.
+    #[inline(always)]
+    pub fn cos(self, x: R) -> R {
+        match self {
+            Self::Reference => x.cos(),
+            Self::Fast => cos(x),
+        }
     }
 }
 
@@ -110,23 +126,23 @@ mod tests {
 
     #[test]
     fn holds_at_the_landmarks() {
-        for (x, want) in [
+        let off = [
             (0.0f32, 1.0f32),
             (std::f32::consts::FRAC_PI_2, 0.0),
             (std::f32::consts::PI, -1.0),
             (-std::f32::consts::PI, -1.0),
-        ] {
-            assert!((cos(x) - want).abs() < 1e-6, "cos({x}) was {}", cos(x));
-        }
+        ]
+        .into_iter()
+        .find(|&(x, want)| (cos(x) - want).abs() >= 1e-6);
+        assert_eq!(off, None, "landmark off by more than 1e-6");
     }
 
     /// Even, the way the function it replaces is.
     #[test]
     fn is_even() {
-        let mut x = 0.01f32;
-        while x < 50.0 {
-            assert_eq!(cos(x), cos(-x), "at {x}");
-            x *= 1.0009;
-        }
+        let odd_one = std::iter::successors(Some(0.01f32), |x| Some(x * 1.0009))
+            .take_while(|&x| x < 50.0)
+            .find(|&x| cos(x) != cos(-x));
+        assert_eq!(odd_one, None, "cos disagreed with its mirror");
     }
 }

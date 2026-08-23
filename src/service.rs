@@ -47,6 +47,7 @@ use crate::runner::itshfbc_dir;
 use crate::voacap::area::{Grid, Projection};
 use crate::voacap::con::R;
 use crate::voacap::data;
+use crate::voacap::fastmath::Arithmetic;
 use crate::voacap::run::{
     run_area, run_area_daily_median, AntennaCardSpec, AreaFreq, AreaInputs, AreaMedian, AreaPoint,
 };
@@ -79,7 +80,7 @@ pub fn run(input: &str) -> Result<String, String> {
     // default and stays the bare object it has always been, so nothing
     // that already calls this has to learn a new field.
     if req.get("mode").and_then(Json::as_str) == Some("area") {
-        let mut tree_json = area(&tree, &req)?;
+        let mut tree_json = area(&tree, &req, engine)?;
         if let Json::Obj(fields) = &mut tree_json {
             fields.insert("engine".to_string(), Json::Str(engine.name().to_string()));
         }
@@ -647,7 +648,7 @@ fn hour(req: &Json, daily: bool) -> Result<i32, String> {
     Ok(value as i32 + 1)
 }
 
-fn area(tree: &std::path::Path, req: &Json) -> Result<Json, String> {
+fn area(tree: &std::path::Path, req: &Json, engine: EngineChoice) -> Result<Json, String> {
     let lat_step = req.number("latStep")?;
     let lon_step = req.number("lonStep")?;
     if lat_step <= 0.0 || lon_step <= 0.0 {
@@ -697,6 +698,13 @@ fn area(tree: &std::path::Path, req: &Json) -> Result<Json, String> {
     };
 
     let inputs = AreaInputs {
+        // The parity engine owes the reference its last digit and takes
+        // the library's arithmetic. Truecast does not, and takes the
+        // cheaper versions.
+        arith: match engine {
+            EngineChoice::Voacap => Arithmetic::Reference,
+            EngineChoice::Truecast => Arithmetic::Fast,
+        },
         grid,
         tx_lat_deg: req.number("fromLat")?,
         tx_lon_deg: req.number("fromLon")?,

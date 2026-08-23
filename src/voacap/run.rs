@@ -11,6 +11,7 @@
 //! surface — the tolerance envelope in `docs/sensitivity.md` is defined
 //! on these printed cells.
 
+use crate::voacap::fastmath::Arithmetic;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -124,6 +125,9 @@ pub struct RunInputs {
     /// case converted from a deck is [`Model::Compatible`] — which is
     /// what keeps every harness judging the tier it can judge.
     pub model: Model,
+    /// Which arithmetic the hot path takes. The parity engine owes the
+    /// reference its last digit and leaves this at the default.
+    pub arith: Arithmetic,
 }
 
 /// Asks the engine the same question the deck card asks.
@@ -135,6 +139,7 @@ pub struct RunInputs {
 impl From<&DeckCase> for RunInputs {
     fn from(c: &DeckCase) -> Self {
         Self {
+            arith: Arithmetic::Reference,
             from_lat_deg: c.from_lat,
             from_lon_deg: c.from_lon,
             to_lat_deg: c.to_lat,
@@ -911,6 +916,7 @@ pub fn run_luf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<MufHourOut>, Strin
         );
         geog.apply_sigdis(&sd);
         let ctx = PassCtx {
+            arith: inp.arith,
             state: &state,
             ants: &ants,
             fs: &fs,
@@ -1009,6 +1015,7 @@ struct HourSetup<'a> {
     iedp: i32,
     /// `KRUN` from the `EXECUTE` card.
     krun: i32,
+    arith: Arithmetic,
     /// The `EDP` card's profile.
     edp: Option<([R; 50], [R; 50])>,
     /// Whether the area driver's own comparison applies: `HFAREA` tests
@@ -1078,6 +1085,7 @@ fn hour_setup<'a>(
         *slot = *f;
     }
     Ok(HourSetup {
+        arith: inp.arith,
         set,
         cof,
         geo,
@@ -1346,6 +1354,7 @@ fn hour_body(
             let sd = sd_last.as_ref().expect("just set");
             geog.apply_sigdis(sd);
             let ctx = PassCtx {
+                arith: s.arith,
                 state: &state,
                 ants,
                 fs: &fs,
@@ -1372,6 +1381,7 @@ fn hour_body(
         if plans.len() == 2 {
             let sd = sd_last.as_ref().expect("two passes ran");
             let ctx = PassCtx {
+                arith: s.arith,
                 state: &state,
                 ants,
                 fs: &fs,
@@ -1513,6 +1523,9 @@ pub struct AreaInputs {
     /// Two of them are area-only, so this is the tier an area run
     /// reads as much as a point-to-point one.
     pub model: Model,
+    /// Which arithmetic the hot path takes. A driver that owes the
+    /// reference its last digit leaves this at the default.
+    pub arith: Arithmetic,
 }
 
 /// One frequency's answer at one grid point, before `OUTAREA` collapses
@@ -1729,6 +1742,7 @@ impl<'a> AreaPrep<'a> {
             ((fixed_lat, fixed_lon), (glat, glon))
         };
         let inp = RunInputs {
+            arith: area.arith,
             from_lat_deg: f64::from(from.0),
             from_lon_deg: f64::from(from.1),
             to_lat_deg: f64::from(to.0),

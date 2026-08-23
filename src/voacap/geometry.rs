@@ -12,7 +12,6 @@
 //! expression by expression in `f32`.
 
 use super::con::{MagneticPole, D2R, PI, PI2, PIO2, R, R2D, RZ};
-use crate::voacap::fastmath::FastTrig;
 
 const EPSLON: R = 1.0e-7;
 /// Closest the receiver may sit to the transmitter, degrees.
@@ -101,7 +100,7 @@ pub fn path_geometry(
         dlong -= sign(PI2, dlong);
     }
 
-    let mut qcos = tlat.sin() * rlat.sin() + tlat.cos_fast() * rlat.cos_fast() * dlong.cos_fast();
+    let mut qcos = tlat.sin() * rlat.sin() + tlat.cos() * rlat.cos() * dlong.cos();
     if qcos.abs() > 1.0 {
         qcos = sign(1.0, qcos);
     }
@@ -116,14 +115,14 @@ pub fn path_geometry(
     let gcd_km = gcd * RZ;
 
     // Bearing transmitter to receiver, with the near-pole special case.
-    let mut btr = if tlat.cos_fast() - EPSLON <= 0.0 {
+    let mut btr = if tlat.cos() - EPSLON <= 0.0 {
         if tlat <= 0.0 {
             0.0
         } else {
             PI
         }
     } else {
-        let mut q = (rlat.sin() - tlat.sin() * gcd.cos_fast()) / (tlat.cos_fast() * gcd.sin());
+        let mut q = (rlat.sin() - tlat.sin() * gcd.cos()) / (tlat.cos() * gcd.sin());
         if q.abs() > 1.0 {
             q = sign(1.0, q);
         }
@@ -134,14 +133,14 @@ pub fn path_geometry(
     }
 
     // Bearing receiver to transmitter.
-    let mut brt = if rlat.cos_fast() - EPSLON <= 0.0 {
+    let mut brt = if rlat.cos() - EPSLON <= 0.0 {
         if rlat <= 0.0 {
             0.0
         } else {
             PI
         }
     } else {
-        let mut q = (tlat.sin() - rlat.sin() * gcd.cos_fast()) / (rlat.cos_fast() * gcd.sin());
+        let mut q = (tlat.sin() - rlat.sin() * gcd.cos()) / (rlat.cos() * gcd.sin());
         if q.abs() > 1.0 {
             q = sign(1.0, q);
         }
@@ -167,7 +166,7 @@ pub fn path_geometry(
     let points = rd
         .iter()
         .map(|&drf| {
-            let ctlat = tlat.cos_fast();
+            let ctlat = tlat.cos();
             let (rflt, rflg) = if ctlat - EPSLON < 0.0 {
                 // Transmitter near a pole: walk straight down its meridian.
                 let mut rflt = tlat - sign(drf, tlat);
@@ -176,18 +175,16 @@ pub fn path_geometry(
                 }
                 (rflt, rlong)
             } else {
-                let mut q =
-                    drf.cos_fast() * tlat.sin() + drf.sin() * tlat.cos_fast() * btr.cos_fast();
+                let mut q = drf.cos() * tlat.sin() + drf.sin() * tlat.cos() * btr.cos();
                 if q.abs() > 1.0 {
                     q = sign(1.0, q);
                 }
                 let rflt = PIO2 - q.acos();
-                let rflg = if rflt.cos_fast() - EPSLON <= 0.0 {
+                let rflg = if rflt.cos() - EPSLON <= 0.0 {
                     // The sample area itself is near a pole.
                     tlong
                 } else {
-                    let mut q = (drf.cos_fast() - rflt.sin() * tlat.sin())
-                        / (rflt.cos_fast() * tlat.cos_fast());
+                    let mut q = (drf.cos() - rflt.sin() * tlat.sin()) / (rflt.cos() * tlat.cos());
                     if q.abs() > 1.0 {
                         q = sign(1.0, q);
                     }
@@ -204,8 +201,7 @@ pub fn path_geometry(
                 (rflt, rflg)
             };
 
-            let mut q =
-                glt.sin() * rflt.sin() + glt.cos_fast() * rflt.cos_fast() * (rflg - glg).cos_fast();
+            let mut q = glt.sin() * rflt.sin() + glt.cos() * rflt.cos() * (rflg - glg).cos();
             if q.abs() > 1.0 {
                 q = sign(1.0, q);
             }

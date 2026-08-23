@@ -19,6 +19,7 @@ fn main() -> Result<(), String> {
     // The app's fine correction lattice: 5 by 7.5 degrees, whole world.
     let (nx, ny) = (48, 36);
     let area = AreaInputs {
+        arith: Default::default(),
         grid: Grid {
             projection: Projection::LatLon,
             plat: 47.0,

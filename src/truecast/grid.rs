@@ -26,6 +26,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::voacap::coefficients::redmap;
 use crate::voacap::con::R;
+use crate::voacap::fastmath::Arithmetic;
 use crate::voacap::run::{area_point_fresh, AreaFreq, AreaInputs, AreaPrep};
 
 /// One grid question: the parity area inputs (lattice, ends, month,
@@ -79,7 +80,13 @@ struct PointAnswer {
 /// invariant under the thread count by construction, and each point
 /// matches a fresh-state serial run of the same place bit for bit.
 pub fn predict_grid(itshfbc: &Path, req: &GridRequest) -> Result<GridPlanes, String> {
-    let area = &req.area;
+    // Truecast does not owe the reference its last digit, so its hot
+    // path takes the cheaper arithmetic. `portcheck` measures the parity
+    // engine, which keeps the library's.
+    let area = &AreaInputs {
+        arith: Arithmetic::Fast,
+        ..req.area.clone()
+    };
     let set = redmap(itshfbc, area.fof2, area.month, area.ssn).map_err(|e| e.to_string())?;
     let prep = AreaPrep::new(itshfbc, area, &set)?;
     let (nx, ny) = (area.grid.nx, area.grid.ny);
@@ -198,6 +205,7 @@ mod tests {
     /// A small lattice around a mid-latitude transmitter, two bands.
     fn small_area() -> AreaInputs {
         AreaInputs {
+            arith: Default::default(),
             grid: Grid {
                 projection: Projection::LatLon,
                 plat: 47.0,

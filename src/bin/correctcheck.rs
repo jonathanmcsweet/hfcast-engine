@@ -228,6 +228,7 @@ fn area_cases() -> Vec<AreaCase> {
         ny: 5,
     };
     let inputs = |plat: f32, plon: f32, inverse: bool| AreaInputs {
+        arith: Default::default(),
         grid: grid(plat, plon),
         tx_lat_deg: f64::from(plat),
         tx_lon_deg: f64::from(plon),

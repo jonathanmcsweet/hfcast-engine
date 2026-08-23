@@ -29,6 +29,7 @@ struct Config {
 
 fn world(nx: usize, ny: usize) -> AreaInputs {
     AreaInputs {
+        arith: Default::default(),
         grid: Grid {
             projection: Projection::LatLon,
             plat: 47.0,
