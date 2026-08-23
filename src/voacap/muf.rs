@@ -22,6 +22,7 @@
 
 use super::con::{D2R, PIO2, R, R2D, RZ};
 use super::ionosphere::{EsParams, LayerParams};
+use crate::voacap::fastmath::FastTrig;
 
 /// 20-point Gauss abscissas `XT` from `blkdat.for`.
 const XT: [R; 20] = [
@@ -663,7 +664,7 @@ struct HopGeometry {
 fn hop_geometry(gcdkm: R, amind: R, hp: R, ht: R, split_first: bool) -> HopGeometry {
     let dele = amind.max(0.0);
     let del = dele * D2R;
-    let phe = (RZ * del.cos() / (RZ + hp)).asin();
+    let phe = (RZ * del.cos_fast() / (RZ + hp)).asin();
     let nhops = (0.5 * gcdkm / ((PIO2 - del - phe) * RZ)) as i32;
     let xhops = (nhops + 1) as R;
     // The E and F1 sections compute PSI in two statements, the F2 section
@@ -674,12 +675,12 @@ fn hop_geometry(gcdkm: R, amind: R, hp: R, ht: R, split_first: bool) -> HopGeome
     } else {
         gcdkm / ((2.0 * RZ) * xhops)
     };
-    let cpsi = psi.cos();
+    let cpsi = psi.cos_fast();
     let spsi = psi.sin();
     let tanp = spsi / (1.0 - cpsi + hp / RZ);
     let phe = tanp.atan();
     let del = PIO2 - phe - psi;
-    let cdel = del.cos();
+    let cdel = del.cos_fast();
     let sphe = RZ * cdel / (RZ + ht);
     let secp = 1.0 / (1.0 - sphe * sphe).sqrt();
     HopGeometry {
@@ -779,7 +780,7 @@ pub fn nommuf(
         let dmax = 225.0 * hs[k].sqrt();
         let hop = gcdkm / dmax + 1.0;
         let psi = 0.5 * gcd / hop;
-        let tdel = (psi.cos() - RZ / (RZ + hs[k])) / psi.sin();
+        let tdel = (psi.cos_fast() - RZ / (RZ + hs[k])) / psi.sin();
         let cdel = 1.0 / (1.0 + tdel * tdel).sqrt();
         let sphe = RZ * cdel / (RZ + hs[k]);
         let secp = 1.0 / (1.0 - sphe * sphe).sqrt();
@@ -928,7 +929,7 @@ pub fn curmuf(
         let tanp = g.spsi / (1.0 - g.cpsi + hpx2 / RZ);
         let phe = tanp.atan();
         del = PIO2 - phe - g.psi;
-        let cdel = del.cos();
+        let cdel = del.cos_fast();
         sphe = RZ * cdel / (RZ + ht2);
         let secp = 1.0 / (1.0 - sphe * sphe).sqrt();
         fob2 = fx2 * secp;
@@ -979,7 +980,7 @@ pub fn curmuf(
             let tanp = g.spsi / (1.0 - g.cpsi + hpy2 / RZ);
             let phe = tanp.atan();
             del = PIO2 - phe - g.psi;
-            let cdel = del.cos();
+            let cdel = del.cos_fast();
             sphe = RZ * cdel / (RZ + ht1);
             let secp = 1.0 / (1.0 - sphe * sphe).sqrt();
             fob2 = fx1 * secp;
@@ -1017,11 +1018,11 @@ pub fn curmuf(
             continue;
         }
         let del = dels * D2R;
-        let phe = (RZ * del.cos() / (RZ + e.hs)).asin();
+        let phe = (RZ * del.cos_fast() / (RZ + e.hs)).asin();
         let nhops = (0.5 * gcdkm / ((PIO2 - del - phe) * RZ)) as i32;
         hop = (nhops + 1) as R;
         let psi = 0.5 * gcd / hop;
-        let tdel = (psi.cos() - RZ / (RZ + e.hs)) / psi.sin();
+        let tdel = (psi.cos_fast() - RZ / (RZ + e.hs)) / psi.sin();
         let cdel = 1.0 / (1.0 + tdel * tdel).sqrt();
         let sphe = RZ * cdel / (RZ + e.hs);
         let secp = 1.0 / (1.0 - sphe * sphe).sqrt();

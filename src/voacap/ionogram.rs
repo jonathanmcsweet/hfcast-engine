@@ -19,6 +19,7 @@
 use super::con::{D2R, R, RZ};
 use super::muf::{bendy, gethp, pen, IonoState, LayerMuf};
 use super::sigdis::xlin;
+use crate::voacap::fastmath::FastTrig;
 
 /// The elevation-angle scan, `ANG(40)` from `blkdat.for`, degrees.
 pub const ANG: [R; 40] = [
@@ -199,7 +200,7 @@ pub fn fobby(ion: &Ionogram, nang: usize) -> Vec<[i32; 30]> {
     (0..nang)
         .map(|ia| {
             let del = ANG[ia] * D2R;
-            let rcosd = RZ * del.cos();
+            let rcosd = RZ * del.cos_fast();
             let mut row = [0i32; 30];
             for (ih, out) in row.iter_mut().enumerate() {
                 let fvv = ion.fvert[ih];

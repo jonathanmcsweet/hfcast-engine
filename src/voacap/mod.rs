@@ -61,6 +61,7 @@ pub mod coefficients;
 #[path = "constants.rs"]
 pub mod con;
 pub mod data;
+pub mod fastmath;
 pub mod geometry;
 pub mod graphs;
 pub mod hfmufes;

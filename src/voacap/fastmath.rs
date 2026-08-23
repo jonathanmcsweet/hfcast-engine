@@ -1,0 +1,132 @@
+//! `cos` without the library's general implementation.
+//!
+//! An area run makes 43.9 million cosine calls, and on a 32-bit ARM
+//! tablet the library's costs 35.9 ns against 2.4 ns on a desktop build
+//! host. That is 8.4 percent of a world grid on the device and about one
+//! percent on the machine the engine is usually measured on, which is
+//! why it went unnoticed.
+//!
+//! The arguments run from -3.3 to 16 pi, measured over a world grid, so
+//! the reduction never has to be careful about huge inputs: splitting pi
+//! into three pieces keeps `n * pi` exact for every `n` reachable here.
+//!
+//! Everything is `f32` and there is no table. Both are deliberate. The
+//! same arithmetic on a build host and on the device gives the same
+//! bits, so `portcheck` still measures what ships, and nothing here
+//! competes for the data cache the hot loops are using.
+//!
+//! Against an exact reference over the engine's range: 1.53 units of the
+//! last place at worst, 0.21 typically, where the library call is 0.56
+//! and 0.11.
+use crate::voacap::con::R;
+
+/// `cos(r)` for `|r| <= pi/2`, in rising powers of `r * r`.
+const COS: [R; 6] = [
+    1.0,
+    -0.5,
+    0.041666634,
+    -0.0013888361,
+    2.4760135e-05,
+    -2.6051077e-07,
+];
+
+/// `1 / pi`.
+const INV_PI: R = 0.31830987;
+
+/// Pi in three pieces, each with enough trailing zeros that `n * piece`
+/// is exact for the `|n| <= 16` this engine reaches.
+const PI_A: R = 3.140625;
+const PI_B: R = 0.00096702576;
+const PI_C: R = 6.277114e-07;
+
+/// `1.5 * 2^23`: adding it forces a float to its nearest integer in the
+/// low mantissa bits, a rounding the hardware does without a library
+/// call. `f32::round` would be a call, and rounds halves the other way.
+const MAGIC: R = 12_582_912.0;
+
+/// `x.cos()`, for the arguments this engine produces.
+///
+/// Accurate to under two units of the last place for `|x| <= 1000`,
+/// which is twenty times the largest a world grid produces. Past that
+/// the three pieces of pi stop covering the cancellation and it decays:
+/// 4 units by 10,000 and useless by a million. Nothing here reaches it,
+/// and the assertion says so where a test would catch it.
+pub fn cos(x: R) -> R {
+    debug_assert!(x.abs() <= 1000.0, "cos_fast is not reduced for {x}");
+    let t = x * INV_PI + MAGIC;
+    // The integer landed in the low mantissa bits. Its parity is the
+    // half-turn count, which is the sign of the answer.
+    let odd = t.to_bits() & 1 == 1;
+    let n = t - MAGIC;
+    // Three steps rather than one, so each cancellation happens against
+    // a piece of pi that `n` multiplies exactly.
+    let r = x - n * PI_A;
+    let r = r - n * PI_B;
+    let r = r - n * PI_C;
+    let u = r * r;
+    let p = COS.iter().rev().fold(0.0, |acc, &c| acc * u + c);
+    if odd {
+        -p
+    } else {
+        p
+    }
+}
+
+/// `cos_fast` as a method, so a call site changes by its name alone and
+/// the expression in front of it is left as it was.
+pub trait FastTrig {
+    /// [`cos`], spelled the way the call sites read.
+    fn cos_fast(self) -> Self;
+}
+
+impl FastTrig for R {
+    fn cos_fast(self) -> Self {
+        cos(self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The spread a world grid produces, held to two units of the last
+    /// place of the exact answer.
+    #[test]
+    fn tracks_cos_over_the_engine_range() {
+        // A sweep in value rather than in bit pattern: stepping the bits
+        // of a negative float walks away from zero, which leaves the
+        // range this is built for.
+        const N: usize = 4_000_000;
+        let (lo, hi) = (-3.5f64, 16.0 * std::f64::consts::PI);
+        let (worst, at) = (0..=N)
+            .map(|i| (lo + (hi - lo) * i as f64 / N as f64) as f32)
+            .map(|x| {
+                let off = ((cos(x) as f64) - (x as f64).cos()).abs() / f32::EPSILON as f64;
+                (off, x)
+            })
+            .fold((0.0f64, 0.0f32), |a, b| if b.0 > a.0 { b } else { a });
+        assert!(worst < 2.0, "{worst} ulp at {at}");
+    }
+
+    #[test]
+    fn holds_at_the_landmarks() {
+        for (x, want) in [
+            (0.0f32, 1.0f32),
+            (std::f32::consts::FRAC_PI_2, 0.0),
+            (std::f32::consts::PI, -1.0),
+            (-std::f32::consts::PI, -1.0),
+        ] {
+            assert!((cos(x) - want).abs() < 1e-6, "cos({x}) was {}", cos(x));
+        }
+    }
+
+    /// Even, the way the function it replaces is.
+    #[test]
+    fn is_even() {
+        let mut x = 0.01f32;
+        while x < 50.0 {
+            assert_eq!(cos(x), cos(-x), "at {x}");
+            x *= 1.0009;
+        }
+    }
+}

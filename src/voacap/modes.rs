@@ -32,6 +32,7 @@ use super::model::Model;
 use super::muf::{IonoState, MufHour};
 use super::noise::NoiseResult;
 use super::sigdis::{prbmuf, xlin, SignalDistribution};
+use crate::voacap::fastmath::FastTrig;
 
 /// `/LPATH/` constants from `blkdat`.
 const DELOPT: R = 3.0;
@@ -536,7 +537,7 @@ pub fn gain_ground(delta: R, fmc: R, sigma: R, er: R) -> R {
         return 0.0;
     }
     let x = 18000.0 * sigma / fmc;
-    let t = delta.cos();
+    let t = delta.cos_fast();
     let q = delta.sin();
     let r = q * q;
     let s = r * r;
@@ -547,10 +548,10 @@ pub fn gain_ground(delta: R, fmc: R, sigma: R, er: R) -> R {
     let u = er * er + x * x;
     let v = u.sqrt();
     let asxv = (x / v).asin();
-    let cv = (rho * rho + u * u * s - 2.0 * rho * u * r * (alpha + 2.0 * asxv).cos()).sqrt()
-        / (rho + u * r + 2.0 * rho12 * v * q * (alpha * 0.5 + asxv).cos());
-    let ch = (rho * rho + s - 2.0 * rho * r * alpha.cos()).sqrt()
-        / (rho + r + 2.0 * rho12 * q * (alpha * 0.5).cos());
+    let cv = (rho * rho + u * u * s - 2.0 * rho * u * r * (alpha + 2.0 * asxv).cos_fast()).sqrt()
+        / (rho + u * r + 2.0 * rho12 * v * q * (alpha * 0.5 + asxv).cos_fast());
+    let ch = (rho * rho + s - 2.0 * rho * r * alpha.cos_fast()).sqrt()
+        / (rho + r + 2.0 * rho12 * q * (alpha * 0.5).cos_fast());
     let mut rain = 4.3429 * (0.5 * (ch * ch + cv * cv)).ln();
     rain = rain.abs();
     if delta <= 0.000_000_01 {
@@ -853,7 +854,7 @@ pub fn findf(
                 }
                 // 375: the Martyn spherical-ionosphere correction.
                 let del = rfx.delfx[i] * D2R;
-                let rcosd = RZ * del.cos();
+                let rcosd = RZ * del.cos_fast();
                 let xfsq = freq * freq / fc2;
                 let ht = rfx.htflx[i];
                 let xmut = 1.0 - fv * fv / (freq * freq);
@@ -1005,11 +1006,11 @@ pub fn fdist(m: &mut HopModes, rfx: &Reflectrix, ghop: R, amind: R, freq: R) {
                             rfx.afflx[ih - 1] + (rfx.afflx[ih] - rfx.afflx[ih - 1]) * dth / dth2;
                         m.hpmod[i] = hp;
                         let st = thet.sin();
-                        let tanp = st / (1.0 - thet.cos() + hp / RZ);
+                        let tanp = st / (1.0 - thet.cos_fast() + hp / RZ);
                         let phe = tanp.atan();
                         // Force correct geometry and Snell's law.
                         m.delmod[i] = (PIO2 - phe - thet) * R2D;
-                        let sphi = RZ * (m.delmod[i] * D2R).cos() / (RZ + ht);
+                        let sphi = RZ * (m.delmod[i] * D2R).cos_fast() / (RZ + ht);
                         let sphi = (1.0 - sphi * sphi).max(0.000001);
                         m.fvmod[i] = freq * sphi.sqrt();
                         m.htmod[i] = ht;
@@ -1064,10 +1065,10 @@ fn regmod(
             continue;
         }
         let del = (D2R * modes.delmod[im]).min(89.99 * D2R);
-        let cdel = del.cos();
+        let cdel = del.cos_fast();
         let psi = ghop * 0.5;
         let phe = PIO2 - psi - del;
-        let path = 2.0 * (modes.hpmod[im] + RZ * (1.0 - psi.cos())) / phe.cos();
+        let path = 2.0 * (modes.hpmod[im] + RZ * (1.0 - psi.cos_fast())) / phe.cos_fast();
         let path = (path * hop).abs();
         zon.timed[im] = path / VOFL;
         zon.fslos[im] = 32.45 + 20.0 * (path * freq).log10();
@@ -1150,12 +1151,12 @@ fn regmod(
         // The 1995 change: MUFday from the specific hop MUF.
         let lay = muf.layers[ismod - 1];
         let psi2 = ctx.gcd / 2.0 / hop;
-        let cpsi = psi2.cos();
+        let cpsi = psi2.cos_fast();
         let spsi = psi2.sin();
         let tanp = spsi / (1.0 - cpsi + lay.hpmuf / RZ);
         let phe2 = tanp.atan();
         let del2 = PIO2 - phe2 - psi2;
-        let cdel2 = del2.cos();
+        let cdel2 = del2.cos_fast();
         let sphe = RZ * cdel2 / (RZ + lay.htmuf);
         let xmuf = lay.fvmuf / (1.0 - sphe * sphe).sqrt();
         zon.prob[im] = prbmuf(muf, freq, xmuf, lay.ymuf, ismod);
@@ -1302,7 +1303,7 @@ fn inmuf(
                 let xhp = (hpver - ht) / RZ;
                 let hop = ihop as R;
                 let psi = 0.5 * ctx.gcd / hop;
-                let tdel = (psi.cos() - RZ / (RZ + hpver)) / psi.sin();
+                let tdel = (psi.cos_fast() - RZ / (RZ + hpver)) / psi.sin();
                 let cdel = 1.0 / (1.0 + tdel * tdel).sqrt();
                 let sphe = RZ * cdel / (RZ + ht);
                 let secp = 1.0 / (1.0 - sphe * sphe).sqrt();
@@ -1313,7 +1314,7 @@ fn inmuf(
                 let xfsq = fob1 * fob1 / (ctx.state.fi[k][jh] * ctx.state.fi[k][jh]);
                 let sph = xfsq * xmut * xhp * (ht + 2.0 * (RZ + ht) * xhp);
                 let hpnow = hpver + sph;
-                let tdel = (psi.cos() - RZ / (RZ + hpnow)) / psi.sin();
+                let tdel = (psi.cos_fast() - RZ / (RZ + hpnow)) / psi.sin();
                 let cdel = 1.0 / (1.0 + tdel * tdel).sqrt();
                 let sphe = RZ * cdel / (RZ + ht);
                 let secp = 1.0 / (1.0 - sphe * sphe).sqrt();
@@ -1481,13 +1482,13 @@ fn esmod(zon: &mut Zon, ctx: &PassCtx, muf: &MufHour, noise: &NoiseResult, freq:
         let gp = ihop as R;
         let ghop = ctx.gcd / gp;
         let thet = 0.5 * ghop;
-        let tans = thet.sin() / (1.0 - thet.cos() + ctx.hs[k] / RZ);
+        let tans = thet.sin() / (1.0 - thet.cos_fast() + ctx.hs[k] / RZ);
         let psi = tans.atan();
-        let secs = 1.0 / psi.cos();
+        let secs = 1.0 / psi.cos_fast();
         let sfvmod = freq / secs;
         let esd = ctx.fs[k][1] * secs;
         let del = PIO2 - thet - psi;
-        let cdel = del.cos();
+        let cdel = del.cos_fast();
         let adel = del * R2D;
         if adel < ctx.deck.amind {
             continue;
@@ -1945,7 +1946,7 @@ fn settxr(lp: &mut ModeLoopState, ctx: &PassCtx, muf: &MufHour, freq: R, itxrcp:
                 continue;
             }
             let del = rfx.delfx[ia] * D2R;
-            let cdel = del.cos();
+            let cdel = del.cos_fast();
             if ctx.state.fi[k][0] >= rfx.fvflx[ia] {
                 // D-E layer mode.
                 let xnsq = if ctx.sig.htloss <= rfx.htflx[ia] {
@@ -2156,7 +2157,7 @@ fn convh(gd: R, phe: R, del: R, hp: R, ray: R) -> (R, R) {
     let psi = PIO2 - del - phe;
     let gm = (gd - 2.0 * psi).max(0.001);
     let ptot = 2.0 * ray + (RZ + hp) * gm;
-    let smallc = (ptot / RZ) * del.cos() / denom;
+    let smallc = (ptot / RZ) * del.cos_fast() / denom;
     let ch = (10.0 * smallc.log10()).min(15.0);
     (ch, ptot)
 }
@@ -2165,7 +2166,7 @@ fn convh(gd: R, phe: R, del: R, hp: R, ray: R) -> (R, R) {
 /// (night-day-night paths).
 fn gettop(state: &IonoState, dikm: R, freq: R) -> R {
     let del = DELOPT * D2R;
-    let rcosd = RZ * del.cos();
+    let rcosd = RZ * del.cos_fast();
     let mut fpe = [0.0 as R; 3];
     for (jf, f) in fpe.iter_mut().enumerate() {
         let ht = state.hi[jf][0];
@@ -2206,7 +2207,7 @@ fn tabs_loss(geog: &Geog, del: R, hp: R, dm: R, freq: R) -> R {
     let xi: R = 0.1;
     let ab = 10.2 + (freq + geog.gyz[2]).powf(1.98);
     let am = 677.2 * xi / ab;
-    let rcosd = RZ * del.cos();
+    let rcosd = RZ * del.cos_fast();
     let sphe = rcosd / (RZ + hp);
     let phe = (sphe / (1.0 - sphe * sphe).sqrt()).atan();
     let psi = PIO2 - phe - del;
@@ -2228,7 +2229,7 @@ fn babs_loss(geog: &Geog, acav: R, del: R, hp: R, df: R, freq: R) -> R {
     let af = acav;
     let ab = 10.2 + (freq + geog.gyz[2]).powf(1.98);
     let af = 677.2 * af / ab;
-    let rcosd = RZ * del.cos();
+    let rcosd = RZ * del.cos_fast();
     let sphe = rcosd / (RZ + hp);
     let phe = (sphe / (1.0 - sphe * sphe).sqrt()).atan();
     let psi = PIO2 - phe - del;
@@ -2265,12 +2266,12 @@ fn lngpat(
     };
     let del = 0.5 * D2R * (r1.delfx[i1] + r2.delfx[i2]);
     let hpx = 0.5 * (r1.hpflx[i1] + r2.hpflx[i2]);
-    let rcosd = RZ * del.cos();
+    let rcosd = RZ * del.cos_fast();
     let sphe = rcosd / (RZ + hpx);
     let phe = (sphe / (1.0 - sphe * sphe).sqrt()).atan();
     let dt = 0.5 * r1.gdflx[i1] / RZ;
     let dr = 0.5 * r2.gdflx[i2] / RZ;
-    let ray = RZ * (phe + del).cos() / sphe;
+    let ray = RZ * (phe + del).cos_fast() / sphe;
     let (ch, ptot) = convh(ctx.gcd, phe, del, hpx, ray);
     let free = 36.58 + 20.0 * (0.6214 * ptot * freq).log10() - ch;
     let di = ctx.gcd - dt - dr;

@@ -24,6 +24,7 @@ use super::coefficients::CoefficientSet;
 use super::con::{D2R, R, R2D};
 use super::geometry::ControlPoint;
 use super::magnetic::MagneticVars;
+use crate::voacap::fastmath::FastTrig;
 
 /// Start of each map's coefficients in `COFION` (1-based, from `voacapw.for`).
 const IA: [usize; 6] = [1, 276, 703, 978, 1966, 2407];
@@ -153,7 +154,7 @@ pub fn virtim(cof: &[R], ikim: &[[i32; 10]; 6], gmt: R) -> [R; 318] {
     let time = (15.0 * gmt - 180.0) * D2R;
     let mut c = [0.0 as R; 8];
     let mut s = [0.0 as R; 8];
-    c[0] = time.cos();
+    c[0] = time.cos_fast();
     s[0] = time.sin();
     for jb in 1..8 {
         c[jb] = c[0] * c[jb - 1] - s[0] * s[jb - 1];
@@ -247,7 +248,7 @@ pub fn noisy(plane: &[[R; 29]; 16], abp: &[R; 2], ratio_map: bool, xla: R, ceg: 
     let bet = abp[1];
     // Longitude series on the half angle.
     let q = 0.0087266466 * ceg;
-    let c1 = q.cos();
+    let c1 = q.cos_fast();
     let s1 = q.sin();
     let mut sx = [0.0 as R; 15];
     sx[0] = s1;
@@ -268,7 +269,7 @@ pub fn noisy(plane: &[[R; 29]; 16], abp: &[R; 2], ratio_map: bool, xla: R, ceg: 
     // Latitude series on the angle plus 90 degrees.
     let q = 0.01745329252 * (xla + 90.0);
     let s1 = q.sin();
-    let c1 = q.cos();
+    let c1 = q.cos_fast();
     let mut sk = s1;
     let mut cx = c1;
     let mut r: R = 0.0;
@@ -335,7 +336,7 @@ pub fn layer_parameters(
             let cenlat = pt.lat;
             let cenlg = pt.lon;
             let clg = if cenlg < 0.0 { c360 + cenlg } else { cenlg };
-            let gob = cenlat.cos();
+            let gob = cenlat.cos_fast();
 
             // --- TIMVAR: subsolar point, local time, zenith angle.
             let cendog = (cenlat - D2R * sun[0]).abs();
@@ -351,7 +352,9 @@ pub fn layer_parameters(
                 clock += 24.0;
             }
             let z = cenlg - ssl;
-            let cycen = (cenlat.sin() * ssp.sin() + cenlat.cos() * ssp.cos() * z.cos()).acos();
+            let cycen = (cenlat.sin() * ssp.sin()
+                + cenlat.cos_fast() * ssp.cos_fast() * z.cos_fast())
+            .acos();
 
             // --- EF1VAR: E and F1 layers.
             let mut fi = [0.0 as R; 3];
@@ -367,8 +370,8 @@ pub fn layer_parameters(
             yi[0] = hi[0] / BETAE;
             let cycen = cycen.abs();
             let zdeg = cycen * R2D;
-            let cosz = cycen.cos();
-            let cosdi = mag.gmdip.cos();
+            let cosz = cycen.cos_fast();
+            let cosdi = mag.gmdip.cos_fast();
             let zenmax =
                 set.achi[0] + set.bchi[0] * ssn + (set.achi[1] + set.bchi[1] * ssn) * cosdi;
             let zenang = zdeg;
@@ -584,7 +587,7 @@ pub fn esind(
         .zip(mags)
         .map(|(pt, mag)| {
             let clg = if pt.lon < 0.0 { c360 + pt.lon } else { pt.lon };
-            let gob = pt.lat.cos();
+            let gob = pt.lat.cos_fast();
             let gamma1 = versy(ab, &set.ikim, 1, mag.gmdip, clg, gob);
             let gamma2 = versy(ab, &set.ikim, 2, mag.gmdip, clg, gob);
             let gamma3 = versy(ab, &set.ikim, 3, mag.gmdip, clg, gob);
