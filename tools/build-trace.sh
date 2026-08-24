@@ -35,7 +35,9 @@ echo "== trace: building"
 (
   cd "$dir"
   make distclean >distclean.log 2>&1 || true
-  ./configure --prefix="$dir/prefix" \
+  # configure refuses a relative prefix, and the subshell is already
+  # inside "$dir", so name it from there.
+  ./configure --prefix="$PWD/prefix" \
     FCFLAGS="-g -O2" FFLAGS="-g -O2" >configure.log 2>&1
   make -j"$JOBS" >build.log 2>&1
 )

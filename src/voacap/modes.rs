@@ -1900,7 +1900,14 @@ fn mpath(lp: &mut ModeLoopState, ifx: usize, deck: &DeckParams, gcdkm: R) {
 /// path ends, forcing an over-the-MUF row when no row qualifies.
 // The loops walk several parallel Fortran arrays by index.
 #[allow(clippy::needless_range_loop)]
-fn settxr(lp: &mut ModeLoopState, ctx: &PassCtx, muf: &MufHour, freq: R, itxrcp: [usize; 2]) {
+fn settxr(
+    lp: &mut ModeLoopState,
+    ctx: &PassCtx,
+    muf: &MufHour,
+    freq: R,
+    itxrcp: [usize; 2],
+    trace: bool,
+) {
     let _perf = crate::perf::Step::new(crate::perf::SETTXR);
     let ModeLoopState {
         areas,
@@ -2000,17 +2007,16 @@ fn settxr(lp: &mut ModeLoopState, ctx: &PassCtx, muf: &MufHour, freq: R, itxrcp:
                     rfx.aofx[ia] = -10.0 * (1.0 - p).log10();
                 }
             }
-            let mut y: R = 0.0;
-            for ig in 0..ctx.state.km {
-                y += gain_ground(
-                    del,
-                    freq,
-                    ctx.geog.sigpat[ig],
-                    ctx.geog.epspat[ig],
-                    ctx.numerics,
-                );
+            // `SELTXR` reads the ground loss at the one row it picks,
+            // so filling all forty-five here throws forty-four away,
+            // and that loop is the single largest cost in an area run.
+            // `seltxr` fills the chosen row instead, from the same
+            // helper, for the same number. A trace still fills every
+            // row: `porttest` compares all forty-five against the
+            // reference's own dump.
+            if trace {
+                rfx.grlosx[ia] = ground_loss_avg(ctx, del, freq, ctx.state.km);
             }
-            rfx.grlosx[ia] = y / ctx.state.km as R;
             // GAIN(JJ, ...): JJ is 1 at the transmit end, 2 at the
             // receive end of the long path.
             let (g, teff) = ctx.ants.gain(jj as i32 + 1, del, freq);
@@ -2042,7 +2048,7 @@ fn settxr(lp: &mut ModeLoopState, ctx: &PassCtx, muf: &MufHour, freq: R, itxrcp:
 /// (1-based; zero or less means no mode).
 // XHPM's later updates mirror the source's dead stores.
 #[allow(unused_assignments)]
-fn seltxr(lp: &mut ModeLoopState, ctx: &PassCtx, itxrcp: [usize; 2]) -> [i32; 2] {
+fn seltxr(lp: &mut ModeLoopState, ctx: &PassCtx, freq: R, itxrcp: [usize; 2]) -> [i32; 2] {
     let dend = ctx.gcdkm.min(4000.0);
     let mut ltxrgm = [1i32; 2];
     for jj in 0..2 {
@@ -2133,12 +2139,34 @@ fn seltxr(lp: &mut ModeLoopState, ctx: &PassCtx, itxrcp: [usize; 2]) -> [i32; 2]
         }
         ltxrgm[jj] = l;
     }
+    // The ground loss `SETTXR` left unfilled, at the row chosen above.
+    // It costs a loop over the ground types and is read once an end,
+    // so it belongs where the row is known rather than where the table
+    // is built. The two guards are the ones `settxr` fills behind: a
+    // row it would have skipped keeps the zero it was given.
+    (0..2).for_each(|jj| {
+        if ltxrgm[jj] < 1 {
+            return;
+        }
+        let i = ltxrgm[jj] as usize - 1;
+        let rfx = &mut lp.reflectrix[itxrcp[jj] - 1];
+        if i < 45 && rfx.hpflx[i] >= 70.0 && rfx.delfx[i] >= ctx.deck.amind {
+            rfx.grlosx[i] = ground_loss_avg(ctx, rfx.delfx[i] * D2R, freq, ctx.state.km);
+        }
+    });
     ltxrgm
 }
 
 /// Port of `GMLOSS`: presets `/ZON/` and calls `SETTXR`. (The
 /// `TXRGML` fill is omitted: nothing reads it.)
-fn gmloss(lp: &mut ModeLoopState, ctx: &PassCtx, muf: &MufHour, freq: R, itxrcp: [usize; 2]) {
+fn gmloss(
+    lp: &mut ModeLoopState,
+    ctx: &PassCtx,
+    muf: &MufHour,
+    freq: R,
+    itxrcp: [usize; 2],
+    trace: bool,
+) {
     let _perf = crate::perf::Step::new(crate::perf::GMLOSS);
     for im in 0..7 {
         lp.zon.obf[im] = 1000.0;
@@ -2163,7 +2191,7 @@ fn gmloss(lp: &mut ModeLoopState, ctx: &PassCtx, muf: &MufHour, freq: R, itxrcp:
         lp.zon.b[im] = -1.0;
         lp.zon.nmode[im] = 5;
     }
-    settxr(lp, ctx, muf, freq, itxrcp);
+    settxr(lp, ctx, muf, freq, itxrcp, trace);
 }
 
 /// Port of `CONVH`: the geometrical convergence factor and group path.
@@ -2666,8 +2694,8 @@ pub fn luffy_freq_loop(
                 );
                 dbg.record(|d| d.rfx.push(rfx_snapshot(&lp.reflectrix[k], k, khz)));
             }
-            gmloss(lp, ctx, muf, freq, itxrcp);
-            let ltxrgm = seltxr(lp, ctx, itxrcp);
+            gmloss(lp, ctx, muf, freq, itxrcp, collect);
+            let ltxrgm = seltxr(lp, ctx, freq, itxrcp);
             lngpat(lp, ctx, muf, &noise, freq, itxrcp, ltxrgm);
             dbg.record(|d| {
                 d.los = Some(LosSnapshot {
@@ -2967,8 +2995,9 @@ pub fn luffy_luf(
                     ctx.nang,
                 );
             }
-            gmloss(lp, ctx, muf, freq, itxrcp);
-            let ltxrgm = seltxr(lp, ctx, itxrcp);
+            // No trace here: the LUF pass produces no output to compare.
+            gmloss(lp, ctx, muf, freq, itxrcp, false);
+            let ltxrgm = seltxr(lp, ctx, freq, itxrcp);
             lngpat(lp, ctx, muf, &noise, freq, itxrcp, ltxrgm);
         }
         relbil(lp, ifx, &noise, &ctx.deck, ctx.ants, freq);
