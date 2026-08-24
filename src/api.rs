@@ -354,7 +354,7 @@ mod tests {
 
     fn a_request() -> Request {
         Request {
-            numerics: Numerics::Reference,
+            numerics: Numerics::reference(),
             tx: Site {
                 name: "TANGIER".to_string(),
                 lat_deg: 35.8,

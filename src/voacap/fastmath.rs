@@ -69,35 +69,174 @@ pub fn cos(x: R) -> R {
     }
 }
 
-/// Which engine's numerics a run uses.
+/// Which deviations from the reference's arithmetic a run takes.
 ///
 /// The parity engine has to reproduce the reference down to the last
 /// digit. `portcheck` measured what happens otherwise: eleven fields
 /// leave the envelope. Truecast is not bound to it, so where the
 /// reference made a compromise for 1970s hardware, Truecast may not.
 ///
+/// One flag per deviation rather than one switch for all of them, the
+/// shape `Fixes` already uses for the defect fixes. The first two
+/// deviations shipped together and were measured together, so their
+/// combined cost against measured radio is known and neither one's is.
+/// Separate flags are what lets a later deviation be withdrawn on its
+/// own when a month of WSPR says it should be, without taking the ones
+/// that earned their place with it.
+///
 /// Carried in the call rather than kept beside it. A caller runs several
 /// requests at once and two of them can want different arithmetic, so a
 /// shared switch would hand one of them the other's answers.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub enum Numerics {
-    /// The library's, which is what the parity gate is measured against.
-    #[default]
-    Reference,
-    /// Truecast's, which is free to differ from the reference where
-    /// differing is better. Some of it trades a little accuracy for
-    /// speed, and some of it is both faster and more accurate.
-    Truecast,
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Numerics {
+    /// [`cos`] in place of the library's, at the sites the policy
+    /// reaches. Accurate to under two units of the last place over the
+    /// arguments this engine produces, against the library's half a
+    /// unit.
+    pub fast_cos: bool,
+    /// [`cos`] at the mode loop's remaining cosine sites: `findf`,
+    /// `regmod` and `settxr`, which together are the 10.7 percent of
+    /// `modes.rs` that `fast_cos` does not cover. Separate from
+    /// `fast_cos` because that flag's cost was measured over 68 months
+    /// covering `gain_ground` alone, and widening it silently would
+    /// leave the measurement describing something that no longer
+    /// exists.
+    pub fast_cos_modes: bool,
+    /// The virtual height integral evaluated in closed form instead of
+    /// by the reference's 40-point rule. Both cheaper and closer to the
+    /// answer the reference was approximating: 0.0004 percent out
+    /// typically against 0.885.
+    pub exact_virtual_height: bool,
 }
 
 impl Numerics {
-    /// `x.cos()`, by whichever route this run asked for.
+    /// The library's, which is what the parity gate is measured against.
+    /// Every deviation off.
+    pub const fn reference() -> Self {
+        Self {
+            fast_cos: false,
+            fast_cos_modes: false,
+            exact_virtual_height: false,
+        }
+    }
+
+    /// Every deviation on, which is what a truecast run takes unless a
+    /// caller asks for something narrower.
+    pub const fn truecast() -> Self {
+        Self {
+            fast_cos: true,
+            fast_cos_modes: true,
+            exact_virtual_height: true,
+        }
+    }
+
+    /// Whether this run deviates from the reference at all. A run with
+    /// every flag off must print what the reference prints.
+    pub const fn is_reference(self) -> bool {
+        !self.fast_cos && !self.fast_cos_modes && !self.exact_virtual_height
+    }
+
+    /// The deviations Truecast ships with.
+    ///
+    /// A deviation is taken only where it has been measured to win by
+    /// enough to pay for itself. The build host and the 32-bit Android
+    /// tablet were both timed one flag at a time, over the world grid,
+    /// on one thread.
+    ///
+    /// The virtual height won on both, 11.9 percent on the tablet and
+    /// 11.3 on the host, and is a closer answer to the integral the
+    /// reference approximates. It is taken.
+    ///
+    /// Neither fast cosine is. The one in `modes.rs` is level on both
+    /// machines. The one at `gain_ground` is a real 1.4 percent on the
+    /// tablet, replicated within the run, but a 7 percent loss on the
+    /// host, so taking it means gating on the architecture, and that
+    /// buys 1.4 percent on the oldest device class at the price of a
+    /// Truecast whose answers depend on where it runs. Nothing gates
+    /// that divergence, arm64 could not be measured to place it, and
+    /// the virtual height keeps nine tenths of the win without it.
+    ///
+    /// Both flags stay, because they are how this was measured and how
+    /// the next such question will be.
+    pub const fn shipping() -> Self {
+        Self {
+            fast_cos: false,
+            fast_cos_modes: false,
+            exact_virtual_height: true,
+        }
+    }
+
+    /// Every deviation's name, in the order the flags are declared. A
+    /// caller names them on a command line to score one at a time.
+    pub const NAMES: [&'static str; 3] = ["fast-cos", "fast-cos-modes", "exact-height"];
+
+    /// The set a comma-separated list of names asks for. An empty list
+    /// is the reference's arithmetic.
+    ///
+    /// An unrecognised name is the error rather than a name ignored,
+    /// because ignoring one would silently score a run against itself
+    /// and report no difference, which reads exactly like a deviation
+    /// that changes nothing.
+    pub fn from_names(list: &str) -> Result<Self, String> {
+        list.split(',')
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .try_fold(Self::reference(), |taken, name| match name {
+                "fast-cos" => Ok(Self {
+                    fast_cos: true,
+                    ..taken
+                }),
+                "fast-cos-modes" => Ok(Self {
+                    fast_cos_modes: true,
+                    ..taken
+                }),
+                "exact-height" => Ok(Self {
+                    exact_virtual_height: true,
+                    ..taken
+                }),
+                other => Err(other.to_string()),
+            })
+    }
+
+    /// The names of the deviations this set takes.
+    pub fn names(self) -> Vec<&'static str> {
+        [
+            (self.fast_cos, Self::NAMES[0]),
+            (self.fast_cos_modes, Self::NAMES[1]),
+            (self.exact_virtual_height, Self::NAMES[2]),
+        ]
+        .into_iter()
+        .filter(|(taken, _)| *taken)
+        .map(|(_, name)| name)
+        .collect()
+    }
+
+    /// `x.cos()` at `gain_ground`, by whichever route this run asked
+    /// for.
     #[inline(always)]
     pub fn cos(self, x: R) -> R {
-        match self {
-            Self::Reference => x.cos(),
-            Self::Truecast => cos(x),
+        if self.fast_cos {
+            cos(x)
+        } else {
+            x.cos()
         }
+    }
+
+    /// `x.cos()` at the mode loop's other cosine sites.
+    #[inline(always)]
+    pub fn cos_modes(self, x: R) -> R {
+        if self.fast_cos_modes {
+            cos(x)
+        } else {
+            x.cos()
+        }
+    }
+}
+
+impl Default for Numerics {
+    /// The reference's, so a caller that says nothing gets parity.
+    fn default() -> Self {
+        Self::reference()
     }
 }
 
@@ -135,6 +274,62 @@ mod tests {
         .into_iter()
         .find(|&(x, want)| (cos(x) - want).abs() >= 1e-6);
         assert_eq!(off, None, "landmark off by more than 1e-6");
+    }
+
+    /// Every flag has a name and every name sets a flag, so a
+    /// deviation added without a name cannot reach a command line
+    /// silently.
+    #[test]
+    fn every_deviation_is_nameable() {
+        assert_eq!(Numerics::truecast().names(), Numerics::NAMES.to_vec());
+        for name in Numerics::NAMES {
+            let one = Numerics::from_names(name).expect("a declared name parses");
+            assert_eq!(one.names(), vec![name], "{name} set some other flag");
+        }
+    }
+
+    /// What Truecast ships is the same on every architecture. The
+    /// virtual height is taken, neither cosine is, and no `cfg!`
+    /// enters into it, so two machines running this engine cannot
+    /// disagree about arithmetic.
+    #[test]
+    fn the_shipping_default_is_the_same_everywhere() {
+        let taken = Numerics::shipping();
+        assert!(
+            taken.exact_virtual_height,
+            "the virtual height won on both machines measured"
+        );
+        assert!(
+            !taken.fast_cos && !taken.fast_cos_modes,
+            "a cosine deviation would make Truecast depend on its host"
+        );
+        assert!(!taken.is_reference(), "a truecast run deviates somewhere");
+    }
+
+    #[test]
+    fn an_empty_list_is_the_reference() {
+        assert!(Numerics::from_names("")
+            .expect("empty parses")
+            .is_reference());
+        assert!(Numerics::default().is_reference());
+    }
+
+    #[test]
+    fn an_unknown_name_is_refused() {
+        assert_eq!(
+            Numerics::from_names("fast-cos,fast-sin"),
+            Err("fast-sin".to_string())
+        );
+    }
+
+    #[test]
+    fn names_round_trip_through_a_list() {
+        let want = Numerics {
+            fast_cos: true,
+            fast_cos_modes: false,
+            exact_virtual_height: true,
+        };
+        assert_eq!(Numerics::from_names(&want.names().join(",")), Ok(want));
     }
 
     /// Even, the way the function it replaces is.

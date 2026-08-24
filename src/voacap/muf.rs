@@ -613,7 +613,7 @@ pub fn gethp(s: &IonoState, fxx: R) -> (R, R) {
     }
     let mut ht = profile_interpolate(&s.fnsq, &s.htr, fr);
     ht -= s.htr[0];
-    if s.numerics == crate::voacap::fastmath::Numerics::Truecast && ht > 0.0 {
+    if s.numerics.exact_virtual_height && ht > 0.0 {
         return (s.htr[0] + virtual_height_exact(s, fr, ht), s.htr[0] + ht);
     }
     let hrmz = ht * TWDIV * XNPL;
@@ -1412,7 +1412,7 @@ mod virtual_height_tests {
     /// hand: with `ysq` going 0 to 1 over `ht`, the answer is `2 ht`.
     fn linear_state() -> IonoState {
         let mut s = IonoState::from_layers(&[]);
-        s.numerics = Numerics::Truecast;
+        s.numerics = Numerics::truecast();
         let (base, span) = (100.0 as R, 200.0 as R);
         for i in 0..50 {
             let f = i as R / 49.0;
@@ -1440,9 +1440,9 @@ mod virtual_height_tests {
     #[test]
     fn agrees_with_the_reference_rule_to_its_own_accuracy() {
         let mut s = linear_state();
-        s.numerics = Numerics::Reference;
+        s.numerics = Numerics::reference();
         let (rule, _) = gethp(&s, 8.0);
-        s.numerics = Numerics::Truecast;
+        s.numerics = Numerics::truecast();
         let (exact, _) = gethp(&s, 8.0);
         let off = (exact - rule).abs() / (rule - s.htr[0]);
         assert!(off < 0.02, "the two differ by {}%", off * 100.0);
@@ -1452,7 +1452,7 @@ mod virtual_height_tests {
     #[test]
     fn the_reference_route_is_untouched() {
         let mut s = linear_state();
-        s.numerics = Numerics::Reference;
+        s.numerics = Numerics::reference();
         let a = gethp(&s, 7.0);
         let b = gethp(&s, 7.0);
         assert_eq!(a, b);

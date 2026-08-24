@@ -862,7 +862,7 @@ pub fn findf(
                 }
                 // 375: the Martyn spherical-ionosphere correction.
                 let del = rfx.delfx[i] * D2R;
-                let rcosd = RZ * del.cos();
+                let rcosd = RZ * state.numerics.cos_modes(del);
                 let xfsq = freq * freq / fc2;
                 let ht = rfx.htflx[i];
                 let xmut = 1.0 - fv * fv / (freq * freq);
@@ -1073,10 +1073,11 @@ fn regmod(
             continue;
         }
         let del = (D2R * modes.delmod[im]).min(89.99 * D2R);
-        let cdel = del.cos();
+        let cdel = ctx.numerics.cos_modes(del);
         let psi = ghop * 0.5;
         let phe = PIO2 - psi - del;
-        let path = 2.0 * (modes.hpmod[im] + RZ * (1.0 - psi.cos())) / phe.cos();
+        let path = 2.0 * (modes.hpmod[im] + RZ * (1.0 - ctx.numerics.cos_modes(psi)))
+            / ctx.numerics.cos_modes(phe);
         let path = (path * hop).abs();
         zon.timed[im] = path / VOFL;
         zon.fslos[im] = 32.45 + 20.0 * (path * freq).log10();
@@ -1159,12 +1160,12 @@ fn regmod(
         // The 1995 change: MUFday from the specific hop MUF.
         let lay = muf.layers[ismod - 1];
         let psi2 = ctx.gcd / 2.0 / hop;
-        let cpsi = psi2.cos();
+        let cpsi = ctx.numerics.cos_modes(psi2);
         let spsi = psi2.sin();
         let tanp = spsi / (1.0 - cpsi + lay.hpmuf / RZ);
         let phe2 = tanp.atan();
         let del2 = PIO2 - phe2 - psi2;
-        let cdel2 = del2.cos();
+        let cdel2 = ctx.numerics.cos_modes(del2);
         let sphe = RZ * cdel2 / (RZ + lay.htmuf);
         let xmuf = lay.fvmuf / (1.0 - sphe * sphe).sqrt();
         zon.prob[im] = prbmuf(muf, freq, xmuf, lay.ymuf, ismod);
@@ -1954,7 +1955,7 @@ fn settxr(lp: &mut ModeLoopState, ctx: &PassCtx, muf: &MufHour, freq: R, itxrcp:
                 continue;
             }
             let del = rfx.delfx[ia] * D2R;
-            let cdel = del.cos();
+            let cdel = ctx.numerics.cos_modes(del);
             if ctx.state.fi[k][0] >= rfx.fvflx[ia] {
                 // D-E layer mode.
                 let xnsq = if ctx.sig.htloss <= rfx.htflx[ia] {
@@ -3208,13 +3209,36 @@ mod tests {
         assert_eq!(all.sn[1], 5.0);
     }
 
+    /// The policy reaches `gain_ground` at all.
+    ///
+    /// The deviation is far below the printed precision of a listing,
+    /// so the movement test `corrected_fixes.rs` uses cannot guard this
+    /// site: a refactor that dropped the policy and called the library
+    /// directly would leave every report identical, which is exactly
+    /// what a correctly wired fast cosine also produces. This asserts
+    /// on the returned value instead, where the difference survives.
+    #[test]
+    fn the_policy_reaches_the_ground_gain() {
+        let moved = (1..2000).map(|i| i as R * 0.0005).find(|&delta| {
+            gain_ground(delta, 14.1, 5.0, 80.0, Numerics::reference())
+                != gain_ground(delta, 14.1, 5.0, 80.0, Numerics::truecast())
+        });
+        assert!(
+            moved.is_some(),
+            "no takeoff angle changed: the numerics argument is not reaching the cosines"
+        );
+    }
+
     #[test]
     fn gain_ground_returns_zero_without_conductivity_and_six_at_grazing() {
-        assert_eq!(gain_ground(0.1, 10.0, 0.0, 4.0, Numerics::Reference), 0.0);
+        assert_eq!(gain_ground(0.1, 10.0, 0.0, 4.0, Numerics::reference()), 0.0);
         // At zero elevation the loss is pinned to 6 dB.
-        assert_eq!(gain_ground(0.0, 10.0, 5.0, 80.0, Numerics::Reference), 6.0);
+        assert_eq!(
+            gain_ground(0.0, 10.0, 5.0, 80.0, Numerics::reference()),
+            6.0
+        );
         // Sea water at a moderate angle loses little.
-        let sea = gain_ground(0.3, 10.0, 5.0, 80.0, Numerics::Reference);
+        let sea = gain_ground(0.3, 10.0, 5.0, 80.0, Numerics::reference());
         assert!(sea > 0.0 && sea < 1.0, "got {sea}");
     }
 

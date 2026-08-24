@@ -92,8 +92,8 @@ pub fn run(input: &str) -> Result<String, String> {
     // The same choice the area path makes: a truecast run takes
     // truecast's numerics, so a band table and a map agree.
     request.numerics = match engine {
-        EngineChoice::Voacap => crate::api::Numerics::Reference,
-        EngineChoice::Truecast => crate::api::Numerics::Truecast,
+        EngineChoice::Voacap => crate::api::Numerics::reference(),
+        EngineChoice::Truecast => crate::api::Numerics::shipping(),
     };
     let text = listing(&tree, &request, Task::Systems)?;
     let mut out = prediction(&text, &freqs);
@@ -705,11 +705,11 @@ fn area(tree: &std::path::Path, req: &Json, engine: EngineChoice) -> Result<Json
 
     let inputs = AreaInputs {
         // The parity engine owes the reference its last digit and takes
-        // the library's arithmetic. Truecast does not, and takes the
-        // cheaper versions.
+        // the library's arithmetic. Truecast does not, and takes every
+        // deviation that has been measured to earn its place.
         numerics: match engine {
-            EngineChoice::Voacap => Numerics::Reference,
-            EngineChoice::Truecast => Numerics::Truecast,
+            EngineChoice::Voacap => Numerics::reference(),
+            EngineChoice::Truecast => Numerics::shipping(),
         },
         grid,
         tx_lat_deg: req.number("fromLat")?,
@@ -969,7 +969,7 @@ fn build_request(req: &Json) -> Result<(Request, Vec<f64>), String> {
     }
 
     let request = Request {
-        numerics: Numerics::Reference,
+        numerics: Numerics::reference(),
         tx: Site {
             name: req.string("fromLabel").unwrap_or_default(),
             lat_deg: req.number("fromLat")?,

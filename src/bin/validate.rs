@@ -52,6 +52,7 @@ use hfcast::itu::{parse_report, run_case, ItuPaths};
 use hfcast::listing::parse_listing;
 use hfcast::runner::{itshfbc_dir, map_limit, run_deck, variant_bin, IsolatedRoot};
 use hfcast::stats::{correlation, fit_line, median, median_in_place, rms};
+use hfcast::voacap::fastmath::Numerics;
 use hfcast::voacap::model::{Fixes, Model};
 use hfcast::voacap::output::render;
 use hfcast::wspr::{
@@ -167,6 +168,19 @@ fn main() -> ExitCode {
     // Used by the summer-mechanism experiment; affects VOACAP only.
     let sporadic_e = std::env::args().any(|a| a == "--es");
 
+    // Which deviations from the reference's arithmetic the port takes.
+    // One at a time is the point: the first two shipped together, so
+    // their combined cost against measured radio is known and neither
+    // one's is.
+    let numerics = match numerics_choice() {
+        Ok(n) => n,
+        Err(name) => {
+            eprintln!("unknown deviation {name:?}");
+            eprintln!("one of: {}", Numerics::NAMES.join(", "));
+            return ExitCode::FAILURE;
+        }
+    };
+
     // `--fix NAME` scores the Rust engine with one of the documented
     // VOACAP defects fixed, against the same measured radio. That is
     // the only way to say whether fixing a defect makes predictions
@@ -178,14 +192,16 @@ fn main() -> ExitCode {
     // engine. Without the flag, the Fortran binary runs as before.
     let engine = match arg_value("--fix") {
         Some(name) => match fix_by_name(&name) {
-            Some(fixes) => Engine::Ported(Model::from_fixes(fixes)),
+            Some(fixes) => Engine::Ported(Model::from_fixes(fixes), numerics),
             None => {
                 eprintln!("unknown fix {name:?}");
                 eprintln!("one of: {}", FIX_NAMES.join(", "));
                 return ExitCode::FAILURE;
             }
         },
-        None if std::env::args().any(|a| a == "--ported") => Engine::Ported(Model::Compatible),
+        None if std::env::args().any(|a| a == "--ported") => {
+            Engine::Ported(Model::Compatible, numerics)
+        }
         None => Engine::Reference,
     };
 
@@ -214,7 +230,7 @@ fn main() -> ExitCode {
 
     eprintln!("finished in {:.1}s", started.elapsed().as_secs_f64());
 
-    report(&data.month, ssn, sporadic_e, &outcomes, &data_dir);
+    report(&data.month, ssn, sporadic_e, numerics, &outcomes, &data_dir);
 
     // The calibration step consumes raw hours rather than summaries, so
     // percentile and fitting decisions stay in one place downstream.
@@ -277,17 +293,7 @@ fn listing_text(
                 IsolatedRoot::create(&format!("val-{index}")).map_err(|e| format!("tree: {e}"))?;
             run_deck(voacap_bin, root.path(), deck).map_err(|e| format!("voacapl: {e}"))
         }
-        Engine::Ported(model) => render(
-            &itshfbc_dir(),
-            case,
-            deck,
-            model,
-            if std::env::args().any(|a| a == "--truecast-numerics") {
-                hfcast::voacap::fastmath::Numerics::Truecast
-            } else {
-                hfcast::voacap::fastmath::Numerics::Reference
-            },
-        ),
+        Engine::Ported(model, numerics) => render(&itshfbc_dir(), case, deck, model, numerics),
     }
 }
 
@@ -454,10 +460,28 @@ fn arg_value(name: &str) -> Option<String> {
 enum Engine {
     /// The Fortran binary, as every earlier run of this harness used.
     Reference,
-    /// The Rust port, at a chosen tier. `Model::Compatible` is
-    /// byte-identical to `Reference`, so it is the control a `--fix`
+    /// The Rust port, at a chosen tier and a chosen arithmetic.
+    /// `Model::Compatible` with reference numerics is byte-identical to
+    /// `Reference`, so it is the control a `--fix` or a `--numerics`
     /// run is compared against.
-    Ported(Model),
+    Ported(Model, Numerics),
+}
+
+/// Which deviations from the reference's arithmetic this run asked for.
+///
+/// `--truecast-numerics` takes all of them, which is what the published
+/// months were measured with. `--numerics a,b` takes the named ones and
+/// nothing else, which is how one deviation gets a score of its own.
+/// Neither flag means the reference's arithmetic, so `--ported` alone
+/// still prints what the Fortran prints.
+fn numerics_choice() -> Result<Numerics, String> {
+    if std::env::args().any(|a| a == "--truecast-numerics") {
+        return Ok(Numerics::truecast());
+    }
+    arg_value("--numerics").map_or_else(
+        || Ok(Numerics::reference()),
+        |list| Numerics::from_names(&list),
+    )
 }
 
 const FIX_NAMES: [&str; 6] = [
@@ -604,7 +628,14 @@ fn score(outcomes: &[PathOutcome], uncensored_only: bool) -> Scores {
     s
 }
 
-fn report(month: &str, ssn: f64, sporadic_e: bool, outcomes: &[PathOutcome], data_dir: &Path) {
+fn report(
+    month: &str,
+    ssn: f64,
+    sporadic_e: bool,
+    numerics: Numerics,
+    outcomes: &[PathOutcome],
+    data_dir: &Path,
+) {
     let mut used = 0usize;
     let mut skipped_short = 0usize;
     let failures: Vec<&PathOutcome> = outcomes.iter().filter(|o| o.failure.is_some()).collect();
@@ -662,6 +693,16 @@ fn report(month: &str, ssn: f64, sporadic_e: bool, outcomes: &[PathOutcome], dat
          contains no physics. An engine that does not beat it is adding \
          nothing.\n"
     );
+    // The results table labels the port's row VOACAP whatever arithmetic
+    // produced it, so a report that took a deviation has to say so or
+    // two runs are indistinguishable once the file is filed away.
+    if !numerics.is_reference() {
+        println!(
+            "The port ran with these deviations from the reference's \
+             arithmetic: {}.\n",
+            numerics.names().join(", ")
+        );
+    }
 
     let all = score(outcomes, false);
     println!("## All paths\n");

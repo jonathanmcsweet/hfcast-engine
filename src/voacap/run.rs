@@ -139,7 +139,7 @@ pub struct RunInputs {
 impl From<&DeckCase> for RunInputs {
     fn from(c: &DeckCase) -> Self {
         Self {
-            numerics: Numerics::Reference,
+            numerics: Numerics::reference(),
             from_lat_deg: c.from_lat,
             from_lon_deg: c.from_lon,
             to_lat_deg: c.to_lat,

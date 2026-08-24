@@ -246,7 +246,7 @@ fn probe_request(lat_deg: f64, lon_deg: f64, month: u32, ssn: f64) -> Request {
         lon_deg,
     };
     Request {
-        numerics: Numerics::Reference,
+        numerics: Numerics::reference(),
         tx: site("n", lat_deg + PROBE_OFFSET_DEG),
         rx: site("s", lat_deg - PROBE_OFFSET_DEG),
         month,

@@ -17,6 +17,7 @@ use hfcast::truecast::grid::{predict_grid, GridRequest};
 use hfcast::voacap::area::{Grid, Projection};
 use hfcast::voacap::coefficients::FoF2Model;
 use hfcast::voacap::data;
+use hfcast::voacap::fastmath::Numerics;
 use hfcast::voacap::model::Model;
 use hfcast::voacap::run::{run_area, AreaInputs};
 
@@ -25,12 +26,15 @@ struct Config {
     ny: usize,
     threads: Vec<usize>,
     parity: bool,
+    /// Which deviations from the reference's arithmetic the run takes.
+    /// One at a time is what sizes a deviation on the device, which is
+    /// the only machine whose maths library makes them worth having.
+    numerics: Numerics,
 }
 
-fn world(nx: usize, ny: usize) -> AreaInputs {
+fn world(nx: usize, ny: usize, numerics: Numerics) -> AreaInputs {
     AreaInputs {
-        // The truecast driver, so truecast numerics.
-        numerics: hfcast::voacap::fastmath::Numerics::Truecast,
+        numerics,
         grid: Grid {
             projection: Projection::LatLon,
             plat: 47.0,
@@ -67,6 +71,7 @@ fn parse_args() -> Result<Config, String> {
         ny: 144,
         threads: vec![1, 2, 4, 8, 0],
         parity: true,
+        numerics: Numerics::truecast(),
     };
     let mut args = std::env::args().skip(1);
     // A loop because each flag consumes the argument after it.
@@ -77,6 +82,15 @@ fn parse_args() -> Result<Config, String> {
             "--nx" => cfg.nx = parse(&value).unwrap_or(cfg.nx),
             "--ny" => cfg.ny = parse(&value).unwrap_or(cfg.ny),
             "--parity" => cfg.parity = parse(&value).map(|n: usize| n != 0).unwrap_or(cfg.parity),
+            "--numerics" => {
+                let list = value.unwrap_or_default();
+                cfg.numerics = Numerics::from_names(&list).map_err(|name| {
+                    format!(
+                        "unknown deviation {name:?}, one of: {}",
+                        Numerics::NAMES.join(", ")
+                    )
+                })?;
+            }
             "--threads" => {
                 cfg.threads = value
                     .as_deref()
@@ -108,7 +122,7 @@ fn bench_threads(root: &std::path::Path, cfg: &Config) -> Result<(), String> {
     // A loop to print each measurement as it lands.
     for t in &cfg.threads {
         let req = GridRequest {
-            area: world(cfg.nx, cfg.ny),
+            area: world(cfg.nx, cfg.ny, cfg.numerics),
             threads: *t,
         };
         let start = Instant::now();
@@ -141,14 +155,20 @@ fn main() -> ExitCode {
         }
     };
     let root = data::embedded_root();
-    let area = world(cfg.nx, cfg.ny);
+    let area = world(cfg.nx, cfg.ny, cfg.numerics);
+    let taken = cfg.numerics.names();
     println!(
-        "lattice {} x {} = {} points, {} band(s), hour {}",
+        "lattice {} x {} = {} points, {} band(s), hour {}, deviations: {}",
         cfg.nx,
         cfg.ny,
         cfg.nx * cfg.ny,
         area.freqs_mhz.len(),
-        area.hour
+        area.hour,
+        if taken.is_empty() {
+            "none, the reference's arithmetic".to_string()
+        } else {
+            taken.join(", ")
+        }
     );
 
     if std::env::var_os("HFCAST_PERF").is_some() {
