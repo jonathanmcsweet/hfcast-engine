@@ -29,7 +29,11 @@ pub const LECDEN: usize = 10;
 pub const ALOSFV: usize = 11;
 pub const GMLOSS: usize = 12;
 pub const SETTXR: usize = 13;
-const STEPS: usize = 14;
+pub const INMUF: usize = 14;
+pub const ESMOD: usize = 15;
+pub const LNGPAT: usize = 16;
+pub const RELBIL: usize = 17;
+const STEPS: usize = 18;
 
 const NAMES: [&str; STEPS] = [
     "genion",
@@ -46,6 +50,10 @@ const NAMES: [&str; STEPS] = [
     "alosfv",
     "gmloss",
     "settxr",
+    "inmuf",
+    "esmod",
+    "lngpat",
+    "relbil",
 ];
 
 static ON: AtomicBool = AtomicBool::new(false);
@@ -64,8 +72,16 @@ static NS: [AtomicU64; STEPS] = [
     AtomicU64::new(0),
     AtomicU64::new(0),
     AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
 ];
 static CALLS: [AtomicU64; STEPS] = [
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
     AtomicU64::new(0),
     AtomicU64::new(0),
     AtomicU64::new(0),

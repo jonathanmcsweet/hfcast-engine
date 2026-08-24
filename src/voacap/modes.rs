@@ -1234,6 +1234,7 @@ fn inmuf(
     ihop: i32,
     fsdead: R,
 ) {
+    let _perf = crate::perf::Step::new(crate::perf::INMUF);
     const EPS: R = 0.4001;
     let k = ctx.jmode;
     let mut ireset = false;
@@ -1438,6 +1439,7 @@ fn inmuf(
 /// Port of `ESMOD`: up to two sporadic-E hops into `/ZON/` slots 4-5.
 /// `fsdead` is the low-frequency cutoff from the controlling area.
 fn esmod(zon: &mut Zon, ctx: &PassCtx, muf: &MufHour, noise: &NoiseResult, freq: R, fsdead: R) {
+    let _perf = crate::perf::Step::new(crate::perf::ESMOD);
     // The weakest Es area governs: all modes are at least this good.
     let mut k = 0usize;
     for is in 0..ctx.state.km {
@@ -1608,6 +1610,7 @@ fn relbil(
     ants: &super::antenna::AntennaSet,
     freq: R,
 ) {
+    let _perf = crate::perf::Step::new(crate::perf::RELBIL);
     const XEPS: R = 0.05;
     let inum = lp.all.nmmod;
     if inum == 0 {
@@ -2295,6 +2298,7 @@ fn lngpat(
     itxrcp: [usize; 2],
     ltxrgm: [i32; 2],
 ) {
+    let _perf = crate::perf::Step::new(crate::perf::LNGPAT);
     if ltxrgm[0] <= 0 || ltxrgm[1] <= 0 {
         return;
     }
