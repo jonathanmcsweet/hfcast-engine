@@ -18,6 +18,7 @@
 #
 #   GATE   clippy, default lints
 #   GATE   complexity, against tools/complexity-baseline.tsv
+#   GATE   generated documents, against the tools that print them
 #   report public items nothing refers to
 #   report clippy pedantic and nursery, minus the lints that would break parity
 #   report duplication            (needs jscpd; skipped if absent)
@@ -115,6 +116,19 @@ if ! cargo run -q --release --bin complexity -- --check 2>&1 | tee "$out/complex
 fi
 cargo run -q --release --bin complexity >"$out/complexity.txt" 2>&1
 echo "full report: $out/complexity.txt"
+
+heading "GATE  generated documents"
+# Four documents under docs/ are printouts of this repository's own
+# tools rather than prose, and nothing used to re-run them. This asks
+# each tool what it says now and compares. It needs the measured data,
+# which the repository does not carry, so on a machine without it every
+# document is skipped and named. See tools/regen-docs.sh.
+if ! tools/regen-docs.sh --check 2>&1 | tee "$out/regen-docs.txt"; then
+  failed=1
+fi
+if grep -q "^not run:" "$out/regen-docs.txt"; then
+  skipped+=("generated documents")
+fi
 
 heading "public items nothing refers to"
 # `dead_code` and `unreachable_pub` cannot see this: every `pub` item in a

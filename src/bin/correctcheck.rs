@@ -228,6 +228,7 @@ fn area_cases() -> Vec<AreaCase> {
         ny: 5,
     };
     let inputs = |plat: f32, plon: f32, inverse: bool| AreaInputs {
+        numerics: Default::default(),
         grid: grid(plat, plon),
         tx_lat_deg: f64::from(plat),
         tx_lon_deg: f64::from(plon),
@@ -446,7 +447,13 @@ fn main() -> ExitCode {
             }
         };
 
-        let base = match render(root.path(), case, &deck, Model::Compatible) {
+        let base = match render(
+            root.path(),
+            case,
+            &deck,
+            Model::Compatible,
+            Default::default(),
+        ) {
             Ok(t) => t,
             Err(e) => {
                 out.failure = Some(format!("compatible: {e}"));
@@ -479,7 +486,13 @@ fn render_with(
     deck: &str,
     fixes: Fixes,
 ) -> Result<String, String> {
-    render(root, case, deck, Model::from_fixes(fixes))
+    render(
+        root,
+        case,
+        deck,
+        Model::from_fixes(fixes),
+        Default::default(),
+    )
 }
 
 fn compare(corpus: Corpus, base: &str, fixed: &str, out: &mut Outcome) {

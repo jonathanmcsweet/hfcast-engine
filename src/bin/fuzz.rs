@@ -396,7 +396,13 @@ fn check_case(reference: &std::path::Path, case: &DeckCase) -> Outcome {
     // The reference has only the compatible behaviour, so that is the
     // only tier this comparison can judge.
     let ported = match catch_unwind(AssertUnwindSafe(|| {
-        render(root.path(), case, &deck, Model::Compatible)
+        render(
+            root.path(),
+            case,
+            &deck,
+            Model::Compatible,
+            Default::default(),
+        )
     })) {
         Ok(Ok(text)) => Ok(text),
         Ok(Err(e)) => Err(e),

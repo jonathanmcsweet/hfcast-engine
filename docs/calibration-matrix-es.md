@@ -1,4 +1,9 @@
-# Cross-month calibration matrix
+# Cross-month calibration matrix, sporadic E on
+
+How much to shrink each model's daily swing, fitted on one month and
+tested on the others. Sporadic E is VOACAP's own term for the patchy
+summer E layer; it is off in normal use, and `docs/accuracy.md`
+measures what turning it on does.
 
 # Amplitude correction fitted on 2025-06/hours-es
 
@@ -20,7 +25,7 @@ Correction: `corrected = centre + k * (predicted - centre)`, with
 | ITU-R P.533                                | 3.35 |     2.31 |       2.13 |
 | VOACAP, signal only                        | 3.00 |     1.85 |       1.80 |
 | P.533, signal only                         | 3.10 |     2.01 |       1.81 |
-| flat baseline (needs the month's own data) | 3.00 |        — |          — |
+| flat baseline (needs the month's own data) | 3.00 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.
 
@@ -32,7 +37,7 @@ Numbers are median absolute error in dB after per-path offset removal.
 | ITU-R P.533                                | 3.08 |     2.08 |       1.97 |
 | VOACAP, signal only                        | 3.50 |     1.84 |       1.79 |
 | P.533, signal only                         | 2.97 |     1.94 |       1.80 |
-| flat baseline (needs the month's own data) | 2.00 |        — |          — |
+| flat baseline (needs the month's own data) | 2.00 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.
 
@@ -44,7 +49,7 @@ Numbers are median absolute error in dB after per-path offset removal.
 | ITU-R P.533                                | 3.85 |     2.36 |       2.41 |
 | VOACAP, signal only                        | 3.50 |     2.47 |       2.42 |
 | P.533, signal only                         | 3.82 |     2.29 |       2.29 |
-| flat baseline (needs the month's own data) | 3.00 |        — |          — |
+| flat baseline (needs the month's own data) | 3.00 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.
 
@@ -56,7 +61,7 @@ Numbers are median absolute error in dB after per-path offset removal.
 | ITU-R P.533                                | 5.05 |     2.82 |       2.86 |
 | VOACAP, signal only                        | 2.25 |     1.82 |       1.80 |
 | P.533, signal only                         | 4.01 |     2.66 |       2.62 |
-| flat baseline (needs the month's own data) | 2.00 |        — |          — |
+| flat baseline (needs the month's own data) | 2.00 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.
 
@@ -68,7 +73,7 @@ Numbers are median absolute error in dB after per-path offset removal.
 | ITU-R P.533                                | 7.69 |     3.09 |       3.83 |
 | VOACAP, signal only                        | 3.00 |     2.00 |       2.06 |
 | P.533, signal only                         | 7.26 |     3.00 |       3.61 |
-| flat baseline (needs the month's own data) | 2.50 |        — |          — |
+| flat baseline (needs the month's own data) | 2.50 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.
 
@@ -92,7 +97,7 @@ Correction: `corrected = centre + k * (predicted - centre)`, with
 | ITU-R P.533                                | 3.26 |     2.13 |       1.95 |
 | VOACAP, signal only                        | 3.00 |     1.61 |       1.56 |
 | P.533, signal only                         | 3.12 |     1.85 |       1.71 |
-| flat baseline (needs the month's own data) | 2.50 |        — |          — |
+| flat baseline (needs the month's own data) | 2.50 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.
 
@@ -104,7 +109,7 @@ Numbers are median absolute error in dB after per-path offset removal.
 | ITU-R P.533                                | 3.08 |     2.10 |       1.96 |
 | VOACAP, signal only                        | 3.50 |     1.83 |       1.81 |
 | P.533, signal only                         | 2.97 |     1.96 |       1.82 |
-| flat baseline (needs the month's own data) | 2.00 |        — |          — |
+| flat baseline (needs the month's own data) | 2.00 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.
 
@@ -116,7 +121,7 @@ Numbers are median absolute error in dB after per-path offset removal.
 | ITU-R P.533                                | 3.85 |     2.40 |       2.41 |
 | VOACAP, signal only                        | 3.50 |     2.45 |       2.40 |
 | P.533, signal only                         | 3.82 |     2.29 |       2.29 |
-| flat baseline (needs the month's own data) | 3.00 |        — |          — |
+| flat baseline (needs the month's own data) | 3.00 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.
 
@@ -128,7 +133,7 @@ Numbers are median absolute error in dB after per-path offset removal.
 | ITU-R P.533                                | 5.05 |     2.94 |       2.91 |
 | VOACAP, signal only                        | 2.25 |     1.80 |       1.80 |
 | P.533, signal only                         | 4.01 |     2.69 |       2.58 |
-| flat baseline (needs the month's own data) | 2.00 |        — |          — |
+| flat baseline (needs the month's own data) | 2.00 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.
 
@@ -140,7 +145,7 @@ Numbers are median absolute error in dB after per-path offset removal.
 | ITU-R P.533                                | 7.69 |     3.32 |       4.02 |
 | VOACAP, signal only                        | 3.00 |     2.03 |       2.09 |
 | P.533, signal only                         | 7.26 |     3.11 |       3.70 |
-| flat baseline (needs the month's own data) | 2.50 |        — |          — |
+| flat baseline (needs the month's own data) | 2.50 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.
 
@@ -164,7 +169,7 @@ Correction: `corrected = centre + k * (predicted - centre)`, with
 | ITU-R P.533                                | 3.26 |     2.17 |       1.96 |
 | VOACAP, signal only                        | 3.00 |     1.68 |       1.61 |
 | P.533, signal only                         | 3.12 |     1.88 |       1.74 |
-| flat baseline (needs the month's own data) | 2.50 |        — |          — |
+| flat baseline (needs the month's own data) | 2.50 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.
 
@@ -176,7 +181,7 @@ Numbers are median absolute error in dB after per-path offset removal.
 | ITU-R P.533                                | 3.35 |     2.33 |       2.07 |
 | VOACAP, signal only                        | 3.00 |     1.92 |       1.77 |
 | P.533, signal only                         | 3.10 |     2.11 |       1.81 |
-| flat baseline (needs the month's own data) | 3.00 |        — |          — |
+| flat baseline (needs the month's own data) | 3.00 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.
 
@@ -188,7 +193,7 @@ Numbers are median absolute error in dB after per-path offset removal.
 | ITU-R P.533                                | 3.85 |     2.32 |       2.54 |
 | VOACAP, signal only                        | 3.50 |     2.48 |       2.39 |
 | P.533, signal only                         | 3.82 |     2.27 |       2.43 |
-| flat baseline (needs the month's own data) | 3.00 |        — |          — |
+| flat baseline (needs the month's own data) | 3.00 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.
 
@@ -200,7 +205,7 @@ Numbers are median absolute error in dB after per-path offset removal.
 | ITU-R P.533                                | 5.05 |     2.66 |       2.72 |
 | VOACAP, signal only                        | 2.25 |     1.83 |       1.71 |
 | P.533, signal only                         | 4.01 |     2.54 |       2.41 |
-| flat baseline (needs the month's own data) | 2.00 |        — |          — |
+| flat baseline (needs the month's own data) | 2.00 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.
 
@@ -212,7 +217,7 @@ Numbers are median absolute error in dB after per-path offset removal.
 | ITU-R P.533                                | 7.69 |     2.84 |       3.92 |
 | VOACAP, signal only                        | 3.00 |     2.06 |       2.00 |
 | P.533, signal only                         | 7.26 |     2.70 |       3.45 |
-| flat baseline (needs the month's own data) | 2.50 |        — |          — |
+| flat baseline (needs the month's own data) | 2.50 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.
 
@@ -236,7 +241,7 @@ Correction: `corrected = centre + k * (predicted - centre)`, with
 | ITU-R P.533                                | 3.26 |     2.17 |       2.10 |
 | VOACAP, signal only                        | 3.00 |     1.65 |       1.56 |
 | P.533, signal only                         | 3.12 |     1.90 |       1.84 |
-| flat baseline (needs the month's own data) | 2.50 |        — |          — |
+| flat baseline (needs the month's own data) | 2.50 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.
 
@@ -248,7 +253,7 @@ Numbers are median absolute error in dB after per-path offset removal.
 | ITU-R P.533                                | 3.35 |     2.32 |       2.29 |
 | VOACAP, signal only                        | 3.00 |     1.87 |       1.73 |
 | P.533, signal only                         | 3.10 |     2.12 |       2.05 |
-| flat baseline (needs the month's own data) | 3.00 |        — |          — |
+| flat baseline (needs the month's own data) | 3.00 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.
 
@@ -260,7 +265,7 @@ Numbers are median absolute error in dB after per-path offset removal.
 | ITU-R P.533                                | 3.08 |     2.06 |       2.01 |
 | VOACAP, signal only                        | 3.50 |     1.85 |       1.71 |
 | P.533, signal only                         | 2.97 |     1.92 |       1.85 |
-| flat baseline (needs the month's own data) | 2.00 |        — |          — |
+| flat baseline (needs the month's own data) | 2.00 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.
 
@@ -272,7 +277,7 @@ Numbers are median absolute error in dB after per-path offset removal.
 | ITU-R P.533                                | 5.05 |     2.67 |       2.59 |
 | VOACAP, signal only                        | 2.25 |     1.82 |       1.71 |
 | P.533, signal only                         | 4.01 |     2.48 |       2.45 |
-| flat baseline (needs the month's own data) | 2.00 |        — |          — |
+| flat baseline (needs the month's own data) | 2.00 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.
 
@@ -284,7 +289,7 @@ Numbers are median absolute error in dB after per-path offset removal.
 | ITU-R P.533                                | 7.69 |     2.87 |       2.98 |
 | VOACAP, signal only                        | 3.00 |     2.02 |       2.00 |
 | P.533, signal only                         | 7.26 |     2.63 |       2.73 |
-| flat baseline (needs the month's own data) | 2.50 |        — |          — |
+| flat baseline (needs the month's own data) | 2.50 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.
 
@@ -308,7 +313,7 @@ Correction: `corrected = centre + k * (predicted - centre)`, with
 | ITU-R P.533                                | 3.26 |     2.36 |       2.36 |
 | VOACAP, signal only                        | 3.00 |     1.64 |       1.89 |
 | P.533, signal only                         | 3.12 |     2.20 |       2.12 |
-| flat baseline (needs the month's own data) | 2.50 |        — |          — |
+| flat baseline (needs the month's own data) | 2.50 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.
 
@@ -320,7 +325,7 @@ Numbers are median absolute error in dB after per-path offset removal.
 | ITU-R P.533                                | 3.35 |     2.51 |       2.51 |
 | VOACAP, signal only                        | 3.00 |     1.76 |       1.90 |
 | P.533, signal only                         | 3.10 |     2.36 |       2.31 |
-| flat baseline (needs the month's own data) | 3.00 |        — |          — |
+| flat baseline (needs the month's own data) | 3.00 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.
 
@@ -332,7 +337,7 @@ Numbers are median absolute error in dB after per-path offset removal.
 | ITU-R P.533                                | 3.08 |     1.96 |       1.97 |
 | VOACAP, signal only                        | 3.50 |     1.93 |       1.98 |
 | P.533, signal only                         | 2.97 |     1.93 |       1.92 |
-| flat baseline (needs the month's own data) | 2.00 |        — |          — |
+| flat baseline (needs the month's own data) | 2.00 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.
 
@@ -344,7 +349,7 @@ Numbers are median absolute error in dB after per-path offset removal.
 | ITU-R P.533                                | 3.85 |     2.74 |       2.70 |
 | VOACAP, signal only                        | 3.50 |     2.40 |       2.53 |
 | P.533, signal only                         | 3.82 |     2.60 |       2.59 |
-| flat baseline (needs the month's own data) | 3.00 |        — |          — |
+| flat baseline (needs the month's own data) | 3.00 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.
 
@@ -356,7 +361,7 @@ Numbers are median absolute error in dB after per-path offset removal.
 | ITU-R P.533                                | 7.69 |     2.11 |       2.14 |
 | VOACAP, signal only                        | 3.00 |     2.08 |       2.04 |
 | P.533, signal only                         | 7.26 |     2.07 |       2.25 |
-| flat baseline (needs the month's own data) | 2.50 |        — |          — |
+| flat baseline (needs the month's own data) | 2.50 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.
 
@@ -380,7 +385,7 @@ Correction: `corrected = centre + k * (predicted - centre)`, with
 | ITU-R P.533                                | 3.26 |     2.31 |       2.29 |
 | VOACAP, signal only                        | 3.00 |     1.63 |       1.63 |
 | P.533, signal only                         | 3.12 |     2.18 |       2.18 |
-| flat baseline (needs the month's own data) | 2.50 |        — |          — |
+| flat baseline (needs the month's own data) | 2.50 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.
 
@@ -392,7 +397,7 @@ Numbers are median absolute error in dB after per-path offset removal.
 | ITU-R P.533                                | 3.35 |     2.44 |       2.46 |
 | VOACAP, signal only                        | 3.00 |     1.76 |       1.78 |
 | P.533, signal only                         | 3.10 |     2.34 |       2.38 |
-| flat baseline (needs the month's own data) | 3.00 |        — |          — |
+| flat baseline (needs the month's own data) | 3.00 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.
 
@@ -404,7 +409,7 @@ Numbers are median absolute error in dB after per-path offset removal.
 | ITU-R P.533                                | 3.08 |     1.98 |       1.98 |
 | VOACAP, signal only                        | 3.50 |     1.87 |       1.75 |
 | P.533, signal only                         | 2.97 |     1.92 |       1.93 |
-| flat baseline (needs the month's own data) | 2.00 |        — |          — |
+| flat baseline (needs the month's own data) | 2.00 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.
 
@@ -416,7 +421,7 @@ Numbers are median absolute error in dB after per-path offset removal.
 | ITU-R P.533                                | 3.85 |     2.65 |       2.58 |
 | VOACAP, signal only                        | 3.50 |     2.50 |       2.55 |
 | P.533, signal only                         | 3.82 |     2.55 |       2.55 |
-| flat baseline (needs the month's own data) | 3.00 |        — |          — |
+| flat baseline (needs the month's own data) | 3.00 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.
 
@@ -428,6 +433,6 @@ Numbers are median absolute error in dB after per-path offset removal.
 | ITU-R P.533                                | 5.05 |     2.03 |       2.01 |
 | VOACAP, signal only                        | 2.25 |     1.75 |       1.72 |
 | P.533, signal only                         | 4.01 |     2.03 |       2.00 |
-| flat baseline (needs the month's own data) | 2.00 |        — |          — |
+| flat baseline (needs the month's own data) | 2.00 |          |            |
 
 Numbers are median absolute error in dB after per-path offset removal.

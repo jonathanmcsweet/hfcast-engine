@@ -44,9 +44,11 @@ use crate::irtam;
 use crate::json::{self, num, obj, Json};
 use crate::listing::{parse_listing, parse_muf_table, MUF_ROW, MUF_SLOT};
 use crate::runner::itshfbc_dir;
+use crate::truecast::grid::{predict_grid_cells, GridCell, GridRequest};
 use crate::voacap::area::{Grid, Projection};
 use crate::voacap::con::R;
 use crate::voacap::data;
+use crate::voacap::fastmath::Numerics;
 use crate::voacap::run::{
     run_area, run_area_daily_median, AntennaCardSpec, AreaFreq, AreaInputs, AreaMedian, AreaPoint,
 };
@@ -79,7 +81,7 @@ pub fn run(input: &str) -> Result<String, String> {
     // default and stays the bare object it has always been, so nothing
     // that already calls this has to learn a new field.
     if req.get("mode").and_then(Json::as_str) == Some("area") {
-        let mut tree_json = area(&tree, &req)?;
+        let mut tree_json = area(&tree, &req, engine)?;
         if let Json::Obj(fields) = &mut tree_json {
             fields.insert("engine".to_string(), Json::Str(engine.name().to_string()));
         }
@@ -87,7 +89,13 @@ pub fn run(input: &str) -> Result<String, String> {
         return Ok(tree_json.write());
     }
 
-    let (request, freqs) = build_request(&req)?;
+    let (mut request, freqs) = build_request(&req)?;
+    // The same choice the area path makes: a truecast run takes
+    // truecast's numerics, so a band table and a map agree.
+    request.numerics = match engine {
+        EngineChoice::Voacap => crate::api::Numerics::reference(),
+        EngineChoice::Truecast => crate::api::Numerics::shipping(),
+    };
     let text = listing(&tree, &request, Task::Systems)?;
     let mut out = prediction(&text, &freqs);
 
@@ -647,18 +655,14 @@ fn hour(req: &Json, daily: bool) -> Result<i32, String> {
     Ok(value as i32 + 1)
 }
 
-fn area(tree: &std::path::Path, req: &Json) -> Result<Json, String> {
-    let lat_step = req.number("latStep")?;
-    let lon_step = req.number("lonStep")?;
-    if lat_step <= 0.0 || lon_step <= 0.0 {
-        return Err("\"latStep\" and \"lonStep\" must be positive".into());
-    }
-    let (rows, columns) = match bounds(req)? {
-        None => (
+/// The two axes of the requested grid, whole-world or bounded.
+fn area_axes(req: &Json, lat_step: f64, lon_step: f64) -> Result<(Axis, Axis), String> {
+    match bounds(req)? {
+        None => Ok((
             world_axis(lat_step, -90.0, 180.0)?,
             world_axis(lon_step, -180.0, 360.0)?,
-        ),
-        Some(box_) => (
+        )),
+        Some(box_) => Ok((
             part_axis(
                 box_.lat_min,
                 box_.lat_max,
@@ -675,28 +679,39 @@ fn area(tree: &std::path::Path, req: &Json) -> Result<Json, String> {
                 360.0,
                 "longitude",
             )?,
-        ),
-    };
-    let watts = req.number("watts")?;
-    // A whole-day run answers for no single hour, so it neither needs one
-    // nor may be given one: an hour in the request would read as a
-    // promise the answer does not keep.
-    let daily = req.get("dailyMedian") == Some(&Json::Bool(true));
-    let hour = hour(req, daily)?;
+        )),
+    }
+}
 
-    let grid = Grid {
-        projection: Projection::LatLon,
-        plat: req.number("fromLat")? as f32,
-        plon: req.number("fromLon")? as f32,
-        xmin: columns.min,
-        xmax: columns.max,
-        ymin: rows.min,
-        ymax: rows.max,
-        nx: columns.n,
-        ny: rows.n,
-    };
+/// How many workers an area run may use: one unless the caller asks for
+/// more.
+///
+/// A caller that already runs several of these at once, as a batch of
+/// latitude strips does, would otherwise put its own pool and this one
+/// on the same cores. A caller that sends the whole map in one request
+/// should send `"threads": 0` with it and take every core.
+fn workers(req: &Json) -> usize {
+    req.get("threads")
+        .and_then(Json::as_f64)
+        .map_or(1, |n| n.max(0.0) as usize)
+}
 
-    let inputs = AreaInputs {
+/// Everything the area drivers read, gathered from the request.
+fn area_inputs(
+    req: &Json,
+    engine: EngineChoice,
+    grid: Grid,
+    hour: i32,
+    watts: f64,
+) -> Result<AreaInputs, String> {
+    Ok(AreaInputs {
+        // The parity engine owes the reference its last digit and takes
+        // the library's arithmetic. Truecast does not, and takes every
+        // deviation that has been measured to earn its place.
+        numerics: match engine {
+            EngineChoice::Voacap => Numerics::reference(),
+            EngineChoice::Truecast => Numerics::shipping(),
+        },
         grid,
         tx_lat_deg: req.number("fromLat")?,
         tx_lon_deg: req.number("fromLon")?,
@@ -716,17 +731,68 @@ fn area(tree: &std::path::Path, req: &Json) -> Result<Json, String> {
         tx_antenna: antenna(req, "txAntenna")?.map(|a| a.card(watts / 1000.0)),
         rx_antenna: antenna(req, "rxAntenna")?.map(|a| a.card(0.0)),
         model: Model::Compatible,
+    })
+}
+
+fn area(tree: &std::path::Path, req: &Json, engine: EngineChoice) -> Result<Json, String> {
+    let lat_step = req.number("latStep")?;
+    let lon_step = req.number("lonStep")?;
+    if lat_step <= 0.0 || lon_step <= 0.0 {
+        return Err("\"latStep\" and \"lonStep\" must be positive".into());
+    }
+    let (rows, columns) = area_axes(req, lat_step, lon_step)?;
+    let watts = req.number("watts")?;
+    // A whole-day run answers for no single hour, so it neither needs one
+    // nor may be given one: an hour in the request would read as a
+    // promise the answer does not keep.
+    let daily = req.get("dailyMedian") == Some(&Json::Bool(true));
+    let hour = hour(req, daily)?;
+
+    let grid = Grid {
+        projection: Projection::LatLon,
+        plat: req.number("fromLat")? as f32,
+        plon: req.number("fromLon")? as f32,
+        xmin: columns.min,
+        xmax: columns.max,
+        ymin: rows.min,
+        ymax: rows.max,
+        nx: columns.n,
+        ny: rows.n,
     };
 
+    let inputs = area_inputs(req, engine, grid, hour, watts)?;
     let steps = GridSteps::of(lat_step, lon_step, grid, &inputs.freqs_mhz);
 
     if daily {
         let medians = {
             let _perf = crate::perf::Step::new(crate::perf::AREA_POINTS);
-            run_area_daily_median(tree, &inputs)?
+            run_area_daily_median(tree, &inputs, workers(req))?
         };
         let _answer = crate::perf::Step::new(crate::perf::ANSWER);
         return Ok(steps.answer(median_rows(&medians, steps.many())));
+    }
+
+    // A one-hour map is the only shape that still ran on one core. The
+    // whole-day shape already threads inside the engine, and the parity
+    // engine keeps the serial driver because that driver's answers are
+    // the ones that match the Fortran: it carries state from point to
+    // point the way `HFAREA` does, so its answer depends on the lattice
+    // and the visit order. Truecast owes nothing to that, and the
+    // difference between the two drivers is the carry alone, measured
+    // in `truecast::grid`.
+    if matches!(engine, EngineChoice::Truecast) {
+        let cells = {
+            let _perf = crate::perf::Step::new(crate::perf::AREA_POINTS);
+            predict_grid_cells(
+                tree,
+                &GridRequest {
+                    area: inputs,
+                    threads: workers(req),
+                },
+            )?
+        };
+        let _answer = crate::perf::Step::new(crate::perf::ANSWER);
+        return Ok(steps.answer(cell_rows(&cells, steps.many())));
     }
 
     let points = {
@@ -735,6 +801,58 @@ fn area(tree: &std::path::Path, req: &Json) -> Result<Json, String> {
     };
     let _answer = crate::perf::Step::new(crate::perf::ANSWER);
     Ok(steps.answer(area_rows(&points, steps.many())?))
+}
+
+/// The same rows `area_rows` builds, from the threaded driver's cells.
+///
+/// One band is read out of the printed columns on the parity route,
+/// because the server's correction factors were fitted against printed
+/// values. There are no printed columns here, so the reliability is
+/// rounded to the three decimals `OUTAREA` prints. The two agree by
+/// construction and `area_route_swap` holds them to it.
+fn cell_rows(cells: &[GridCell], many: bool) -> Vec<Json> {
+    cells
+        .iter()
+        .map(|c| {
+            let each =
+                |pick: fn(&AreaFreq) -> Json| Json::Arr(c.per_freq.iter().map(pick).collect());
+            let printed =
+                |f: &AreaFreq| ((f.reliability * 1000.0).round() / 1000.0).clamp(0.0, 1.0);
+            let one = c.per_freq.first().copied().unwrap_or_default();
+            let fields: Vec<(&str, Json)> = if many {
+                vec![
+                    ("reliability", each(|f| num(f.reliability.clamp(0.0, 1.0)))),
+                    (
+                        "takeoffAngleDeg",
+                        each(|f| f.takeoff_angle_deg.map_or(Json::Null, num)),
+                    ),
+                    ("snr", each(|f| num(f.snr_db))),
+                    (
+                        "snrLowDecile",
+                        each(|f| f.snr_low_decile.map_or(Json::Null, num)),
+                    ),
+                    (
+                        "snrUpDecile",
+                        each(|f| f.snr_up_decile.map_or(Json::Null, num)),
+                    ),
+                ]
+            } else {
+                vec![
+                    ("reliability", num(printed(&one))),
+                    (
+                        "takeoffAngleDeg",
+                        one.takeoff_angle_deg.map_or(Json::Null, num),
+                    ),
+                    ("snr", num(one.snr_db)),
+                    ("snrLowDecile", one.snr_low_decile.map_or(Json::Null, num)),
+                    ("snrUpDecile", one.snr_up_decile.map_or(Json::Null, num)),
+                ]
+            };
+            let mut row = vec![("lat", num(f64::from(c.lat))), ("lon", num(unfold(c.lon)))];
+            row.extend(fields);
+            Json::Obj(row.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
+        })
+        .collect()
 }
 
 /// The point rows, in whichever of the two shapes the run has.
@@ -947,6 +1065,7 @@ fn build_request(req: &Json) -> Result<(Request, Vec<f64>), String> {
     }
 
     let request = Request {
+        numerics: Numerics::reference(),
         tx: Site {
             name: req.string("fromLabel").unwrap_or_default(),
             lat_deg: req.number("fromLat")?,

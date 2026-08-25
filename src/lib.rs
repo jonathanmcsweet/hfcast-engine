@@ -1,6 +1,6 @@
 //! Characterisation harness for the HF propagation engine.
 //!
-//! The engine in use today is `voacapl`, the maintained Unix build of the ITS
+//! The engine in use today is `voacapl`, the maintained Unix build of the
 //! Fortran VOACAP program. Porting it to Rust needs an acceptance criterion,
 //! and this crate exists to derive that criterion from measurement rather than
 //! from opinion.

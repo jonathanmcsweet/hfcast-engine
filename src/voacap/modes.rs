@@ -32,6 +32,7 @@ use super::model::Model;
 use super::muf::{IonoState, MufHour};
 use super::noise::NoiseResult;
 use super::sigdis::{prbmuf, xlin, SignalDistribution};
+use crate::voacap::fastmath::Numerics;
 
 /// `/LPATH/` constants from `blkdat`.
 const DELOPT: R = 3.0;
@@ -460,6 +461,8 @@ pub struct PassCtx<'a> {
     pub nang: usize,
     /// `IPFG = 200`: the long-path model.
     pub long: bool,
+    /// Which arithmetic the hot path takes.
+    pub numerics: Numerics,
 }
 
 /// Fills the `/ES/` five-slot arrays from the per-point Es parameters
@@ -531,12 +534,12 @@ pub fn setlng(
 /// `GAIN` with `ITR < 0`: the Fresnel ground-reflection loss between
 /// hops. `delta` in radians; `sigma`/`er` are the point's ground
 /// constants. Zero conductivity returns zero loss.
-pub fn gain_ground(delta: R, fmc: R, sigma: R, er: R) -> R {
+pub fn gain_ground(delta: R, fmc: R, sigma: R, er: R, numerics: Numerics) -> R {
     if sigma <= 0.0 {
         return 0.0;
     }
     let x = 18000.0 * sigma / fmc;
-    let t = delta.cos();
+    let t = numerics.cos(delta);
     let q = delta.sin();
     let r = q * q;
     let s = r * r;
@@ -547,10 +550,10 @@ pub fn gain_ground(delta: R, fmc: R, sigma: R, er: R) -> R {
     let u = er * er + x * x;
     let v = u.sqrt();
     let asxv = (x / v).asin();
-    let cv = (rho * rho + u * u * s - 2.0 * rho * u * r * (alpha + 2.0 * asxv).cos()).sqrt()
-        / (rho + u * r + 2.0 * rho12 * v * q * (alpha * 0.5 + asxv).cos());
-    let ch = (rho * rho + s - 2.0 * rho * r * alpha.cos()).sqrt()
-        / (rho + r + 2.0 * rho12 * q * (alpha * 0.5).cos());
+    let cv = (rho * rho + u * u * s - 2.0 * rho * u * r * numerics.cos(alpha + 2.0 * asxv)).sqrt()
+        / (rho + u * r + 2.0 * rho12 * v * q * numerics.cos(alpha * 0.5 + asxv));
+    let ch = (rho * rho + s - 2.0 * rho * r * numerics.cos(alpha)).sqrt()
+        / (rho + r + 2.0 * rho12 * q * numerics.cos(alpha * 0.5));
     let mut rain = 4.3429 * (0.5 * (ch * ch + cv * cv)).ln();
     rain = rain.abs();
     if delta <= 0.000_000_01 {
@@ -564,7 +567,13 @@ pub fn gain_ground(delta: R, fmc: R, sigma: R, er: R) -> R {
 fn ground_loss_avg(ctx: &PassCtx, del: R, freq: R, km: usize) -> R {
     let mut y: R = 0.0;
     for ig in 0..km {
-        y += gain_ground(del, freq, ctx.geog.sigpat[ig], ctx.geog.epspat[ig]);
+        y += gain_ground(
+            del,
+            freq,
+            ctx.geog.sigpat[ig],
+            ctx.geog.epspat[ig],
+            ctx.numerics,
+        );
     }
     y / km as R
 }
@@ -853,7 +862,7 @@ pub fn findf(
                 }
                 // 375: the Martyn spherical-ionosphere correction.
                 let del = rfx.delfx[i] * D2R;
-                let rcosd = RZ * del.cos();
+                let rcosd = RZ * state.numerics.cos_modes(del);
                 let xfsq = freq * freq / fc2;
                 let ht = rfx.htflx[i];
                 let xmut = 1.0 - fv * fv / (freq * freq);
@@ -1064,10 +1073,11 @@ fn regmod(
             continue;
         }
         let del = (D2R * modes.delmod[im]).min(89.99 * D2R);
-        let cdel = del.cos();
+        let cdel = ctx.numerics.cos_modes(del);
         let psi = ghop * 0.5;
         let phe = PIO2 - psi - del;
-        let path = 2.0 * (modes.hpmod[im] + RZ * (1.0 - psi.cos())) / phe.cos();
+        let path = 2.0 * (modes.hpmod[im] + RZ * (1.0 - ctx.numerics.cos_modes(psi)))
+            / ctx.numerics.cos_modes(phe);
         let path = (path * hop).abs();
         zon.timed[im] = path / VOFL;
         zon.fslos[im] = 32.45 + 20.0 * (path * freq).log10();
@@ -1150,12 +1160,12 @@ fn regmod(
         // The 1995 change: MUFday from the specific hop MUF.
         let lay = muf.layers[ismod - 1];
         let psi2 = ctx.gcd / 2.0 / hop;
-        let cpsi = psi2.cos();
+        let cpsi = ctx.numerics.cos_modes(psi2);
         let spsi = psi2.sin();
         let tanp = spsi / (1.0 - cpsi + lay.hpmuf / RZ);
         let phe2 = tanp.atan();
         let del2 = PIO2 - phe2 - psi2;
-        let cdel2 = del2.cos();
+        let cdel2 = ctx.numerics.cos_modes(del2);
         let sphe = RZ * cdel2 / (RZ + lay.htmuf);
         let xmuf = lay.fvmuf / (1.0 - sphe * sphe).sqrt();
         zon.prob[im] = prbmuf(muf, freq, xmuf, lay.ymuf, ismod);
@@ -1224,6 +1234,7 @@ fn inmuf(
     ihop: i32,
     fsdead: R,
 ) {
+    let _perf = crate::perf::Step::new(crate::perf::INMUF);
     const EPS: R = 0.4001;
     let k = ctx.jmode;
     let mut ireset = false;
@@ -1428,6 +1439,7 @@ fn inmuf(
 /// Port of `ESMOD`: up to two sporadic-E hops into `/ZON/` slots 4-5.
 /// `fsdead` is the low-frequency cutoff from the controlling area.
 fn esmod(zon: &mut Zon, ctx: &PassCtx, muf: &MufHour, noise: &NoiseResult, freq: R, fsdead: R) {
+    let _perf = crate::perf::Step::new(crate::perf::ESMOD);
     // The weakest Es area governs: all modes are at least this good.
     let mut k = 0usize;
     for is in 0..ctx.state.km {
@@ -1598,6 +1610,7 @@ fn relbil(
     ants: &super::antenna::AntennaSet,
     freq: R,
 ) {
+    let _perf = crate::perf::Step::new(crate::perf::RELBIL);
     const XEPS: R = 0.05;
     let inum = lp.all.nmmod;
     if inum == 0 {
@@ -1890,7 +1903,15 @@ fn mpath(lp: &mut ModeLoopState, ifx: usize, deck: &DeckParams, gcdkm: R) {
 /// path ends, forcing an over-the-MUF row when no row qualifies.
 // The loops walk several parallel Fortran arrays by index.
 #[allow(clippy::needless_range_loop)]
-fn settxr(lp: &mut ModeLoopState, ctx: &PassCtx, muf: &MufHour, freq: R, itxrcp: [usize; 2]) {
+fn settxr(
+    lp: &mut ModeLoopState,
+    ctx: &PassCtx,
+    muf: &MufHour,
+    freq: R,
+    itxrcp: [usize; 2],
+    trace: bool,
+) {
+    let _perf = crate::perf::Step::new(crate::perf::SETTXR);
     let ModeLoopState {
         areas,
         reflectrix,
@@ -1944,7 +1965,7 @@ fn settxr(lp: &mut ModeLoopState, ctx: &PassCtx, muf: &MufHour, freq: R, itxrcp:
                 continue;
             }
             let del = rfx.delfx[ia] * D2R;
-            let cdel = del.cos();
+            let cdel = ctx.numerics.cos_modes(del);
             if ctx.state.fi[k][0] >= rfx.fvflx[ia] {
                 // D-E layer mode.
                 let xnsq = if ctx.sig.htloss <= rfx.htflx[ia] {
@@ -1989,11 +2010,16 @@ fn settxr(lp: &mut ModeLoopState, ctx: &PassCtx, muf: &MufHour, freq: R, itxrcp:
                     rfx.aofx[ia] = -10.0 * (1.0 - p).log10();
                 }
             }
-            let mut y: R = 0.0;
-            for ig in 0..ctx.state.km {
-                y += gain_ground(del, freq, ctx.geog.sigpat[ig], ctx.geog.epspat[ig]);
+            // `SELTXR` reads the ground loss at the one row it picks,
+            // so filling all forty-five here throws forty-four away,
+            // and that loop is the single largest cost in an area run.
+            // `seltxr` fills the chosen row instead, from the same
+            // helper, for the same number. A trace still fills every
+            // row: `porttest` compares all forty-five against the
+            // reference's own dump.
+            if trace {
+                rfx.grlosx[ia] = ground_loss_avg(ctx, del, freq, ctx.state.km);
             }
-            rfx.grlosx[ia] = y / ctx.state.km as R;
             // GAIN(JJ, ...): JJ is 1 at the transmit end, 2 at the
             // receive end of the long path.
             let (g, teff) = ctx.ants.gain(jj as i32 + 1, del, freq);
@@ -2025,7 +2051,7 @@ fn settxr(lp: &mut ModeLoopState, ctx: &PassCtx, muf: &MufHour, freq: R, itxrcp:
 /// (1-based; zero or less means no mode).
 // XHPM's later updates mirror the source's dead stores.
 #[allow(unused_assignments)]
-fn seltxr(lp: &mut ModeLoopState, ctx: &PassCtx, itxrcp: [usize; 2]) -> [i32; 2] {
+fn seltxr(lp: &mut ModeLoopState, ctx: &PassCtx, freq: R, itxrcp: [usize; 2]) -> [i32; 2] {
     let dend = ctx.gcdkm.min(4000.0);
     let mut ltxrgm = [1i32; 2];
     for jj in 0..2 {
@@ -2116,12 +2142,35 @@ fn seltxr(lp: &mut ModeLoopState, ctx: &PassCtx, itxrcp: [usize; 2]) -> [i32; 2]
         }
         ltxrgm[jj] = l;
     }
+    // The ground loss `SETTXR` left unfilled, at the row chosen above.
+    // It costs a loop over the ground types and is read once an end,
+    // so it belongs where the row is known rather than where the table
+    // is built. The two guards are the ones `settxr` fills behind: a
+    // row it would have skipped keeps the zero it was given.
+    (0..2).for_each(|jj| {
+        if ltxrgm[jj] < 1 {
+            return;
+        }
+        let i = ltxrgm[jj] as usize - 1;
+        let rfx = &mut lp.reflectrix[itxrcp[jj] - 1];
+        if i < 45 && rfx.hpflx[i] >= 70.0 && rfx.delfx[i] >= ctx.deck.amind {
+            rfx.grlosx[i] = ground_loss_avg(ctx, rfx.delfx[i] * D2R, freq, ctx.state.km);
+        }
+    });
     ltxrgm
 }
 
 /// Port of `GMLOSS`: presets `/ZON/` and calls `SETTXR`. (The
 /// `TXRGML` fill is omitted: nothing reads it.)
-fn gmloss(lp: &mut ModeLoopState, ctx: &PassCtx, muf: &MufHour, freq: R, itxrcp: [usize; 2]) {
+fn gmloss(
+    lp: &mut ModeLoopState,
+    ctx: &PassCtx,
+    muf: &MufHour,
+    freq: R,
+    itxrcp: [usize; 2],
+    trace: bool,
+) {
+    let _perf = crate::perf::Step::new(crate::perf::GMLOSS);
     for im in 0..7 {
         lp.zon.obf[im] = 1000.0;
         lp.zon.adv[im] = 1000.0;
@@ -2145,7 +2194,7 @@ fn gmloss(lp: &mut ModeLoopState, ctx: &PassCtx, muf: &MufHour, freq: R, itxrcp:
         lp.zon.b[im] = -1.0;
         lp.zon.nmode[im] = 5;
     }
-    settxr(lp, ctx, muf, freq, itxrcp);
+    settxr(lp, ctx, muf, freq, itxrcp, trace);
 }
 
 /// Port of `CONVH`: the geometrical convergence factor and group path.
@@ -2249,6 +2298,7 @@ fn lngpat(
     itxrcp: [usize; 2],
     ltxrgm: [i32; 2],
 ) {
+    let _perf = crate::perf::Step::new(crate::perf::LNGPAT);
     if ltxrgm[0] <= 0 || ltxrgm[1] <= 0 {
         return;
     }
@@ -2648,8 +2698,8 @@ pub fn luffy_freq_loop(
                 );
                 dbg.record(|d| d.rfx.push(rfx_snapshot(&lp.reflectrix[k], k, khz)));
             }
-            gmloss(lp, ctx, muf, freq, itxrcp);
-            let ltxrgm = seltxr(lp, ctx, itxrcp);
+            gmloss(lp, ctx, muf, freq, itxrcp, collect);
+            let ltxrgm = seltxr(lp, ctx, freq, itxrcp);
             lngpat(lp, ctx, muf, &noise, freq, itxrcp, ltxrgm);
             dbg.record(|d| {
                 d.los = Some(LosSnapshot {
@@ -2949,8 +2999,9 @@ pub fn luffy_luf(
                     ctx.nang,
                 );
             }
-            gmloss(lp, ctx, muf, freq, itxrcp);
-            let ltxrgm = seltxr(lp, ctx, itxrcp);
+            // No trace here: the LUF pass produces no output to compare.
+            gmloss(lp, ctx, muf, freq, itxrcp, false);
+            let ltxrgm = seltxr(lp, ctx, freq, itxrcp);
             lngpat(lp, ctx, muf, &noise, freq, itxrcp, ltxrgm);
         }
         relbil(lp, ifx, &noise, &ctx.deck, ctx.ants, freq);
@@ -3191,13 +3242,36 @@ mod tests {
         assert_eq!(all.sn[1], 5.0);
     }
 
+    /// The policy reaches `gain_ground` at all.
+    ///
+    /// The deviation is far below the printed precision of a listing,
+    /// so the movement test `corrected_fixes.rs` uses cannot guard this
+    /// site: a refactor that dropped the policy and called the library
+    /// directly would leave every report identical, which is exactly
+    /// what a correctly wired fast cosine also produces. This asserts
+    /// on the returned value instead, where the difference survives.
+    #[test]
+    fn the_policy_reaches_the_ground_gain() {
+        let moved = (1..2000).map(|i| i as R * 0.0005).find(|&delta| {
+            gain_ground(delta, 14.1, 5.0, 80.0, Numerics::reference())
+                != gain_ground(delta, 14.1, 5.0, 80.0, Numerics::truecast())
+        });
+        assert!(
+            moved.is_some(),
+            "no takeoff angle changed: the numerics argument is not reaching the cosines"
+        );
+    }
+
     #[test]
     fn gain_ground_returns_zero_without_conductivity_and_six_at_grazing() {
-        assert_eq!(gain_ground(0.1, 10.0, 0.0, 4.0), 0.0);
+        assert_eq!(gain_ground(0.1, 10.0, 0.0, 4.0, Numerics::reference()), 0.0);
         // At zero elevation the loss is pinned to 6 dB.
-        assert_eq!(gain_ground(0.0, 10.0, 5.0, 80.0), 6.0);
+        assert_eq!(
+            gain_ground(0.0, 10.0, 5.0, 80.0, Numerics::reference()),
+            6.0
+        );
         // Sea water at a moderate angle loses little.
-        let sea = gain_ground(0.3, 10.0, 5.0, 80.0);
+        let sea = gain_ground(0.3, 10.0, 5.0, 80.0, Numerics::reference());
         assert!(sea > 0.0 && sea < 1.0, "got {sea}");
     }
 

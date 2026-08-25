@@ -8,7 +8,7 @@
 //! The Fortran's numeric quirks are kept on purpose: its own PI constant,
 //! clamped ACOS arguments, the 31.85-metre minimum distance, the nudge that
 //! separates a receiver sitting on top of the transmitter, and the special
-//! cases for endpoints within 1e-7 of a pole. Arithmetic follows the source
+//! cases for endpoints within 1e-7 of a pole. Numerics follows the source
 //! expression by expression in `f32`.
 
 use super::con::{MagneticPole, D2R, PI, PI2, PIO2, R, R2D, RZ};
@@ -67,9 +67,6 @@ pub fn path_geometry(
     long_path: bool,
     pole: MagneticPole,
 ) -> PathGeometry {
-    let glt = pole.lat_deg * D2R;
-    let glg = pole.lon_deg * D2R;
-
     let tlatd = tlat_deg;
     let tlongd = tlong_deg;
     let mut rlatd = rlat_deg;
@@ -201,11 +198,7 @@ pub fn path_geometry(
                 (rflt, rflg)
             };
 
-            let mut q = glt.sin() * rflt.sin() + glt.cos() * rflt.cos() * (rflg - glg).cos();
-            if q.abs() > 1.0 {
-                q = sign(1.0, q);
-            }
-            let gmlat = PIO2 - q.acos();
+            let gmlat = geomagnetic_latitude(pole, rflt, rflg);
             ControlPoint {
                 rd: drf,
                 lat: rflt,
@@ -235,6 +228,21 @@ impl PathGeometry {
     }
 }
 
+/// The geomagnetic latitude of a place, radians.
+///
+/// Extracted so that the lattice's node builder and `path_geometry`
+/// cannot drift apart: a node has to be exactly what the engine would
+/// have computed at that position, and two copies of this expression
+/// would be two chances for it not to be.
+pub fn geomagnetic_latitude(pole: MagneticPole, lat: R, lon: R) -> R {
+    let glt = pole.lat_deg * D2R;
+    let glg = pole.lon_deg * D2R;
+    let mut q = glt.sin() * lat.sin() + glt.cos() * lat.cos() * (lon - glg).cos();
+    if q.abs() > 1.0 {
+        q = sign(1.0, q);
+    }
+    PIO2 - q.acos()
+}
 #[cfg(test)]
 mod tests {
     use super::*;
