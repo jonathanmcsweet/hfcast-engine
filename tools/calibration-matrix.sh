@@ -26,8 +26,8 @@ fi
 
 {
   echo "# Cross-month calibration matrix"
-  echo
   for fit in "${MONTHS[@]}"; do
+    echo
     args=(--fit "data/$fit/$DUMP")
     for test in "${MONTHS[@]}"; do
       if [ "$test" != "$fit" ]; then
@@ -35,7 +35,6 @@ fi
       fi
     done
     "$BIN" "${args[@]}"
-    echo
   done
 } > "$OUT"
 
