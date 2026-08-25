@@ -154,13 +154,13 @@ month. Findings, in order of consequence:
 6. **The absorption edge tracks fmin's shape and its storm response;
    one fitted ratio closes most of its level** (fmin rows, added
    2026-08-13). With each station's constant removed, the probe edge
-   sits 0.43 to 0.91 MHz from observed fmin — a fraction of fmin's
+   sits 0.42 to 0.91 MHz from observed fmin — a fraction of fmin's
    own day-night swing, so the diurnal shape is real. The raw offset
    is large and moves month to month (+0.7 to +2.6 MHz). The
    day-conditioned edge is where the signal concentrates: in the
-   severe storm month the storm-hour bias falls from +2.43 to
-   +1.14 MHz, and the day-to-day correlations, though small (up to
-   +0.044), are largest in the storm months. Day-level absorption
+   severe storm month the storm-hour bias falls from +2.44 to
+   +1.13 MHz, and the day-to-day correlations, though small (up to
+   +0.052), are largest in the storm months. Day-level absorption
    skill beyond the diurnal shape is thin on quiet months —
    consistent with absorption being driven by the solar zenith angle
    first and activity second.

@@ -63,8 +63,8 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.00
 | irtam                    |  +0.107 |  0.214 |  0.334 |  6792 |
 | climatology, quiet       |  +0.092 |  0.211 |  0.330 |  5347 |
 | irtam, quiet             |  +0.092 |  0.211 |  0.330 |  5347 |
-| climatology, storm       |  +0.152 |  0.217 |  0.348 |  1445 |
-| irtam, storm             |  +0.152 |  0.217 |  0.348 |  1445 |
+| climatology, storm       |  +0.153 |  0.217 |  0.348 |  1445 |
+| irtam, storm             |  +0.153 |  0.217 |  0.348 |  1445 |
 
 day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.000, 6748 day pairs
 
@@ -93,7 +93,7 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.01
 |    0k | climatology  |  -0.261 |  0.710 |  1.140 |            90.8% |
 |    0k | clim+dudeney |  -0.261 |  0.710 |  1.140 |            90.8% |
 |    0k | irtam-foF2   |  -0.046 |  0.342 |  0.694 |            94.9% |
-|    0k | essn+dudeney |  +0.000 |  0.583 |  1.070 |            91.7% |
+|    0k | essn+dudeney |  +0.001 |  0.583 |  1.070 |            91.7% |
 |    0k | essn+st+dud  |  -0.028 |  0.581 |  1.069 |            91.7% |
 |    0k | irtam-both   |  -0.046 |  0.342 |  0.694 |            94.9% |
 |  300k | climatology  |  -0.454 |  0.865 |  1.336 |            90.2% |
@@ -111,16 +111,16 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.01
 
 ## 2019-06
 
-40549 samples from 22 stations: AL945 AT138 AU930 BC840 DB049 EB040 EG931 FF051 GR13L HE13N JI91J JR055 LM42B MHJ45 MO155 PA836 PQ052 PRJ18 RO041 SAA0K SO148 WP937
+40631 samples from 22 stations: AL945 AT138 AU930 BC840 DB049 EB040 EG931 FF051 GR13L HE13N JI91J JR055 LM42B MHJ45 MO155 PA836 PQ052 PRJ18 RO041 SAA0K SO148 WP937
 
 ### foF2 (model - observed)
 
 | model                    |    bias |    MAE |    RMS |     n |
 | ------------------------ | ------: | -----: | -----: | ----: |
-| climatology              |  +0.374 |  0.488 |  0.830 | 14081 |
+| climatology              |  +0.375 |  0.488 |  0.830 | 14081 |
 | irtam                    |  -0.005 |  0.280 |  0.598 | 14062 |
 | essn (holdout)           |  +0.020 |  0.399 |  0.746 | 14081 |
-| essn+storm               |  +0.016 |  0.397 |  0.747 | 14081 |
+| essn+storm               |  +0.016 |  0.398 |  0.747 | 14081 |
 | climatology, quiet       |  +0.375 |  0.484 |  0.830 | 13475 |
 | irtam, quiet             |  -0.004 |  0.279 |  0.598 | 13475 |
 | essn, quiet              |  +0.022 |  0.396 |  0.743 | 13475 |
@@ -182,30 +182,30 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.00
 
 | model                    |    bias |    MAE |    RMS |     n |
 | ------------------------ | ------: | -----: | -----: | ----: |
-| climatology              |  +0.715 |  0.839 |  1.244 |  3494 |
+| climatology              |  +0.728 |  0.848 |  1.239 |  3576 |
 | irtam                    |       - |      - |      - |     0 |
-| essn (holdout)           |  +0.674 |  0.824 |  1.177 |  3292 |
-| climatology - offsets    |  +0.000 |  0.431 |  0.783 |  3494 |
-| essn - offsets           |  +0.000 |  0.441 |  0.760 |  3292 |
-| climatology, quiet       |  +0.721 |  0.840 |  1.246 |  3328 |
+| essn (holdout)           |  +0.677 |  0.834 |  1.173 |  3374 |
+| climatology - offsets    |  +0.000 |  0.424 |  0.781 |  3576 |
+| essn - offsets           |  +0.000 |  0.437 |  0.758 |  3374 |
+| climatology, quiet       |  +0.728 |  0.848 |  1.241 |  3406 |
 | irtam, quiet             |       - |      - |      - |     0 |
-| essn, quiet              |  +0.674 |  0.825 |  1.179 |  3135 |
-| climatology, storm       |  +0.675 |  0.835 |  1.210 |   163 |
+| essn, quiet              |  +0.679 |  0.837 |  1.175 |  3213 |
+| climatology, storm       |  +0.675 |  0.835 |  1.203 |   167 |
 | irtam, storm             |       - |      - |      - |     0 |
-| essn, storm              |  +0.666 |  0.796 |  1.152 |   154 |
+| essn, storm              |  +0.666 |  0.796 |  1.145 |   158 |
 
-day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.000, 3494 day pairs
+day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.000, 3576 day pairs
 
 ### NVIS MUF(d) from foF2 x secant (n = 14079)
 
 | range | model        |    bias |    MAE |    RMS | band calls right |
 | ----: | ------------ | ------: | -----: | -----: | ---------------: |
-|    0k | climatology  |  +0.374 |  0.488 |  0.830 |            92.5% |
-|    0k | clim+dudeney |  +0.374 |  0.488 |  0.830 |            92.5% |
-|    0k | irtam-foF2   |  -0.005 |  0.280 |  0.598 |            95.6% |
-|    0k | essn+dudeney |  +0.020 |  0.399 |  0.746 |            94.2% |
+|    0k | climatology  |  +0.375 |  0.488 |  0.830 |            92.5% |
+|    0k | clim+dudeney |  +0.375 |  0.488 |  0.830 |            92.5% |
+|    0k | irtam-foF2   |  -0.005 |  0.280 |  0.598 |            95.5% |
+|    0k | essn+dudeney |  +0.020 |  0.398 |  0.746 |            94.2% |
 |    0k | essn+st+dud  |  +0.016 |  0.397 |  0.746 |            94.2% |
-|    0k | irtam-both   |  -0.005 |  0.280 |  0.598 |            95.6% |
+|    0k | irtam-both   |  -0.005 |  0.280 |  0.598 |            95.5% |
 |  300k | climatology  |  +0.125 |  0.441 |  0.905 |            91.3% |
 |  300k | clim+dudeney |  +0.219 |  0.448 |  0.906 |            91.7% |
 |  300k | irtam-foF2   |  -0.285 |  0.416 |  0.839 |            91.7% |
@@ -215,7 +215,7 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.00
 |  600k | climatology  |  -0.209 |  0.727 |  1.417 |            89.9% |
 |  600k | clim+dudeney |  +0.039 |  0.642 |  1.313 |            92.1% |
 |  600k | irtam-foF2   |  -0.705 |  0.805 |  1.549 |            88.4% |
-|  600k | essn+dudeney |  -0.541 |  0.787 |  1.461 |            89.0% |
+|  600k | essn+dudeney |  -0.541 |  0.788 |  1.461 |            89.0% |
 |  600k | essn+st+dud  |  -0.549 |  0.791 |  1.466 |            88.9% |
 |  600k | irtam-both   |  -0.162 |  0.515 |  1.115 |            93.2% |
 
@@ -248,7 +248,7 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.572, essn +0.10
 | ------------------------ | ------: | -----: | -----: | ----: |
 | climatology              | +29.995 | 32.500 | 43.072 | 15463 |
 | irtam                    |  +4.079 | 13.303 | 26.239 | 15463 |
-| climatology+dudeney      | +17.830 | 22.448 | 35.246 | 15463 |
+| climatology+dudeney      | +17.830 | 22.447 | 35.246 | 15463 |
 | climatology, quiet       | +29.995 | 32.500 | 43.072 | 15463 |
 | irtam, quiet             |  +4.079 | 13.303 | 26.239 | 15463 |
 | climatology, storm       |       - |      - |      - |     0 |
@@ -319,7 +319,7 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn -0.03
 |  300k | climatology  |  -0.061 |  0.617 |  1.029 |            90.0% |
 |  300k | clim+dudeney |  +0.006 |  0.628 |  1.048 |            89.9% |
 |  300k | irtam-foF2   |  -0.121 |  0.373 |  0.661 |            93.2% |
-|  300k | essn+dudeney |  -0.082 |  0.636 |  1.046 |            90.0% |
+|  300k | essn+dudeney |  -0.081 |  0.636 |  1.046 |            90.0% |
 |  300k | essn+st+dud  |  -0.081 |  0.637 |  1.046 |            90.0% |
 |  300k | irtam-both   |  +0.018 |  0.357 |  0.642 |            93.5% |
 |  600k | climatology  |  -0.291 |  0.833 |  1.365 |            88.2% |
@@ -331,7 +331,7 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn -0.03
 
 ## 2022-09
 
-33972 samples from 18 stations: AL945 AT138 AU930 BC840 DB049 EB040 EG931 FF051 GR13L HE13N JR055 LM42B MHJ45 PA836 PQ052 RO041 SO148 WP937
+33706 samples from 18 stations: AL945 AT138 AU930 BC840 DB049 EB040 EG931 FF051 GR13L HE13N JR055 LM42B MHJ45 PA836 PQ052 RO041 SO148 WP937
 
 ### foF2 (model - observed)
 
@@ -391,8 +391,8 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.00
 | ------------------------ | ------: | -----: | -----: | ----: |
 | climatology              |  +0.144 |  0.223 |  0.386 |  5976 |
 | irtam                    |  +0.144 |  0.223 |  0.386 |  5972 |
-| climatology, quiet       |  +0.147 |  0.220 |  0.383 |  5031 |
-| irtam, quiet             |  +0.147 |  0.220 |  0.383 |  5031 |
+| climatology, quiet       |  +0.146 |  0.220 |  0.383 |  5031 |
+| irtam, quiet             |  +0.146 |  0.220 |  0.383 |  5031 |
 | climatology, storm       |  +0.125 |  0.231 |  0.399 |   941 |
 | irtam, storm             |  +0.125 |  0.231 |  0.399 |   941 |
 
@@ -402,19 +402,19 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.00
 
 | model                    |    bias |    MAE |    RMS |     n |
 | ------------------------ | ------: | -----: | -----: | ----: |
-| climatology              |  +2.388 |  2.401 |  2.493 |  4754 |
+| climatology              |  +2.387 |  2.400 |  2.479 |  4488 |
 | irtam                    |       - |      - |      - |     0 |
-| essn (holdout)           |  +1.746 |  1.788 |  2.127 |  4199 |
-| climatology - offsets    |  +0.000 |  0.652 |  1.215 |  4754 |
-| essn - offsets           |  +0.000 |  0.829 |  1.191 |  4199 |
-| climatology, quiet       |  +2.381 |  2.392 |  2.493 |  4023 |
+| essn (holdout)           |  +1.699 |  1.743 |  2.107 |  3945 |
+| climatology - offsets    |  +0.000 |  0.644 |  1.201 |  4488 |
+| essn - offsets           |  +0.000 |  0.814 |  1.177 |  3945 |
+| climatology, quiet       |  +2.374 |  2.385 |  2.477 |  3799 |
 | irtam, quiet             |       - |      - |      - |     0 |
-| essn, quiet              |  +1.897 |  1.915 |  2.176 |  3642 |
-| climatology, storm       |  +2.432 |  2.432 |  2.500 |   726 |
+| essn, quiet              |  +1.857 |  1.892 |  2.157 |  3424 |
+| climatology, storm       |  +2.440 |  2.440 |  2.495 |   685 |
 | irtam, storm             |       - |      - |      - |     0 |
-| essn, storm              |  +1.138 |  1.174 |  1.773 |   555 |
+| essn, storm              |  +1.131 |  1.161 |  1.746 |   520 |
 
-day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.044, 4754 day pairs
+day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.052, 4488 day pairs
 
 ### NVIS MUF(d) from foF2 x secant (n = 11621)
 
@@ -427,7 +427,7 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.04
 |    0k | essn+st+dud  |  -0.020 |  0.506 |  0.853 |            92.4% |
 |    0k | irtam-both   |  -0.063 |  0.357 |  0.714 |            94.2% |
 |  300k | climatology  |  +0.329 |  0.714 |  1.114 |            90.7% |
-|  300k | clim+dudeney |  +0.391 |  0.718 |  1.135 |            90.7% |
+|  300k | clim+dudeney |  +0.391 |  0.719 |  1.135 |            90.7% |
 |  300k | irtam-foF2   |  -0.331 |  0.499 |  0.845 |            93.8% |
 |  300k | essn+dudeney |  -0.209 |  0.615 |  0.988 |            91.8% |
 |  300k | essn+st+dud  |  -0.236 |  0.612 |  0.993 |            91.8% |
@@ -537,7 +537,7 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.01
 |    0k | essn+st+dud  |  +0.011 |  0.615 |  0.940 |            91.1% |
 |    0k | irtam-both   |  -0.045 |  0.392 |  0.638 |            94.3% |
 |  300k | climatology  |  +0.690 |  0.934 |  1.430 |            89.8% |
-|  300k | clim+dudeney |  +0.728 |  0.943 |  1.450 |            89.7% |
+|  300k | clim+dudeney |  +0.727 |  0.943 |  1.450 |            89.7% |
 |  300k | irtam-foF2   |  -0.291 |  0.485 |  0.791 |            94.4% |
 |  300k | essn+dudeney |  -0.211 |  0.712 |  1.109 |            91.9% |
 |  300k | essn+st+dud  |  -0.204 |  0.710 |  1.106 |            91.9% |
@@ -647,7 +647,7 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.01
 |    0k | essn+st+dud  |  -0.036 |  0.620 |  1.067 |            91.7% |
 |    0k | irtam-both   |  -0.126 |  0.401 |  0.695 |            94.7% |
 |  300k | climatology  |  +0.120 |  0.759 |  1.285 |            92.1% |
-|  300k | clim+dudeney |  +0.164 |  0.755 |  1.290 |            92.1% |
+|  300k | clim+dudeney |  +0.165 |  0.755 |  1.290 |            92.1% |
 |  300k | irtam-foF2   |  -0.386 |  0.556 |  0.863 |            94.8% |
 |  300k | essn+dudeney |  -0.193 |  0.735 |  1.230 |            92.6% |
 |  300k | essn+st+dud  |  -0.234 |  0.735 |  1.241 |            92.5% |
@@ -674,7 +674,7 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.01
 | climatology, quiet       |  +0.625 |  0.789 |  1.249 |  7429 |
 | irtam, quiet             |  -0.039 |  0.331 |  0.646 |  7429 |
 | essn, quiet              |  -0.018 |  0.522 |  0.983 |  7429 |
-| essn+storm, quiet        |  -0.036 |  0.519 |  0.985 |  7429 |
+| essn+storm, quiet        |  -0.036 |  0.520 |  0.985 |  7429 |
 | climatology, storm       |  +1.215 |  1.362 |  1.735 |  2682 |
 | irtam, storm             |  +0.090 |  0.498 |  0.928 |  2682 |
 | essn, storm              |  +0.021 |  0.772 |  1.562 |  2682 |
@@ -687,8 +687,8 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.745, essn +0.16
 | model                    |    bias |    MAE |    RMS |     n |
 | ------------------------ | ------: | -----: | -----: | ----: |
 | climatology              | +61.495 | 62.178 | 76.569 | 10126 |
-| irtam                    |  +3.493 | 14.941 | 30.511 | 10111 |
-| climatology+dudeney      | +42.189 | 43.459 | 56.496 | 10126 |
+| irtam                    |  +3.494 | 14.940 | 30.511 | 10111 |
+| climatology+dudeney      | +42.190 | 43.459 | 56.496 | 10126 |
 | climatology, quiet       | +63.247 | 63.667 | 74.553 |  7429 |
 | irtam, quiet             |  +3.399 | 14.043 | 27.922 |  7429 |
 | climatology, storm       | +55.400 | 57.538 | 82.018 |  2682 |
@@ -734,7 +734,7 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.00
 | ------------------------ | ------: | -----: | -----: | ----: |
 | climatology              |  +1.222 |  1.292 |  1.898 |  5832 |
 | irtam                    |       - |      - |      - |     0 |
-| essn (holdout)           |  +0.870 |  0.990 |  1.502 |  4498 |
+| essn (holdout)           |  +0.870 |  0.989 |  1.502 |  4498 |
 | climatology - offsets    |  +0.000 |  0.763 |  1.196 |  5832 |
 | essn - offsets           |  +0.000 |  0.507 |  1.024 |  4498 |
 | climatology, quiet       |  +1.267 |  1.303 |  1.901 |  4364 |
@@ -742,7 +742,7 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.00
 | essn, quiet              |  +0.941 |  1.034 |  1.541 |  3592 |
 | climatology, storm       |  +1.085 |  1.172 |  1.893 |  1464 |
 | irtam, storm             |       - |      - |      - |     0 |
-| essn, storm              |  +0.609 |  0.836 |  1.338 |   904 |
+| essn, storm              |  +0.610 |  0.836 |  1.338 |   904 |
 
 day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.037, 5832 day pairs
 
@@ -759,13 +759,13 @@ day-to-day: climatology +0.000 (guard: must be +0.000), irtam +0.000, essn +0.03
 |  300k | climatology  |  +0.539 |  0.842 |  1.385 |            88.0% |
 |  300k | clim+dudeney |  +0.613 |  0.870 |  1.411 |            87.9% |
 |  300k | irtam-foF2   |  -0.292 |  0.467 |  0.885 |            93.2% |
-|  300k | essn+dudeney |  -0.217 |  0.617 |  1.322 |            90.0% |
+|  300k | essn+dudeney |  -0.217 |  0.618 |  1.322 |            90.0% |
 |  300k | essn+st+dud  |  -0.261 |  0.609 |  1.329 |            90.0% |
-|  300k | irtam-both   |  -0.040 |  0.407 |  0.814 |            93.7% |
+|  300k | irtam-both   |  -0.041 |  0.407 |  0.814 |            93.7% |
 |  600k | climatology  |  +0.149 |  0.960 |  1.657 |            89.8% |
 |  600k | clim+dudeney |  +0.374 |  0.971 |  1.652 |            89.6% |
 |  600k | irtam-foF2   |  -0.842 |  0.933 |  1.492 |            91.4% |
-|  600k | essn+dudeney |  -0.645 |  0.918 |  1.830 |            89.9% |
+|  600k | essn+dudeney |  -0.645 |  0.917 |  1.830 |            89.9% |
 |  600k | essn+st+dud  |  -0.699 |  0.937 |  1.855 |            89.7% |
 |  600k | irtam-both   |  -0.097 |  0.541 |  1.082 |            94.2% |
 
