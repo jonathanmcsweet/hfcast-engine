@@ -75,18 +75,18 @@ answer. Truecast conditions that same climatology on the day itself:
   correction, so a device that never goes online still beats the
   monthly median.
 
-Each piece is fitted on a ~130-month ionosonde archive and judged only
-on eight held-out months the fits never saw.
+Fitted on an eleven-year ionosonde archive. The verdict comes from
+eight months held back before any fit ran, chosen by rule to cover the
+record's worst storms, its quietest spells and its seasonal edges.
+
 [docs/comparison.md](docs/comparison.md) puts the two models side by
 side; [docs/offline.md](docs/offline.md) is the measured case that the
 offline form beats the monthly median on individual days.
 
-### Why keep the defects
+### Why keep the defects?
 
 If the engine copies the defects, then "the same as the original" is
-something you can test. If it does not, it is an opinion, and that test
-is what the whole method depends on. Corrections then live in one named
-place, where each one can be measured alone.
+something you can test and verify.
 
 ## The proof for the orignial VOACAP model
 
