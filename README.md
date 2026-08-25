@@ -20,7 +20,7 @@ High frequency radio signals (HF) travel long distances under differeing conditi
 
 This libary offers three models to predict HF propagation: 
 
-1. A faithful port of VOACAP written by the US Institute for Telecommunication Sciences
+1. A faithful port of VOACAP, built for the Voice of America from the US Institute for Telecommunication Sciences' IONCAP
 2. VOACAP Corrected, a VOACAP implementation with defects fixed,
 3. Truecast, which runs VOACAP's physics against a more granular daily average, the effective sunspot index, a geomagnetic storm table, a corrected
 layer height, and a lower edge of the usable window that the original
