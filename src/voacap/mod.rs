@@ -61,12 +61,14 @@ pub mod coefficients;
 #[path = "constants.rs"]
 pub mod con;
 pub mod data;
+pub mod fastmath;
 pub mod geometry;
 pub mod graphs;
 pub mod hfmufes;
 pub mod ioncap;
 pub mod ionogram;
 pub mod ionosphere;
+pub mod lattice;
 pub mod magnetic;
 pub mod model;
 pub mod modes;

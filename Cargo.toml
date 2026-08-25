@@ -1,6 +1,6 @@
 [package]
 name = "hfcast"
-version = "1.6.1"
+version = "2.13.3"
 edition = "2021"
 rust-version = "1.87"
 description = "HF radio propagation prediction: a Rust port of VOACAP, verified cell by cell against the Fortran"
@@ -38,9 +38,14 @@ exclude = [
   "AGENTS.md",
   "CLAUDE.md",
 
-  # Cargo finds a binary for every file in `src/bin/`, so all 22 of them
-  # would ship and `cargo install hfcast` would build and install all 22.
+  # Cargo finds a binary for every file in `src/bin/`, so all 26 of them
+  # would ship and `cargo install hfcast` would build and install all 26.
   # Only `predict` is of any use to somebody who depends on this crate.
+  #
+  # The list is checked rather than trusted: a binary added here and not
+  # named below ships silently, which is how `sonde`, `essn_validate`,
+  # `gridbench` and `medianbench` came to be in the package. CI compares
+  # `cargo package --list` against `predict` alone.
   "src/bin/antcheck.rs",
   "src/bin/archcheck.rs",
   "src/bin/areacheck.rs",
@@ -49,15 +54,19 @@ exclude = [
   "src/bin/correctcheck.rs",
   "src/bin/daily.rs",
   "src/bin/engines.rs",
+  "src/bin/essn_validate.rs",
   "src/bin/fuzz.rs",
+  "src/bin/gridbench.rs",
   "src/bin/irtam_validate.rs",
   "src/bin/lufcheck.rs",
   "src/bin/measure.rs",
+  "src/bin/medianbench.rs",
   "src/bin/mufcheck.rs",
   "src/bin/paritycheck.rs",
   "src/bin/portcheck.rs",
   "src/bin/porttest.rs",
   "src/bin/reliability.rs",
+  "src/bin/sonde.rs",
   "src/bin/spacewx.rs",
   "src/bin/storm.rs",
   "src/bin/threadscale.rs",

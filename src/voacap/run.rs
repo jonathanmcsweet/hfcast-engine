@@ -11,7 +11,9 @@
 //! surface — the tolerance envelope in `docs/sensitivity.md` is defined
 //! on these printed cells.
 
+use crate::voacap::fastmath::Numerics;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::deck::DeckCase;
 
@@ -26,7 +28,7 @@ use super::geometry::{path_geometry, PathGeometry};
 use super::ionogram::{alosfv, fobby, genion, sang, selmod, Ionogram};
 use super::ionosphere::{
     alatd, cofion, esind, geotim, geotim_clck, ground_constants, layer_parameters, virtim,
-    EsParams, LayerParams,
+    EsParams, LatticeRead, LayerInputs, LayerParams,
 };
 use super::magnetic::{magvar, MagneticVars};
 use super::model::Model;
@@ -123,6 +125,9 @@ pub struct RunInputs {
     /// case converted from a deck is [`Model::Compatible`] — which is
     /// what keeps every harness judging the tier it can judge.
     pub model: Model,
+    /// Which arithmetic the hot path takes. The parity engine owes the
+    /// reference its last digit and leaves this at the default.
+    pub numerics: Numerics,
 }
 
 /// Asks the engine the same question the deck card asks.
@@ -134,6 +139,7 @@ pub struct RunInputs {
 impl From<&DeckCase> for RunInputs {
     fn from(c: &DeckCase) -> Self {
         Self {
+            numerics: Numerics::reference(),
             from_lat_deg: c.from_lat,
             from_lon_deg: c.from_lon,
             to_lat_deg: c.to_lat,
@@ -188,12 +194,51 @@ impl From<&DeckCase> for RunInputs {
 /// critical frequency, semithickness and height of each layer.
 pub type LayerOverride = (usize, [R; 3], [R; 3], [R; 3]);
 
+/// `VIRTIM`'s answer for the hour, or the maps to reduce into it.
+///
+/// A driver that has already run `VIRTIM` for this hour passes the
+/// answer; every other driver passes the maps. They are two ways of
+/// naming one value, so they travel as one argument.
+#[derive(Clone, Copy)]
+pub struct AbSource<'a> {
+    pub ready: Option<&'a [R; 318]>,
+    pub cof: &'a [R],
+}
+
 /// `VIRTIM`'s answer for the hour: the caller's shared evaluation when
 /// it holds one, or a fresh one. The series depends only on the maps
 /// and the hour, so a fixed-hour grid evaluates it once and every
 /// point takes the first branch.
-fn resolved_ab(ab: Option<&[R; 318]>, cof: &[R], set: &CoefficientSet, gmt: R) -> [R; 318] {
-    ab.map_or_else(|| virtim(cof, &set.ikim, gmt), |ready| *ready)
+fn resolved_ab(ab: AbSource, set: &CoefficientSet, gmt: R) -> [R; 318] {
+    ab.ready
+        .map_or_else(|| virtim(ab.cof, &set.ikim, gmt), |ready| *ready)
+}
+
+/// The layer parameters at every control point, through the lattice
+/// when the run has one.
+///
+/// `None` computes them at every control point, which is what parity
+/// requires and what every driver but the grid does.
+fn layer_params(
+    lattice: Option<&mut LatticeRead>,
+    inputs: LayerInputs,
+    ab: &[R; 318],
+    points: &[crate::voacap::geometry::ControlPoint],
+    mags: &[MagneticVars],
+) -> Vec<LayerParams> {
+    match lattice {
+        Some(read) => read.layer_parameters(inputs, ab, points),
+        None => layer_parameters(
+            inputs.set,
+            ab,
+            points,
+            mags,
+            inputs.month,
+            inputs.ssn,
+            inputs.gmt,
+            inputs.psc,
+        ),
+    }
 }
 
 /// The ionosphere the hour loop keeps in COMMON.
@@ -204,6 +249,7 @@ fn resolved_ab(ab: Option<&[R; 318]>, cof: &[R], set: &CoefficientSet, gmt: R) -
 /// runs; whatever it skips keeps the previous hour's values, or the
 /// `blkdat` presets that an `EFVAR` or `ESVAR` card may have replaced.
 struct IonoCarry {
+    numerics: Numerics,
     ab: [R; 318],
     params: Vec<LayerParams>,
     /// `/ES/` `FS(3,5)` and `HS(5)`. Five slots whatever the path's
@@ -237,6 +283,7 @@ impl IonoCarry {
             e.hs = *hs;
         }
         IonoCarry {
+            numerics: inp.numerics,
             ab: [0.0; 318],
             params,
             es,
@@ -250,44 +297,58 @@ impl IonoCarry {
     /// so a grid at one hour computes it once and passes it to every
     /// point. `None` evaluates it here, which is what every
     /// point-to-point driver does.
-    #[allow(clippy::too_many_arguments)]
+    ///
+    /// `lattice` is the same idea taken one step further: the layer
+    /// parameters depend only on the place, so a grid at one hour can
+    /// share them between points that land in the same cell. `None`
+    /// computes them at every control point, which is what parity
+    /// requires and what every driver but the grid does.
     fn hour(
         &mut self,
-        set: &CoefficientSet,
-        cof: &[R],
+        inputs: LayerInputs,
+        ab: AbSource,
         points: &[crate::voacap::geometry::ControlPoint],
         mags: &[MagneticVars],
-        month: u32,
-        ssn: R,
-        psc: &[R; 4],
         krun: i32,
-        gmt: R,
-        ab: Option<&[R; 318]>,
+        lattice: Option<&mut LatticeRead>,
     ) {
         let _perf = crate::perf::Step::new(crate::perf::IONO_HOUR);
         // `GEOTIM` always runs, and writes every point's local mean
         // time by its own arithmetic. `TIMVAR` writes it again from a
         // different expression, so this value only survives a run that
         // skips `TIMVAR`.
-        for (p, pt) in self.params.iter_mut().zip(points) {
-            p.clck = geotim_clck(gmt, pt.lon);
-        }
+        self.params
+            .iter_mut()
+            .zip(points)
+            .for_each(|(p, pt)| p.clck = geotim_clck(inputs.gmt, pt.lon));
         if krun <= 2 {
-            self.ab = resolved_ab(ab, cof, set, gmt);
+            self.ab = resolved_ab(ab, inputs.set, inputs.gmt);
         }
         if krun <= 1 {
-            self.params = layer_parameters(set, &self.ab, points, mags, month, ssn, gmt, psc);
+            self.params = layer_params(lattice, inputs, &self.ab, points, mags);
         }
         if krun == 0 || krun == 2 {
-            // `ESIND` writes the control points it has and leaves the
-            // slots above them alone.
-            for (slot, e) in esind(set, &self.ab, points, mags, psc)
-                .into_iter()
-                .enumerate()
-            {
-                self.es[slot] = e;
-            }
+            self.es_hour(inputs.set, points, mags, inputs.psc);
         }
+    }
+
+    /// The sporadic-E slots for this hour.
+    ///
+    /// `ESIND` writes the control points it has and leaves the slots
+    /// above them alone, so this writes the slots it is given and no
+    /// others.
+    fn es_hour(
+        &mut self,
+        set: &CoefficientSet,
+        points: &[crate::voacap::geometry::ControlPoint],
+        mags: &[MagneticVars],
+        psc: &[R; 4],
+    ) {
+        let slots = esind(set, &self.ab, points, mags, psc);
+        slots
+            .into_iter()
+            .enumerate()
+            .for_each(|(slot, e)| self.es[slot] = e);
     }
 
     /// What the hour left in the arrays.
@@ -315,6 +376,7 @@ impl IonoCarry {
     /// profile in place if the deck gave one.
     fn state(&self, iedp: i32, edp: Option<&([R; 50], [R; 50])>) -> IonoState {
         let mut state = IonoState::from_layers(&self.params);
+        state.numerics = self.numerics;
         state.iedp = iedp;
         if let Some((htr, fnsq)) = edp {
             state.htr = *htr;
@@ -512,18 +574,18 @@ pub fn run_par(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<ParRow>, String> {
     let mut out = Vec::with_capacity(24 * geo.points.len());
     for jt in 1..=24i32 {
         let gmt = jt as R;
-        iono.hour(
-            &set,
-            &cof,
-            &geo.points,
-            &mags,
-            inp.month,
-            inp.ssn,
-            &psc,
-            inp.krun,
+        let inputs = LayerInputs {
+            set: &set,
+            month: inp.month,
+            ssn: inp.ssn,
             gmt,
-            None,
-        );
+            psc: &psc,
+        };
+        let ab = AbSource {
+            ready: None,
+            cof: &cof,
+        };
+        iono.hour(inputs, ab, &geo.points, &mags, inp.krun, None);
         let (params, es) = (&iono.params, &iono.es);
         let geog = Geog::from_points(params, &mags, &grounds);
         for (k, p) in params.iter().enumerate() {
@@ -631,18 +693,18 @@ pub fn run_ion(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<Vec<IonPlot>>, Str
     let mut iono = IonoCarry::new(inp, geo.points.len());
     for jt in 1..=24i32 {
         let gmt = jt as R;
-        iono.hour(
-            &set,
-            &cof,
-            &geo.points,
-            &mags,
-            inp.month,
-            inp.ssn,
-            &psc,
-            inp.krun,
+        let inputs = LayerInputs {
+            set: &set,
+            month: inp.month,
+            ssn: inp.ssn,
             gmt,
-            None,
-        );
+            psc: &psc,
+        };
+        let ab = AbSource {
+            ready: None,
+            cof: &cof,
+        };
+        iono.hour(inputs, ab, &geo.points, &mags, inp.krun, None);
         let params = &iono.params;
         let mut state = iono.state(inp.iedp, inp.edp.as_ref());
         state.fsecv = fsecv_carry;
@@ -726,18 +788,18 @@ pub fn run_muf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<MufHourOut>, Strin
     let mut iono = IonoCarry::new(inp, geo.points.len());
     for jt in 1..=24i32 {
         let gmt = jt as R;
-        iono.hour(
-            &set,
-            &cof,
-            &geo.points,
-            &mags,
-            inp.month,
-            inp.ssn,
-            &psc,
-            inp.krun,
+        let inputs = LayerInputs {
+            set: &set,
+            month: inp.month,
+            ssn: inp.ssn,
             gmt,
-            None,
-        );
+            psc: &psc,
+        };
+        let ab = AbSource {
+            ready: None,
+            cof: &cof,
+        };
+        iono.hour(inputs, ab, &geo.points, &mags, inp.krun, None);
         let params = &iono.params;
         let mut state = iono.state(inp.iedp, inp.edp.as_ref());
         state.fsecv = fsecv_carry;
@@ -828,18 +890,18 @@ pub fn run_luf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<MufHourOut>, Strin
     let mut iono = IonoCarry::new(inp, geo.points.len());
     for jt in 1..=24i32 {
         let gmt = jt as R;
-        iono.hour(
-            &set,
-            &cof,
-            &geo.points,
-            &mags,
-            inp.month,
-            inp.ssn,
-            &psc,
-            inp.krun,
+        let inputs = LayerInputs {
+            set: &set,
+            month: inp.month,
+            ssn: inp.ssn,
             gmt,
-            None,
-        );
+            psc: &psc,
+        };
+        let ab = AbSource {
+            ready: None,
+            cof: &cof,
+        };
+        iono.hour(inputs, ab, &geo.points, &mags, inp.krun, None);
         let params = &iono.params;
         let mut state = iono.state(inp.iedp, inp.edp.as_ref());
         state.fsecv = fsecv_carry;
@@ -910,6 +972,7 @@ pub fn run_luf(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<MufHourOut>, Strin
         );
         geog.apply_sigdis(&sd);
         let ctx = PassCtx {
+            numerics: inp.numerics,
             state: &state,
             ants: &ants,
             fs: &fs,
@@ -1008,6 +1071,7 @@ struct HourSetup<'a> {
     iedp: i32,
     /// `KRUN` from the `EXECUTE` card.
     krun: i32,
+    numerics: Numerics,
     /// The `EDP` card's profile.
     edp: Option<([R; 50], [R; 50])>,
     /// Whether the area driver's own comparison applies: `HFAREA` tests
@@ -1077,6 +1141,7 @@ fn hour_setup<'a>(
         *slot = *f;
     }
     Ok(HourSetup {
+        numerics: inp.numerics,
         set,
         cof,
         geo,
@@ -1184,6 +1249,7 @@ pub fn run_listing(itshfbc: &Path, inp: &RunInputs) -> Result<Prediction, String
             &mut fsecv_carry,
             &mut iono,
             None,
+            None,
         ));
     }
     Ok(Prediction { hours, path })
@@ -1200,6 +1266,7 @@ pub fn run(itshfbc: &Path, inp: &RunInputs) -> Result<Vec<HourPrediction>, Strin
 /// `lp` and `fsecv` are the state the Fortran keeps in COMMON between
 /// hours. They are arguments rather than locals because the hour loop's
 /// answers depend on them: several blocks are read stale by design.
+#[allow(clippy::too_many_arguments)]
 fn hour_body(
     s: &HourSetup,
     jt: i32,
@@ -1207,22 +1274,23 @@ fn hour_body(
     fsecv_carry: &mut [R; 3],
     iono: &mut IonoCarry,
     ab: Option<&[R; 318]>,
+    lattice: Option<&mut LatticeRead>,
 ) -> HourPrediction {
     let (set, geo, ants, deck, psc) = (s.set, &s.geo, &s.ants, s.deck, s.psc);
     {
         let gmt = jt as R;
-        iono.hour(
+        let inputs = LayerInputs {
             set,
-            &s.cof,
-            &geo.points,
-            &s.mags,
-            s.month,
-            s.ssn,
-            &psc,
-            s.krun,
+            month: s.month,
+            ssn: s.ssn,
             gmt,
-            ab,
-        );
+            psc: &psc,
+        };
+        let ab = AbSource {
+            ready: ab,
+            cof: &s.cof,
+        };
+        iono.hour(inputs, ab, &geo.points, &s.mags, s.krun, lattice);
         let params = &iono.params;
         let mut state = iono.state(s.iedp, s.edp.as_ref());
         state.fsecv = *fsecv_carry;
@@ -1345,6 +1413,7 @@ fn hour_body(
             let sd = sd_last.as_ref().expect("just set");
             geog.apply_sigdis(sd);
             let ctx = PassCtx {
+                numerics: s.numerics,
                 state: &state,
                 ants,
                 fs: &fs,
@@ -1371,6 +1440,7 @@ fn hour_body(
         if plans.len() == 2 {
             let sd = sd_last.as_ref().expect("two passes ran");
             let ctx = PassCtx {
+                numerics: s.numerics,
                 state: &state,
                 ants,
                 fs: &fs,
@@ -1512,6 +1582,9 @@ pub struct AreaInputs {
     /// Two of them are area-only, so this is the tier an area run
     /// reads as much as a point-to-point one.
     pub model: Model,
+    /// Which arithmetic the hot path takes. A driver that owes the
+    /// reference its last digit leaves this at the default.
+    pub numerics: Numerics,
 }
 
 /// One frequency's answer at one grid point, before `OUTAREA` collapses
@@ -1697,6 +1770,13 @@ impl<'a> AreaPrep<'a> {
         self.nf
     }
 
+    /// Where the magnetic pole is for this grid. A lattice node needs
+    /// it to place itself in geomagnetic latitude, and it is read once
+    /// for the whole grid because it does not depend on the point.
+    pub(crate) fn pole(&self) -> MagneticPole {
+        self.pole
+    }
+
     /// `VIRTIM`'s answer at `gmt`: the diurnal series over the maps,
     /// which no grid point moves. A fixed-hour grid computes it once
     /// and hands it to every point.
@@ -1728,6 +1808,7 @@ impl<'a> AreaPrep<'a> {
             ((fixed_lat, fixed_lon), (glat, glon))
         };
         let inp = RunInputs {
+            numerics: area.numerics,
             from_lat_deg: f64::from(from.0),
             from_lon_deg: f64::from(from.1),
             to_lat_deg: f64::from(to.0),
@@ -1811,7 +1892,7 @@ pub fn run_area(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<AreaPoint>, Str
         for ix in 1..=area.grid.nx {
             let (glat, glon, inp, s) = prep.at(itshfbc, area, ix, iy)?;
             let mut iono = IonoCarry::new(&inp, s.geo.points.len());
-            let h = hour_body(&s, area.hour, &mut lp, &mut fsecv, &mut iono, None);
+            let h = hour_body(&s, area.hour, &mut lp, &mut fsecv, &mut iono, None, None);
             out.push(area_point(&area.grid, ix, iy, glat, glon, &h, prep.nf));
         }
     }
@@ -1843,13 +1924,83 @@ pub struct AreaMedian {
 /// of the place alone: carried state would make the same place answer
 /// differently on a coarse lattice than on a fine one, and this number is
 /// computed on one lattice and read on another.
-pub fn run_area_daily_median(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<AreaMedian>, String> {
+pub fn run_area_daily_median(
+    itshfbc: &Path,
+    area: &AreaInputs,
+    threads: usize,
+) -> Result<Vec<AreaMedian>, String> {
     let set: CoefficientSet =
         redmap(itshfbc, area.fof2, area.month, area.ssn).map_err(|e| e.to_string())?;
     let prep = AreaPrep::new(itshfbc, area, &set)?;
-    let mut out = Vec::with_capacity(area.grid.nx * area.grid.ny);
-    for iy in 1..=area.grid.ny {
-        for ix in 1..=area.grid.nx {
+    let ny = area.grid.ny;
+    let workers = match threads {
+        0 => std::thread::available_parallelism().map_or(1, |n| n.get()),
+        n => n,
+    }
+    .min(ny.max(1));
+
+    // The diurnal series depends on the maps and the hour, never on the
+    // grid point, so the whole lattice reads 24 evaluations rather than
+    // one per point per hour.
+    let ab: Vec<[R; 318]> = (1..=24).map(|jt| prep.ab_at(jt as R)).collect();
+
+    let cursor = AtomicUsize::new(0);
+    let mut rows: Vec<(usize, Result<Vec<AreaMedian>, String>)> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..workers)
+            .map(|_| median_work(itshfbc, area, &prep, &ab, &cursor, ny))
+            .map(|w| scope.spawn(w))
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|h| h.join().expect("a median worker never panics"))
+            .collect()
+    });
+    // Sorted, so the answer is the same whatever order the workers
+    // finished in and however many there were.
+    rows.sort_by_key(|(row, _)| *row);
+    let mut out = Vec::with_capacity(area.grid.nx * ny);
+    for (_, row) in rows {
+        out.extend(row?);
+    }
+    Ok(out)
+}
+
+/// One worker's life: claim the next row off the shared cursor, compute
+/// it, repeat until no rows remain. Points carry nothing between them
+/// here, so a row is a whole unit of work.
+fn median_work<'a>(
+    itshfbc: &'a Path,
+    area: &'a AreaInputs,
+    prep: &'a AreaPrep<'a>,
+    ab: &'a [[R; 318]],
+    cursor: &'a AtomicUsize,
+    ny: usize,
+) -> impl FnOnce() -> Vec<(usize, Result<Vec<AreaMedian>, String>)> + 'a {
+    move || {
+        let mut mine = Vec::new();
+        // A loop because each pass claims the next row; the claim is the
+        // iteration.
+        loop {
+            let row = cursor.fetch_add(1, Ordering::Relaxed);
+            if row >= ny {
+                break;
+            }
+            mine.push((row, median_row(itshfbc, area, prep, ab, row + 1)));
+        }
+        mine
+    }
+}
+
+/// One row of the lattice: the middle of the day at each of its points.
+fn median_row(
+    itshfbc: &Path,
+    area: &AreaInputs,
+    prep: &AreaPrep<'_>,
+    ab: &[[R; 318]],
+    iy: usize,
+) -> Result<Vec<AreaMedian>, String> {
+    (1..=area.grid.nx)
+        .map(|ix| {
             let (glat, glon, inp, s) = prep.at(itshfbc, area, ix, iy)?;
             let mut lp = ModeLoopState::default();
             let mut fsecv = [0.0 as R; 3];
@@ -1859,19 +2010,26 @@ pub fn run_area_daily_median(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<Ar
             // its own previous hour. Skipping hours would not just cost
             // accuracy in the median, it would change the hours kept.
             for jt in 1..=24i32 {
-                let h = hour_body(&s, jt, &mut lp, &mut fsecv, &mut iono, None);
+                let h = hour_body(
+                    &s,
+                    jt,
+                    &mut lp,
+                    &mut fsecv,
+                    &mut iono,
+                    Some(&ab[jt as usize - 1]),
+                    None,
+                );
                 for (band, son) in h.son.iter().take(prep.nf).enumerate() {
                     day[band].push(freq_answer(son).snr_db);
                 }
             }
-            out.push(AreaMedian {
+            Ok(AreaMedian {
                 lat: glat,
                 lon: glon,
                 median_snr_db: day.iter().map(|hours| median_db(hours)).collect(),
-            });
-        }
-    }
-    Ok(out)
+            })
+        })
+        .collect()
 }
 
 /// One grid point computed with fresh state — its own mode-loop state,
@@ -1881,6 +2039,7 @@ pub fn run_area_daily_median(itshfbc: &Path, area: &AreaInputs) -> Result<Vec<Ar
 /// carry begins. The truecast grid driver uses it for every point, which
 /// is what makes its output independent of lattice shape, visit order
 /// and thread count.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn area_point_fresh(
     itshfbc: &Path,
     area: &AreaInputs,
@@ -1888,12 +2047,13 @@ pub(crate) fn area_point_fresh(
     ix: usize,
     iy: usize,
     ab: Option<&[R; 318]>,
+    lattice: Option<&mut LatticeRead>,
 ) -> Result<(R, R, Vec<AreaFreq>), String> {
     let (glat, glon, inp, s) = prep.at(itshfbc, area, ix, iy)?;
     let mut lp = ModeLoopState::default();
     let mut fsecv = [0.0 as R; 3];
     let mut iono = IonoCarry::new(&inp, s.geo.points.len());
-    let h = hour_body(&s, area.hour, &mut lp, &mut fsecv, &mut iono, ab);
+    let h = hour_body(&s, area.hour, &mut lp, &mut fsecv, &mut iono, ab, lattice);
     Ok((
         glat,
         glon,
@@ -2008,16 +2168,18 @@ fn build_area_antennas(itshfbc: &Path, area: &AreaInputs, nf: usize) -> Result<A
         // names several frequencies, because an area table is built at
         // one frequency and the reference holds only one of them. That
         // fallback is cut along a single bearing for the whole grid,
-        // where an area table is re-cut at every grid point — and the
-        // difference is not small. Measured over a 3,072-point grid, it
-        // moved the take-off angle at every reachable point, by up to 44
-        // degrees, which is the number the no-skip-zone shading is drawn
-        // from.
+        // where an area table is re-cut at every grid point, and the
+        // difference is not small. Re-measured over ten configurations
+        // in 2026: up to 37.5 degrees of take-off angle at the worst
+        // cell, on up to 20 percent of them, and the take-off angle is
+        // what the no-skip-zone shading is drawn from. `docs/port.md`
+        // has the spread and the method.
         //
         // So this builds the table the reference would have built for
         // each band alone. Several bands in one pass then answer exactly
-        // as several runs would, which is what `run_area_matches_single`
-        // holds it to.
+        // as several runs would, which is what `tests/area_bands.rs`
+        // holds it to, and `docs/port.md` records why the port does not
+        // follow the reference here.
         for (index, &freq) in area.freqs_mhz.iter().take(nf).enumerate() {
             let (header, table) = area_table(&setup, freq).map_err(|e| e.to_string())?;
             let window = if nf == 1 {

@@ -26,6 +26,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::voacap::coefficients::redmap;
 use crate::voacap::con::R;
+use crate::voacap::ionosphere::LatticeRead;
 use crate::voacap::run::{area_point_fresh, AreaFreq, AreaInputs, AreaPrep};
 
 /// One grid question: the parity area inputs (lattice, ends, month,
@@ -75,14 +76,32 @@ struct PointAnswer {
     freqs: Vec<AreaFreq>,
 }
 
-/// Runs the lattice with threads inside the engine. The output is
-/// invariant under the thread count by construction, and each point
-/// matches a fresh-state serial run of the same place bit for bit.
-pub fn predict_grid(itshfbc: &Path, req: &GridRequest) -> Result<GridPlanes, String> {
+/// One computed grid point with everything the run produced there.
+///
+/// The planes carry the three values a drawn map needs. This carries
+/// the whole per-band answer, deciles included, which is what the
+/// server's own corrections read: they move the median and recompute
+/// reliability from the spread around the moved value, so a cell
+/// without the spread keeps the engine's reliability instead.
+#[derive(Debug, Clone)]
+pub struct GridCell {
+    pub lat: R,
+    /// Folded into 0 to 360, as the parity area driver reports it.
+    pub lon: R,
+    /// One entry per frequency asked for, in the order asked.
+    pub per_freq: Vec<AreaFreq>,
+}
+
+/// Runs the lattice with threads inside the engine, in row order.
+///
+/// The output is invariant under the thread count by construction, and
+/// each point matches a fresh-state serial run of the same place bit
+/// for bit.
+fn compute(itshfbc: &Path, req: &GridRequest) -> Result<(usize, Vec<Vec<PointAnswer>>), String> {
     let area = &req.area;
     let set = redmap(itshfbc, area.fof2, area.month, area.ssn).map_err(|e| e.to_string())?;
     let prep = AreaPrep::new(itshfbc, area, &set)?;
-    let (nx, ny) = (area.grid.nx, area.grid.ny);
+    let ny = area.grid.ny;
     let workers = match req.threads {
         0 => std::thread::available_parallelism().map_or(1, |n| n.get()),
         n => n,
@@ -103,12 +122,49 @@ pub fn predict_grid(itshfbc: &Path, req: &GridRequest) -> Result<GridPlanes, Str
             .flat_map(|h| h.join().expect("a grid worker never panics"))
             .collect()
     });
+    // Sorted by row index, so the answer cannot depend on which worker
+    // finished first.
     rows.sort_by_key(|(row, _)| *row);
-    assemble(nx, ny, prep.nf(), rows)
+    let ordered = rows
+        .into_iter()
+        .map(|(_, answers)| answers)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok((prep.nf(), ordered))
+}
+
+/// The lattice as `f32` planes, which is what a drawn map and the
+/// packed wire format want.
+pub fn predict_grid(itshfbc: &Path, req: &GridRequest) -> Result<GridPlanes, String> {
+    let (nf, rows) = compute(itshfbc, req)?;
+    Ok(assemble(req.area.grid.nx, req.area.grid.ny, nf, rows))
+}
+
+/// The lattice as one cell a point, carrying the whole per-band answer.
+///
+/// Row order, left to right within a row, which is the order the parity
+/// area driver reports and the order a caller can zip against its own
+/// axis arrays without carrying indices.
+pub fn predict_grid_cells(itshfbc: &Path, req: &GridRequest) -> Result<Vec<GridCell>, String> {
+    let (_, rows) = compute(itshfbc, req)?;
+    Ok(rows
+        .into_iter()
+        .flatten()
+        .map(|p| GridCell {
+            lat: p.lat,
+            lon: p.lon,
+            per_freq: p.freqs,
+        })
+        .collect())
 }
 
 /// One worker's life: claim the next row off the shared cursor,
 /// compute it, repeat until no rows remain.
+///
+/// The ionosphere lattice is per worker rather than shared, so no two
+/// threads contend for it and no lock is needed. A node computed by one
+/// worker is recomputed by any other worker that needs it, which costs
+/// at most one extra build per node per thread and keeps the answer
+/// independent of which worker won which row.
 fn work(
     itshfbc: &Path,
     area: &AreaInputs,
@@ -117,6 +173,7 @@ fn work(
     cursor: &AtomicUsize,
     ny: usize,
 ) -> Vec<(usize, Result<Vec<PointAnswer>, String>)> {
+    let mut lattice = LatticeRead::from_numerics(area.numerics, prep.pole());
     let mut mine = Vec::new();
     // A loop because each pass claims the next row; the claim is the
     // iteration.
@@ -125,36 +182,46 @@ fn work(
         if row >= ny {
             break;
         }
-        mine.push((row, compute_row(itshfbc, area, prep, ab, row)));
+        mine.push((
+            row,
+            compute_row(itshfbc, area, prep, ab, row, lattice.as_mut()),
+        ));
+    }
+    if let Some(read) = &lattice {
+        let (hits, misses) = read.counts();
+        crate::perf::lattice_reads(hits, misses);
     }
     mine
 }
 
 /// One row of the lattice, left to right, fresh state per point.
+#[allow(clippy::too_many_arguments)]
 fn compute_row(
     itshfbc: &Path,
     area: &AreaInputs,
     prep: &AreaPrep<'_>,
     ab: &[R; 318],
     row: usize,
+    mut lattice: Option<&mut LatticeRead>,
 ) -> Result<Vec<PointAnswer>, String> {
     (1..=area.grid.nx)
         .map(|ix| {
-            let (lat, lon, freqs) = area_point_fresh(itshfbc, area, prep, ix, row + 1, Some(ab))?;
+            let (lat, lon, freqs) = area_point_fresh(
+                itshfbc,
+                area,
+                prep,
+                ix,
+                row + 1,
+                Some(ab),
+                lattice.as_deref_mut(),
+            )?;
             Ok(PointAnswer { lat, lon, freqs })
         })
         .collect()
 }
 
-/// Joins the computed rows into planes. Rows arrive sorted, so the
-/// first failed row is the error reported whatever order the workers
-/// finished in.
-fn assemble(
-    nx: usize,
-    ny: usize,
-    n_freqs: usize,
-    rows: Vec<(usize, Result<Vec<PointAnswer>, String>)>,
-) -> Result<GridPlanes, String> {
+/// Joins the computed rows into planes. Rows arrive in row order.
+fn assemble(nx: usize, ny: usize, n_freqs: usize, rows: Vec<Vec<PointAnswer>>) -> GridPlanes {
     let n_points = nx * ny;
     let mut planes = GridPlanes {
         nx,
@@ -167,8 +234,8 @@ fn assemble(
         takeoff_deg: vec![f32::NAN; n_freqs * n_points],
     };
     // A loop for the indexed writes into the preallocated planes.
-    for (row, answers) in rows {
-        for (ix, p) in answers?.into_iter().enumerate() {
+    for (row, answers) in rows.into_iter().enumerate() {
+        for (ix, p) in answers.into_iter().enumerate() {
             let at = planes.point(ix, row);
             planes.lat_deg[at] = p.lat;
             planes.lon_deg[at] = p.lon;
@@ -182,7 +249,7 @@ fn assemble(
             }
         }
     }
-    Ok(planes)
+    planes
 }
 
 #[cfg(test)]
@@ -192,12 +259,14 @@ mod tests {
     use crate::voacap::area::{Grid, Projection};
     use crate::voacap::coefficients::FoF2Model;
     use crate::voacap::data;
+    use crate::voacap::fastmath::Numerics;
     use crate::voacap::model::Model;
     use crate::voacap::run::run_area;
 
     /// A small lattice around a mid-latitude transmitter, two bands.
     fn small_area() -> AreaInputs {
         AreaInputs {
+            numerics: Default::default(),
             grid: Grid {
                 projection: Projection::LatLon,
                 plat: 47.0,
@@ -229,14 +298,16 @@ mod tests {
     }
 
     fn grid_at(threads: usize) -> GridPlanes {
-        predict_grid(
-            &data::embedded_root(),
-            &GridRequest {
-                area: small_area(),
-                threads,
-            },
-        )
-        .expect("the embedded root answers")
+        grid_with(threads, small_area().numerics)
+    }
+
+    fn grid_with(threads: usize, numerics: Numerics) -> GridPlanes {
+        let area = AreaInputs {
+            numerics,
+            ..small_area()
+        };
+        predict_grid(&data::embedded_root(), &GridRequest { area, threads })
+            .expect("the embedded root answers")
     }
 
     /// NaN-safe bitwise equality for one plane.
@@ -252,6 +323,42 @@ mod tests {
         assert!(same_bits(&one.takeoff_deg, &three.takeoff_deg));
         assert!(same_bits(&one.lat_deg, &three.lat_deg));
         assert!(same_bits(&one.lon_deg, &three.lon_deg));
+    }
+
+    /// Each worker keeps its own lattice, so two threads can each build
+    /// the same node. That is only safe because a node is a function of
+    /// its position alone: both copies must hold the same numbers, and
+    /// the grid must answer the same whatever the thread count. If a
+    /// node ever picked up something from the point that asked for it,
+    /// this is where it would show.
+    #[test]
+    fn the_lattice_does_not_let_the_thread_count_move_the_answer() {
+        let taken = Numerics::from_names("lattice-5").expect("a lattice name parses");
+        let (one, three) = (grid_with(1, taken), grid_with(3, taken));
+        assert!(same_bits(&one.reliability, &three.reliability));
+        assert!(same_bits(&one.snr_db, &three.snr_db));
+        assert!(same_bits(&one.takeoff_deg, &three.takeoff_deg));
+    }
+
+    /// The lattice is an approximation, so it is allowed to move the
+    /// answer, but only by a little. The envelope is the one the parity
+    /// study measured for a carry-free rebuild: past it, the lattice is
+    /// not interpolating, it is reading the wrong place.
+    #[test]
+    fn the_lattice_stays_inside_the_rebuild_envelope() {
+        let taken = Numerics::from_names("lattice-5").expect("a lattice name parses");
+        let (off, on) = (grid_at(2), grid_with(2, taken));
+        let worst = |a: &[f32], b: &[f32]| {
+            a.iter()
+                .zip(b)
+                .map(|(x, y)| f64::from((x - y).abs()))
+                .fold(0.0, f64::max)
+        };
+        let rel = worst(&off.reliability, &on.reliability);
+        let snr = worst(&off.snr_db, &on.snr_db);
+        assert!(rel <= 0.011, "the lattice moved reliability {rel}");
+        assert!(snr <= 2.0, "the lattice moved snr {snr} dB");
+        assert!(rel > 0.0 || snr > 0.0, "the lattice changed nothing at all");
     }
 
     #[test]
@@ -274,6 +381,10 @@ mod tests {
         // rest of the lattice the carry is the entire difference, and
         // its measured size on this lattice is within the engine's own
         // day-to-day noise floor.
+        //
+        // Both sides run the reference numerics, which is what makes the
+        // carry the only difference. Truecast's own numerics are a
+        // second, deliberate difference, measured elsewhere.
         let parity = run_area(&data::embedded_root(), &small_area()).expect("parity answers");
         let planes = grid_at(2);
         let first = &parity[0];

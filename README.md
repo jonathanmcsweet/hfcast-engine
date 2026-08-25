@@ -20,7 +20,7 @@ High frequency radio signals (HF) travel long distances under differeing conditi
 
 This libary offers three models to predict HF propagation: 
 
-1. A faithful port of VOACAP written by the US Institute for Telecommunication Sciences
+1. A faithful port of VOACAP, built for the Voice of America from the US Institute for Telecommunication Sciences' IONCAP
 2. VOACAP Corrected, a VOACAP implementation with defects fixed,
 3. Truecast, which runs VOACAP's physics against a more granular daily average, the effective sunspot index, a geomagnetic storm table, a corrected
 layer height, and a lower edge of the usable window that the original
@@ -75,18 +75,18 @@ answer. Truecast conditions that same climatology on the day itself:
   correction, so a device that never goes online still beats the
   monthly median.
 
-Each piece is fitted on a ~130-month ionosonde archive and judged only
-on eight held-out months the fits never saw.
+Fitted on an eleven-year ionosonde archive. The verdict comes from
+eight months held back before any fit ran, chosen by rule to cover the
+record's worst storms, its quietest spells and its seasonal edges.
+
 [docs/comparison.md](docs/comparison.md) puts the two models side by
 side; [docs/offline.md](docs/offline.md) is the measured case that the
 offline form beats the monthly median on individual days.
 
-### Why keep the defects
+### Why keep the defects?
 
 If the engine copies the defects, then "the same as the original" is
-something you can test. If it does not, it is an opinion, and that test
-is what the whole method depends on. Corrections then live in one named
-place, where each one can be measured alone.
+something you can test and verify.
 
 ## The proof for the orignial VOACAP model
 
@@ -96,16 +96,17 @@ Each test below runs the original Fortran and this engine on the same input, and
 | --- | --- | --- |
 | `portcheck` | 463,104 printed cells and 23,040 mode labels, over 96 paths | 0 differ |
 | `fuzz` | 600 generated inputs, 434,116 lines of output | identical |
-| `areacheck` | 749 area points and 17,791 cells | identical |
+| `areacheck` | 749 area points and 17,791 cells | 19 of 21 grids identical, 2 differ [by design](docs/port.md) |
 | `lufcheck` | 1,152 rows of the lowest usable frequency table | identical |
 | `antcheck` | each antenna type, against the gain files of the original | identical |
 | `paritycheck` | 7,104 fields the [HFcast](https://github.com/jonathanmcsweet/hfcast) app reads | 0 differ |
 | `archcheck` | this engine against itself on a different processor | identical |
 
-Plus 279 unit tests and 57 harness and integration tests.
+Plus 307 unit tests and 61 harness and integration tests.
 
-A [daily job](docs/soak.md) runs 200 paths through both engines with the
-space weather of that day. It fails if one number is different.
+A [daily job](docs/soak.md) runs 200 paths through HFcast Compatible and
+the Fortran reference with the space weather of that day. It fails if one
+number is different.
 
 ## How accurate is it
 

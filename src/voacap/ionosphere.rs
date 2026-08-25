@@ -21,9 +21,11 @@
 #![allow(clippy::excessive_precision)]
 
 use super::coefficients::CoefficientSet;
-use super::con::{D2R, R, R2D};
-use super::geometry::ControlPoint;
-use super::magnetic::MagneticVars;
+use super::con::{MagneticPole, D2R, R, R2D};
+use super::geometry::{geomagnetic_latitude, ControlPoint};
+use super::lattice::{blend1, blend3, Blend, Interp, Lattice};
+use super::magnetic::{magvar, MagneticVars};
+use crate::voacap::fastmath::Numerics;
 
 /// Start of each map's coefficients in `COFION` (1-based, from `voacapw.for`).
 const IA: [usize; 6] = [1, 276, 703, 978, 1966, 2407];
@@ -344,12 +346,7 @@ pub fn layer_parameters(
             if cendog - cencat > 0.0 {
                 ssp = sun[0] * D2R;
             }
-            let mut clock = gmt + cenlg / 0.261799387;
-            if 24.0 - clock < 0.0 {
-                clock -= 24.0;
-            } else if clock <= 0.0 {
-                clock += 24.0;
-            }
+            let clock = timvar_clck(gmt, cenlg);
             let z = cenlg - ssl;
             let cycen = (cenlat.sin() * ssp.sin() + cenlat.cos() * ssp.cos() * z.cos()).acos();
 
@@ -594,6 +591,173 @@ pub fn esind(
             }
         })
         .collect()
+}
+
+/// `TIMVAR`'s local mean time at a longitude, hours.
+///
+/// Runs from 0 to 24 and jumps back, so it is not continuous in
+/// longitude and must never be blended between two lattice nodes: a
+/// blend across the jump gives noon where midnight belongs. It is
+/// exactly linear in longitude either side of the jump, so recomputing
+/// it at the reading position is both exact and an add.
+pub fn timvar_clck(gmt: R, lon: R) -> R {
+    let mut clock = gmt + lon / 0.261799387;
+    if 24.0 - clock < 0.0 {
+        clock -= 24.0;
+    } else if clock <= 0.0 {
+        clock += 24.0;
+    }
+    clock
+}
+
+impl Blend for LayerParams {
+    /// Every field blended except `clck`, which is left as a NaN for
+    /// the reader to fill from its own longitude.
+    ///
+    /// A NaN rather than a zero because a zero is a plausible local
+    /// mean time and would travel a long way through the engine before
+    /// anything looked wrong, while a NaN reaches the answer as a NaN.
+    fn blend(&self, other: &Self, f: R) -> Self {
+        LayerParams {
+            fi: blend3(&self.fi, &other.fi, f),
+            yi: blend3(&self.yi, &other.yi, f),
+            hi: blend3(&self.hi, &other.hi, f),
+            f2m3: blend1(self.f2m3, other.f2m3, f),
+            hpf2: blend1(self.hpf2, other.hpf2, f),
+            rat: blend1(self.rat, other.rat, f),
+            abiy: blend1(self.abiy, other.abiy, f),
+            clck: R::NAN,
+            zenang: blend1(self.zenang, other.zenang, f),
+            zenmax: blend1(self.zenmax, other.zenmax, f),
+        }
+    }
+}
+
+/// Everything a layer-parameter call needs that does not vary with the
+/// place it is asked about.
+///
+/// These five are fixed for a whole hour of a whole grid while only
+/// latitude and longitude move, which is the fact the lattice rests on:
+/// gathering them into one value is what lets a node be a function of
+/// the place alone. It also keeps the two calls below inside the
+/// argument count the complexity gate allows, rather than silencing
+/// that gate at each of them.
+#[derive(Clone, Copy)]
+pub struct LayerInputs<'a> {
+    pub set: &'a CoefficientSet,
+    pub month: u32,
+    pub ssn: R,
+    pub gmt: R,
+    pub psc: &'a [R; 4],
+}
+
+/// The layer parameters at one place, as the unmodified chain would
+/// compute them there.
+///
+/// This is what a lattice node holds. It makes the one control point
+/// the chain needs, takes the magnetic variables and the geomagnetic
+/// latitude at that position, and runs the same `layer_parameters` the
+/// engine runs, so a node cannot be a different calculation from the
+/// one it stands in for. `rd`, the distance along a path, is set to
+/// zero because `layer_parameters` never reads it, which is the fact
+/// the whole lattice rests on.
+pub fn layer_parameters_at(
+    inputs: LayerInputs,
+    ab: &[R; 318],
+    pole: MagneticPole,
+    lat: R,
+    lon: R,
+) -> LayerParams {
+    let point = ControlPoint {
+        rd: 0.0,
+        lat,
+        lon,
+        gmlat: geomagnetic_latitude(pole, lat, lon),
+    };
+    let mags = [magvar(lat, lon)];
+    layer_parameters(
+        inputs.set,
+        ab,
+        &[point],
+        &mags,
+        inputs.month,
+        inputs.ssn,
+        inputs.gmt,
+        inputs.psc,
+    )
+    .pop()
+    .expect("one point in, one set of parameters out")
+}
+
+/// The layer-parameter lattice a run reads from, and the magnetic pole
+/// its nodes need to place themselves in geomagnetic latitude.
+///
+/// The two travel together because the pole is read only when the
+/// lattice is on, so a run with the lattice off passes `None` and never
+/// has to hold a pole at all.
+///
+/// One of these answers for a single hour of a single month at a single
+/// index, because a node is a function of the place *and* of those
+/// three. The grid driver builds one per worker for its one hour, which
+/// is the only caller that satisfies it; every driver that walks 24
+/// hours passes `None`.
+#[derive(Debug, Clone)]
+pub struct LatticeRead {
+    nodes: Lattice<LayerParams>,
+    pole: MagneticPole,
+}
+
+impl LatticeRead {
+    /// The lattice a `Numerics` asks for, or `None` when it asks for
+    /// none. Reading the spacing and the interpolation from one place
+    /// keeps the name a run prints and the lattice it ran the same
+    /// thing.
+    pub fn from_numerics(numerics: Numerics, pole: MagneticPole) -> Option<Self> {
+        let interp = if numerics.lattice_nearest {
+            Interp::Nearest
+        } else {
+            Interp::Bilinear
+        };
+        numerics.lattice_deg().map(|step_deg| LatticeRead {
+            nodes: Lattice::new(step_deg, interp),
+            pole,
+        })
+    }
+
+    /// Reads that found a node, and reads that had to build one.
+    ///
+    /// A cache that ships has to be seen to hit. Two earlier caches in
+    /// this engine measured nothing and said nothing about it, which is
+    /// why this is on the type rather than left to a later argument.
+    pub fn counts(&self) -> (u64, u64) {
+        self.nodes.counts()
+    }
+
+    /// The layer parameters at every control point, from the lattice.
+    ///
+    /// Local mean time is recomputed at the point rather than taken
+    /// from the node. It steps by 24 hours at the date line, so a blend
+    /// across that step would put a point in the wrong half of its day;
+    /// and it is exactly linear either side, so recomputing it is both
+    /// exact and cheaper than a blend.
+    pub fn layer_parameters(
+        &mut self,
+        inputs: LayerInputs,
+        ab: &[R; 318],
+        points: &[ControlPoint],
+    ) -> Vec<LayerParams> {
+        let (nodes, pole) = (&mut self.nodes, self.pole);
+        points
+            .iter()
+            .map(|pt| {
+                let mut p = nodes.at(pt.lat, pt.lon, |lat, lon| {
+                    layer_parameters_at(inputs, ab, pole, lat, lon)
+                });
+                p.clck = timvar_clck(inputs.gmt, pt.lon);
+                p
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]

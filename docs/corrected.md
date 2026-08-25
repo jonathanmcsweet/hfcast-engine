@@ -1,18 +1,18 @@
-# The corrected tier — what each fix changes, and what it measured
+# The corrected tier: what each fix changes, and what it measured
 
 `Model::Corrected` fixes VOACAP's documented defects. This file records,
 per fix, what it moves and whether it makes predictions better. Both
 questions are needed: "it is a defect" does not imply "fixing it
-improves the forecast", because VOACAP's empirical constants were
-fitted with the defects present, so a defect can be load-bearing.
+improves the forecast", because VOACAP's empirical constants were fitted
+with the defects present, so a defect can be load-bearing.
 
 Two measurements per fix:
 
 - **What moved.** `correctcheck --fix NAME --corpus NAME` runs a corpus
   twice, once compatible and once with only that fix on, and reports
-  which printed cells differ. The corpus has to reach the fix's site.
-  If it can't, the report shows no movement, and a reader has no way
-  to tell whether the fix did nothing or was simply never exercised.
+  which printed cells differ. The corpus has to reach the fix's site. If
+  it can't, the report shows no movement, and a reader has no way to
+  tell whether the fix did nothing or was simply never exercised.
 - **Whether it helped.** `validate --fix NAME` scores the ported engine
   against measured WSPR reception across the eight validation months,
   beside `validate --ported` as the control. Same engine both sides, so
@@ -35,26 +35,26 @@ of documented defects with their fixes on.
 
 "Unmeasurable" is not "none": it means no corpus of measured radio
 exists for the quantity the fix changes. See the last section.
-`area_antenna_end` is weaker still — no corpus of any kind reaches it,
+`area_antenna_end` is weaker still. No corpus of any kind reaches it,
 for the reason its own section gives.
 
-## `pole_file` — the magnetic pole database file is read
+## `pole_file`: the magnetic pole database file is read
 
 **The defect.** `MagneticPole::for_tree` builds the database path
 without a separator, so the reference looks for
 `<tree>database/north_pole.txt` and never finds the installed
 `<tree>/database/north_pole.txt`. Every run therefore uses the built-in
-pole at 78.5 N, and the file the distribution ships — which exists
-precisely so the pole can be moved, and carries a page of
-correspondence about doing so — has no effect. The installed file says
-79.5 N, so the fix moves the geomagnetic pole one degree.
+pole at 78.5 N, and the file the distribution ships, which exists
+precisely so the pole can be moved and carries a page of correspondence
+about doing so, has no effect. The installed file says 79.5 N, so the
+fix moves the geomagnetic pole one degree.
 
 A `run/north_pole.txt` is read either way, so the fix only changes runs
 whose tree has a database file and no run file. That is the stock
 installation.
 
 **What moved.** All 96 sweep cases touched; 12,807 of 486,144 printed
-cells, 2.6%, with no structural change — no cell appeared or vanished.
+cells, 2.6%, with no structural change: no cell appeared or vanished.
 
 Every row `correctcheck` reports, so the counts sum to the 12,807 above:
 
@@ -78,15 +78,15 @@ Every row `correctcheck` reports, so the counts sum to the 12,807 above:
 | MUFday |          55 |         0.36 |
 | MPROB  |          25 |         0.58 |
 | MUF    |          20 |         0.10 |
-| MODE   |          13 |            — |
+| MODE   |          13 |            |
 | N DBW  |           1 |         1.00 |
 
 `MODE` is a text field, so it has no worst change.
 
-So it is not cosmetic: a virtual height moves by up to 331 km, an SNR
-by up to 46 dB, and thirteen cells change which propagation mode
-dominates. Those extremes are high-latitude paths, where a one-degree
-pole shift moves the geomagnetic latitude most.
+So it is not cosmetic: a virtual height moves by up to 331 km, an SNR by
+up to 46 dB, and thirteen cells change which propagation mode dominates.
+Those extremes are high-latitude paths, where a one-degree pole shift
+moves the geomagnetic latitude most.
 
 **Whether it helped: no measurable difference.** Eight months, about
 26,000 path-hours, ported engine both sides.
@@ -112,7 +112,7 @@ the geomagnetic latitude. The cells that moved most are polar, and the
 validation corpus has almost none.
 
 **Decision: kept on.** It does not measure worse, and it is what the
-program intended — the file exists to be read, and with the defect in
+program intended: the file exists to be read, and with the defect in
 place a user editing it gets silence. Anyone wanting the old pole can
 still have it, either through `Model::Compatible` or by putting the
 value in `run/north_pole.txt`, which is read on both tiers.
@@ -120,15 +120,14 @@ value in `run/north_pole.txt`, which is read on both tiers.
 ## The LUF corpus
 
 Both LUF fixes live in `luffy_luf`, which only card methods 26 to 29
-run. The corpus is therefore the fuzz corpus with the method changed
-to 26: those decks contribute path, season, sunspot number and
-antennas, and their frequency cards are ignored because the LUF
-methods sweep a complement of their own. `correctcheck --corpus luf`
-runs it.
+run. The corpus is therefore the fuzz corpus with the method changed to
+26: those decks contribute path, season, sunspot number and antennas,
+and their frequency cards are ignored because the LUF methods sweep a
+complement of their own. `correctcheck --corpus luf` runs it.
 
 Its compatible half has the same oracle as everything else: `lufcheck`
-runs all 48 cases through the reference and compares every column of
-the method-26 table, and after both fixes landed it still reports 1152
+runs all 48 cases through the reference and compares every column of the
+method-26 table, and after both fixes landed it still reports 1152
 hour-rows with every cell matching. So the movement below is the fix,
 not a port that drifted.
 
@@ -136,18 +135,18 @@ What the table prints is GMT, LMT, FOT, HPF, the sporadic-E MUF, the
 circuit MUF and the LUF. Only the LUF can move: the rest are computed
 before the LUF search runs.
 
-## `luf_scan_best` — the no-LUF-found scan keeps its running best
+## `luf_scan_best`: the no-LUF-found scan keeps its running best
 
 **The defect.** When no frequency in the complement meets the required
 reliability, the search returns the most reliable one it saw. The loop
-never reassigns its running best, so every slot is compared against
-slot 1's reliability and the answer is the last slot beating slot 1
-rather than the highest. The source carries a comment questioning the
-test. The value is printed as a negative LUF, which is how the listing
-says "nothing qualified, here is the best there was".
+never reassigns its running best, so every slot is compared against slot
+1's reliability and the answer is the last slot beating slot 1 rather
+than the highest. The source carries a comment questioning the test. The
+value is printed as a negative LUF, which is how the listing says
+"nothing qualified, here is the best there was".
 
-**What moved.** 41 of 48 method-26 cases; 587 of 1152 printed LUFs,
-51%, by up to 20.00 MHz. Nothing else in the table moved, and nothing
+**What moved.** 41 of 48 method-26 cases; 587 of 1152 printed LUFs, 51%,
+by up to 20.00 MHz. Nothing else in the table moved, and nothing
 appeared or vanished.
 
 Half the hours changing is expected rather than alarming: the scan only
@@ -161,32 +160,32 @@ later in the sweep.
 most reliable frequency, and with the defect it returns a different one
 by up to 20 MHz.
 
-## `luf_pass_area` — the short LUF pass uses one area throughout
+## `luf_pass_area`: the short LUF pass uses one area throughout
 
 **The defect.** The short LUF pass builds its reflectrix and raysets
-with `FINDF` and `FDIST`, which take the sample area as an argument,
-and then reads its modes through routines that pick the area up
-internally from `JMODE`. Those two are the same area in every systems
-pass. They are not here: the electron-density chain ends with
-`IF((IPFG.EQ.100).OR.(K.GT.1))GO TO 87`, which names only `IPFG` 100,
-so the LUF pass falls through and runs the receiver-end area as well,
+with `FINDF` and `FDIST`, which take the sample area as an argument, and
+then reads its modes through routines that pick the area up internally
+from `JMODE`. Those two are the same area in every systems pass. They
+are not here: the electron-density chain ends with
+`IF((IPFG.EQ.100).OR.(K.GT.1))GO TO 87`, which names only `IPFG` 100, so
+the LUF pass falls through and runs the receiver-end area as well,
 leaving `K = KFX`. The pass therefore builds raysets for one area and
 reads modes for another.
 
 **The fix** uses the controlling area throughout, which is what the
-systems pass does. That direction rather than the other one because
-the LUF is defined as the frequency at which the systems model's
-reliability meets the requirement: computing it from a different area
-than the systems model uses makes the threshold and the thing being
-thresholded disagree.
+systems pass does. That direction rather than the other one because the
+LUF is defined as the frequency at which the systems model's reliability
+meets the requirement: computing it from a different area than the
+systems model uses makes the threshold and the thing being thresholded
+disagree.
 
-**What moved.** 11 of 48 method-26 cases; 146 of 1152 printed LUFs,
-13%, by up to 35.52 MHz. Nothing else moved.
+**What moved.** 11 of 48 method-26 cases; 146 of 1152 printed LUFs, 13%,
+by up to 35.52 MHz. Nothing else moved.
 
 Fewer cases than `luf_scan_best` because the two areas only differ when
-the electron-density chain ran a second time — when the controlling
-area is the first one and the path has more than one sample area. Where
-they do differ, the change is larger.
+the electron-density chain ran a second time, which happens when the
+controlling area is the first one and the path has more than one sample
+area. Where they do differ, the change is larger.
 
 **Whether it helped: no measurement exists.** See the last section.
 
@@ -195,40 +194,38 @@ that this is a reading of the program's intent, not a measurement:
 nothing here shows a corrected LUF is closer to the lowest usable
 frequency on a real path.
 
-## `curtain_elevation` — the threshold that lost its decimal point
+## `curtain_elevation`: the threshold that lost its decimal point
 
 **The defect.** The IONCAP curtain, antenna type 26, decides whether to
-compute its pattern by testing the elevation against the integer
-literal `0001` where `.0001` was meant. One radian, not a ten-thousandth
-of one. So every elevation within a radian of vertical — above about 33
-degrees — skips the calculation and takes the floor gain. And on that
-path `SOK` still holds `EX(1)`, the elements per bay, so what the
-antenna reports is the floor plus its element count rather than the
-floor.
+compute its pattern by testing the elevation against the integer literal
+`0001` where `.0001` was meant. One radian, not a ten-thousandth of one.
+So every elevation within a radian of vertical, above about 33 degrees,
+skips the calculation and takes the floor gain. And on that path `SOK`
+still holds `EX(1)`, the elements per bay, so what the antenna reports
+is the floor plus its element count rather than the floor.
 
 A curtain is a high-gain array aimed at a specific elevation, and 33
-degrees is well inside the range a short or medium path uses, so this
-is not a corner.
+degrees is well inside the range a short or medium path uses, so this is
+not a corner.
 
 **The fix** is the threshold alone, `.0001` for `0001`. What the
 comparison still does at that value is guard the division by zero at
-exactly vertical, which is what the decimal point was there for: at
-90 degrees both tiers take the floor.
+exactly vertical, which is what the decimal point was there for: at 90
+degrees both tiers take the floor.
 
 **The corpus.** The sweep paths with the tree's one type-26 file,
 `samples/sample.26`, at both ends. `correctcheck --corpus curtain` runs
 it. Two things underwrite its compatible half: `antcheck` compares the
-whole gain table for that file against the reference's own
-`gain01.dat`, 2766 cells at the 0.001 dB the file carries, and an
-integration test compares a whole curtain listing against the reference
-byte for byte. The second was added with this fix, because nothing
-covered it — the fuzz corpus draws IONCAP types 21, 24 and 27 but not
-26.
+whole gain table for that file against the reference's own `gain01.dat`,
+2766 cells at the 0.001 dB the file carries, and an integration test
+compares a whole curtain listing against the reference byte for byte.
+The second was added with this fix, because nothing covered it: the fuzz
+corpus draws IONCAP types 21, 24 and 27 but not 26.
 
-**What moved.** 56 of 96 curtain cases; 33,553 of 486,144 printed
-cells, 6.9%, no structural change. An SNR by up to 85 dB, a transmit
-gain by up to 45.8 dB, a virtual height by 403 km, and 496 cells
-changing which mode dominates.
+**What moved.** 56 of 96 curtain cases; 33,553 of 486,144 printed cells,
+6.9%, no structural change. An SNR by up to 85 dB, a transmit gain by up
+to 45.8 dB, a virtual height by 403 km, and 496 cells changing which
+mode dominates.
 
 | row    | cells moved | worst change |
 | ------ | ----------: | -----------: |
@@ -249,35 +246,35 @@ changing which mode dominates.
 | DELAY  |         884 |         2.90 |
 | SNR LW |         876 |        16.50 |
 | TANGLE |         801 |        42.10 |
-| MODE   |         496 |            — |
+| MODE   |         496 |            |
 | MUFday |         187 |         0.92 |
 | MPROB  |          75 |         0.99 |
 
-The 40 cases that did not move are the long ones — the north-south,
+The 40 cases that did not move are the long ones: the north-south,
 near-antipodal and South American paths, and most polar hours. A long
 path takes low takeoff angles, which never reach the threshold, so the
-defect never bites. Every short, medium and equatorial case moved.
+defect never applies. Every short, medium and equatorial case moved.
 
 **Whether it helped: no measurement exists.** See the last section.
 
-**Decision: kept on.** A threshold of one radian on a quantity that
-runs from zero to π/2 cannot be what was meant, and the behaviour it
-causes is a high-gain array reporting less than an isotrope over the
-whole upper half of its pattern. Against that, note what is being
-assumed: that the intent was a small number and the decimal point was
-lost. Nothing in the source states the intended value.
+**Decision: kept on.** A threshold of one radian on a quantity that runs
+from zero to π/2 cannot be what was meant, and the behaviour it causes
+is a high-gain array reporting less than an isotrope over the whole
+upper half of its pattern. Against that, note what is being assumed:
+that the intent was a small number and the decimal point was lost.
+Nothing in the source states the intended value.
 
-## `area_centre_nudge` — a zero-length path at the grid's own centre
+## `area_centre_nudge`: a zero-length path at the grid's own centre
 
 **The defect.** An area run predicts to every point of a grid, and one
-of those points can land on the station itself, which would be a
-path of no length. The driver moves such a point a twentieth of a
-degree east. The test that decides this compares the grid point's
-longitude, which `GRIDXY` has already folded into 0 to 360, against
-the station's, which is the value the input file gave and may be
-negative. A station at 5.9 degrees west therefore differs from its own
-grid point by a full 360 degrees, the offset never happens, and the run
-computes a zero-length path at its own centre.
+of those points can land on the station itself, which would be a path of
+no length. The driver moves such a point a twentieth of a degree east.
+The test that decides this compares the grid point's longitude, which
+`GRIDXY` has already folded into 0 to 360, against the station's, which
+is the value the input file gave and may be negative. A station at 5.9
+degrees west therefore differs from its own grid point by a full 360
+degrees, the offset never happens, and the run computes a zero-length
+path at its own centre.
 
 **The fix** folds the station's longitude the same way before comparing.
 
@@ -285,8 +282,8 @@ computes a zero-length path at its own centre.
 lands exactly on the centre, three of them west of Greenwich and one
 east as the control. `correctcheck --corpus area` runs them. Its
 compatible half is `areacheck`, whose `odd` case is a grid centred on a
-station at 0.13 degrees west with a point at the origin — the defect's
-own conditions, matching the reference in every printed cell.
+station at 0.13 degrees west with a point at the origin, which is the
+defect's own conditions, matching the reference in every printed cell.
 
 **What moved.** 3 of 4 grids; 59 of 2600 printed cells. The east-of-
 Greenwich control did not move, and in each of the other three exactly
@@ -294,24 +291,23 @@ one point did: the centre. Under it the takeoff angle moves by 72.85
 degrees, the virtual height by 347 km, the signal power by 30 dB.
 
 Those are the numbers a zero-length path produces against those of a
-path 0.05 degrees long, so this fix does not adjust a prediction so
-much as replace a meaningless one.
+path 0.05 degrees long, so this fix does not adjust a prediction so much
+as replace a meaningless one.
 
 **Whether it helped: no measurement exists.** See the last section.
 
 **Decision: kept on.** The offset exists to avoid the degenerate path,
 and with the defect it never runs for half the world's longitudes.
 
-## `area_antenna_end` — aiming an area antenna by the end it serves
+## `area_antenna_end`: aiming an area antenna by the end it serves
 
 **The defect.** An area antenna's pattern is one frequency over 360
 bearings, so the lookup cuts it at a bearing rather than interpolating
 in frequency. `GAIN` picks which of the two path bearings to use from
-the antenna's **position in the list** — it tests the loop index
-against 1 and 2 — where every other test in the same routine goes
-through `iats`, the end the card serves. A list holding the receive
-card first would cut the receive pattern along the transmitter's
-bearing.
+the antenna's **position in the list**, testing the loop index against 1
+and 2, where every other test in the same routine goes through `iats`,
+the end the card serves. A list holding the receive card first would cut
+the receive pattern along the transmitter's bearing.
 
 **The fix** asks which end the card serves.
 
@@ -325,15 +321,15 @@ cannot reach the site rather than that the fix is inert.
 
 What stands in its place is a unit test,
 `an_area_antenna_is_aimed_by_its_end_only_on_the_corrected_tier`, which
-builds the antenna set by hand with the receive card first and shows
-the two tiers reading different bearings — 20 dB against the floor. It
-is a smaller claim than a corpus makes: it shows the branch is wired
-and does what it says, not that any run's numbers change.
+builds the antenna set by hand with the receive card first and shows the
+two tiers reading different bearings, 20 dB against the floor. It is a
+smaller claim than a corpus makes: it shows the branch is wired and does
+what it says, not that any run's numbers change.
 
 **Decision: kept on**, with that limit stated. The alternative was to
-leave a documented defect unfixed on the corrected tier because no
-input reaches it, which would make `Model::Corrected` mean "the defects
-we could measure" rather than "the defects we found".
+leave a documented defect unfixed on the corrected tier because no input
+reaches it, which would make `Model::Corrected` mean "the defects we
+could measure" rather than "the defects we found".
 
 ## Why five of the fixes have no accuracy measurement
 

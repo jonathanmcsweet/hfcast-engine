@@ -1,8 +1,16 @@
 # Is the reliability number honest?
 
-VOACAP claims a day-to-day spread for every hour: 10% of days fall more than `SNR LW` dB below the hour's monthly median, 10% rise more than `SNR UP` above it. The app's "chance of rain" is computed from those claims, so this checks them against the WSPR record, day by day. All comparisons are deviations from each path-hour's own median, which no unknown antenna can shift.
+VOACAP claims a day-to-day spread for every hour: 10% of days fall more
+than `SNR LW` dB below the hour's monthly median, 10% rise more than
+`SNR UP` above it. The app's "chance of rain" is computed from those
+claims, so this checks them against the WSPR record, day by day. All
+comparisons are deviations from each path-hour's own median, which no
+unknown antenna can shift.
 
-Fitted on 2025-06: the engine's lower decile is 2.51 times too wide (2122 path-hours), the upper 1.70 times (2239 path-hours). Scale factors below 40% mean the engine overstates how much days differ from each other.
+Fitted on 2025-06: the engine's lower decile is 2.51 times too wide
+(2122 path-hours), the upper 1.70 times (2239 path-hours). Scale factors
+below 40% mean the engine overstates how much days differ from each
+other.
 
 Fitted spread scales: lower 0.399, upper 0.587.
 
@@ -141,10 +149,10 @@ still visible.
 ### The calibration holds exactly when it is quiet
 
 On the seven test months, day-hours with no storm in the last 24 hours
-need a widening of 1.1–1.2 (June 2025: 0.95–1.05), so the shipped spread
-scales are confirmed by data they were not fitted on. The upward side
-needs no change under any condition (0.97–1.23 everywhere): storms
-suppress signals, they do not boost them.
+need a widening of 1.1 to 1.2 (June 2025: 0.95 to 1.05), so the shipped
+spread scales are confirmed by data they were not fitted on. The upward
+side needs no change under any condition (0.97 to 1.23 everywhere):
+storms suppress signals, they do not boost them.
 
 ### The widening grows with storm strength, and the gradient repeats
 
@@ -159,9 +167,9 @@ hours:
 | 7 and above  |          x 2.53 |            x 2.34 |
 
 The same staircase appears in a severe-storm month (June 2025), in the
-March 2015 St. Patrick's Day storm, and in the moderate storms of
-2022–2025. A single flat "storm factor" is wrong: x 2 fitted on June's
-severe storm over-widens the far more common Kp 5–6 case badly.
+March 2015 St. Patrick's Day storm, and in the moderate storms of 2022
+to 2025. A single flat "storm factor" is wrong: x 2 fitted on June's
+severe storm over-widens the far more common Kp 5 to 6 case badly.
 
 ### The rule that ships
 
@@ -180,12 +188,12 @@ measured frequencies on the seven test months:
 | Kp 7+     | 10 dB     |             2.6% |         18.6% |             11.3% |
 | Kp 7+     | 15 dB     |             0.4% |          9.4% |             12.4% |
 
-In the 6–10 dB range that decides most reliability values, the rule
-turns a 3–7 times under-prediction into approximate agreement. Its known
-imperfections: it over-warns somewhat at 3 dB during storms, and the
-deepest Kp 7+ fades (15 dB and beyond) still exceed what any bell curve
-can say. During a severe storm, a shown reliability should be read as a
-lower bound of doubt, not an exact probability.
+In the 6 to 10 dB range that decides most reliability values, the rule
+turns a 3 to 7 times under-prediction into approximate agreement. Its
+known imperfections: it over-warns somewhat at 3 dB during storms, and
+the deepest Kp 7+ fades (15 dB and beyond) still exceed what any bell
+curve can say. During a severe storm, a shown reliability should be read
+as a lower bound of doubt, not an exact probability.
 
 This widening acts on the *spread* around a finished prediction, and the
 server applies it. It is a separate thing from HFcast Truecast's storm

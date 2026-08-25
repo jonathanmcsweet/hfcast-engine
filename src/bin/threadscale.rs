@@ -3,15 +3,21 @@
 //! The application cuts a whole-world grid into latitude strips and hands
 //! them to a fixed thread pool inside one process — see
 //! `HfcastEngineModule.kt`. A device then reported 3.9 seconds of engine
-//! time for 34,560 points on "16 strips on 8 threads", which is about
-//! what one core alone would give. Either the strips are not running in
-//! parallel, or a phone core is far slower than assumed.
+//! time for 34,560 points on "16 strips on 8 threads", and this file used
+//! to read that as about what one core alone would give, and so as a sign
+//! the strips were not running in parallel.
 //!
-//! This measures the first half of that, in the arrangement the
-//! application actually uses: several threads in one address space,
-//! sharing one allocator, each calling `service::run`. Separate
-//! processes are not the same test — they share nothing, so they cannot
-//! show contention that only threads have.
+//! That was wrong, and the second half of the old guess was the right
+//! one: a phone core is far slower than assumed. Measured on the 32-bit
+//! tablet at 2.7.1, `gridbench` over the same 34,560 points takes 14,739
+//! ms on one thread and 3,760 on four, which is 3.92 times and about as
+//! well as four cores can scale. 3.9 seconds is the four-core figure, not
+//! the one-core figure. Nothing was failing to parallelise.
+//!
+//! This measures the arrangement the application actually uses: several
+//! threads in one address space, sharing one allocator, each calling
+//! `service::run`. Separate processes are not the same test — they share
+//! nothing, so they cannot show contention that only threads have.
 //!
 //! Usage: `cargo run --release --bin threadscale [-- strips]`
 

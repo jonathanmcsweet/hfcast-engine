@@ -734,6 +734,7 @@ pub fn render(
     case: &DeckCase,
     deck: &str,
     model: super::model::Model,
+    numerics: super::fastmath::Numerics,
 ) -> Result<String, String> {
     use super::run::{
         muf_view, path_report, run_listing, run_luf, run_muf, run_par, MufHourOut, RunInputs,
@@ -742,6 +743,7 @@ pub fn render(
 
     let version = read_version(itshfbc)?;
     let mut inp = RunInputs::from(case);
+    inp.numerics = numerics;
     // A deck cannot ask for a defect to be fixed, so the model comes
     // from the caller rather than from the cards.
     inp.model = model;

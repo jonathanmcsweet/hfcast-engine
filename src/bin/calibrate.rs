@@ -10,8 +10,8 @@
 //! ```
 //!
 //! where `centre` is the median of the prediction over the day. Everything in
-//! that formula is known in production — no observations are needed at
-//! prediction time — so a `k` that works is directly shippable.
+//! that formula is known in production, no observations are needed at
+//! prediction time, so a `k` that works is directly shippable.
 //!
 //! The honest test is out of sample: fit `k` on one month, apply it unchanged
 //! to a different month, and score against that month's measurements. A factor
@@ -262,7 +262,7 @@ fn main() -> ExitCode {
                     .collect();
                 println!("| {name} | {:.3} | {} |", f.global, bands.join(", "));
             }
-            None => println!("| {name} | — | — |"),
+            None => println!("| {name} |  |  |"),
         }
     }
 
@@ -279,7 +279,7 @@ fn main() -> ExitCode {
         println!("| --- | --: | --: | --: |");
         for (i, name) in PREDICTORS.iter().enumerate() {
             let Some(f) = &fitted[i] else {
-                println!("| {name} | — | — | — |");
+                println!("| {name} |  |  |  |");
                 continue;
             };
             let (raw_med, _) = evaluate(&test_paths, i, |_| 1.0);
@@ -290,7 +290,7 @@ fn main() -> ExitCode {
             println!("| {name} | {raw_med:.2} | {glob_med:.2} | {band_med:.2} |");
         }
         let (flat_med, _) = evaluate_flat(&test_paths);
-        println!("| flat baseline (needs the month's own data) | {flat_med:.2} | — | — |");
+        println!("| flat baseline (needs the month's own data) | {flat_med:.2} |  |  |");
         println!("\nNumbers are median absolute error in dB after per-path offset removal.");
     }
 

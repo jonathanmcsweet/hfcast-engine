@@ -84,7 +84,7 @@ Days above the median:
 
 ## Frequencies by condition, test months (storm widening x 2.08)
 
-quiet (Kp < 3) — days below the median:
+quiet (Kp < 3), days below the median:
 
 | deviation   | calibrated model says | with storm widening | actually happened |   days |
 | ----------- | --------------------: | ------------------: | ----------------: | -----: |
@@ -93,7 +93,7 @@ quiet (Kp < 3) — days below the median:
 | 10 dB below |                  2.0% |                2.0% |              3.3% | 118243 |
 | 15 dB below |                  0.3% |                0.3% |              1.5% |  72135 |
 
-unsettled (3-5) — days below the median:
+unsettled (3-5), days below the median:
 
 | deviation   | calibrated model says | with storm widening | actually happened |   days |
 | ----------- | --------------------: | ------------------: | ----------------: | -----: |
@@ -102,7 +102,7 @@ unsettled (3-5) — days below the median:
 | 10 dB below |                  2.2% |                2.2% |              3.6% | 117344 |
 | 15 dB below |                  0.4% |                0.4% |              1.6% |  78781 |
 
-storm (Kp >= 5) — days below the median:
+storm (Kp >= 5), days below the median:
 
 | deviation   | calibrated model says | with storm widening | actually happened |  days |
 | ----------- | --------------------: | ------------------: | ----------------: | ----: |
@@ -111,7 +111,7 @@ storm (Kp >= 5) — days below the median:
 | 10 dB below |                  2.5% |               14.2% |              5.8% | 26315 |
 | 15 dB below |                  0.4% |                6.3% |              3.5% | 17611 |
 
-quiet (Kp < 3) — days above the median:
+quiet (Kp < 3), days above the median:
 
 | deviation   | calibrated model says | with storm widening | actually happened |   days |
 | ----------- | --------------------: | ------------------: | ----------------: | -----: |
@@ -120,7 +120,7 @@ quiet (Kp < 3) — days above the median:
 | 10 dB above |                  1.0% |                1.0% |              1.6% | 155214 |
 | 15 dB above |                  0.2% |                0.2% |              0.4% | 142858 |
 
-unsettled (3-5) — days above the median:
+unsettled (3-5), days above the median:
 
 | deviation   | calibrated model says | with storm widening | actually happened |   days |
 | ----------- | --------------------: | ------------------: | ----------------: | -----: |
@@ -129,7 +129,7 @@ unsettled (3-5) — days above the median:
 | 10 dB above |                  0.9% |                0.9% |              1.3% | 144548 |
 | 15 dB above |                  0.1% |                0.1% |              0.3% | 129583 |
 
-storm (Kp >= 5) — days above the median:
+storm (Kp >= 5), days above the median:
 
 | deviation   | calibrated model says | with storm widening | actually happened |  days |
 | ----------- | --------------------: | ------------------: | ----------------: | ----: |
@@ -140,7 +140,7 @@ storm (Kp >= 5) — days above the median:
 
 ## Graded rule on the test months: widening 1 + 0.5 x (Kp24 - 4.75), capped at 2.5
 
-4-5 — days below the median:
+4-5, days below the median:
 
 | deviation   | calibrated model says | with graded rule | actually happened |  days |
 | ----------- | --------------------: | ---------------: | ----------------: | ----: |
@@ -149,7 +149,7 @@ storm (Kp >= 5) — days above the median:
 | 10 dB below |                  2.4% |             2.4% |              4.1% | 50574 |
 | 15 dB below |                  0.4% |             0.4% |              2.0% | 33618 |
 
-5-6 — days below the median:
+5-6, days below the median:
 
 | deviation   | calibrated model says | with graded rule | actually happened |  days |
 | ----------- | --------------------: | ---------------: | ----------------: | ----: |
@@ -158,7 +158,7 @@ storm (Kp >= 5) — days above the median:
 | 10 dB below |                  2.4% |             5.2% |              5.3% | 23514 |
 | 15 dB below |                  0.4% |             1.4% |              3.2% | 15844 |
 
-6-7 — days below the median:
+6-7, days below the median:
 
 | deviation   | calibrated model says | with graded rule | actually happened | days |
 | ----------- | --------------------: | ---------------: | ----------------: | ---: |
@@ -167,7 +167,7 @@ storm (Kp >= 5) — days above the median:
 | 10 dB below |                  2.7% |            10.9% |             10.3% | 2404 |
 | 15 dB below |                  0.5% |             4.5% |              5.0% | 1526 |
 
-Kp >= 7 — days below the median:
+Kp >= 7, days below the median:
 
 | deviation   | calibrated model says | with graded rule | actually happened | days |
 | ----------- | --------------------: | ---------------: | ----------------: | ---: |
