@@ -1,12 +1,15 @@
 # VOACAP evaluation-order sensitivity: the port tolerance envelope
 
-Measured with the sporadic-E layer enabled, matching the validated server
-configuration; the earlier sporadic-E-off derivation is in git history and
-showed the same envelope.
+Measured with the sporadic-E layer enabled, matching the validated
+server configuration; the earlier sporadic-E-off derivation is in git
+history and showed the same envelope.
 
-Reference build `O2`. 96 sweep cases, 463104 numeric cells parsed from the reference, measured in 7.7s.
+Reference build `O2`. 96 sweep cases, 463104 numeric cells parsed from
+the reference, measured in 7.7s.
 
-Every variant is the same Fortran source compiled with different optimisation flags, so any difference below is the model's sensitivity to floating-point evaluation order, not to physics.
+Every variant is the same Fortran source compiled with different
+optimisation flags, so any difference below is the model's sensitivity
+to floating-point evaluation order, not to physics.
 
 All variants completed every case.
 
@@ -38,7 +41,8 @@ Compared over 96 cases.
 | TGAIN  |   23040 |         0 | 0.00 |       0 |       0 |       0 |       0 |           0 |
 | V HITE |   23040 |         0 | 0.00 |       0 |       0 |       0 |       0 |           0 |
 
-MODE: 23040 compared, 0 mismatched (0.00%), 0 present in only one listing.
+MODE: 23040 compared, 0 mismatched (0.00%), 0 present in only one
+listing.
 
 ## `O2` vs `O1`
 
@@ -68,7 +72,8 @@ Compared over 96 cases.
 | TGAIN  |   23040 |         0 | 0.00 |       0 |       0 |       0 |       0 |           0 |
 | V HITE |   23040 |         0 | 0.00 |       0 |       0 |       0 |       0 |           0 |
 
-MODE: 23040 compared, 0 mismatched (0.00%), 0 present in only one listing.
+MODE: 23040 compared, 0 mismatched (0.00%), 0 present in only one
+listing.
 
 ## `O2` vs `O3`
 
@@ -98,7 +103,8 @@ Compared over 96 cases.
 | TGAIN  |   23040 |         0 | 0.00 |       0 |       0 |       0 |       0 |           0 |
 | V HITE |   23040 |         1 | 0.00 |       1 |       0 |       0 |  0.0022 |           0 |
 
-MODE: 23040 compared, 0 mismatched (0.00%), 0 present in only one listing.
+MODE: 23040 compared, 0 mismatched (0.00%), 0 present in only one
+listing.
 
 ## `O2` vs `fastmath`
 
@@ -128,11 +134,14 @@ Compared over 96 cases.
 | TGAIN  |   23040 |         0 | 0.00 |       0 |       0 |       0 |       0 |           0 |
 | V HITE |   23040 |        43 | 0.19 |      31 |       0 |       0 |  0.0994 |           0 |
 
-MODE: 23040 compared, 0 mismatched (0.00%), 0 present in only one listing.
+MODE: 23040 compared, 0 mismatched (0.00%), 0 present in only one
+listing.
 
 ## Derived tolerance
 
-Widest disagreement between IEEE-conformant builds (O0, O1, O3). A port that stays inside these bounds is no further from the reference than the reference is from itself under a different optimisation level.
+Widest disagreement between IEEE-conformant builds (O0, O1, O3). A port
+that stays inside these bounds is no further from the reference than the
+reference is from itself under a different optimisation level.
 
 | field  | observed max abs | structural disagreements |
 | ------ | ---------------: | -----------------------: |
