@@ -236,21 +236,21 @@ its `f7.3` fields carry. Both sides are rounded to each field's own
 format before comparing, because the reference's digits come back
 through a 32-bit float.
 
-Status over the 73 definition files in the tree (`antcheck`):
+Status over the 76 definition files in the tree (`antcheck`):
 
 | family       | types          | files | ported |
 | ------------ | -------------- | ----: | ------ |
 | isotrope     | 0              |     3 | yes    |
 | gain tables  | 10, 11, 13, 14 |     8 | yes    |
 | NOSC         | 48             |     1 | yes    |
-| IONCAP       | 21-30          |    10 | yes    |
+| IONCAP       | 21-30          |    13 | yes    |
 | CCIR REC705  | 1-9            |    34 | yes    |
 | NTIA curtain | 12             |     1 | yes    |
 | HFMUFES      | 31-47          |    14 | yes    |
 | Harris       | 90+            |     2 | no     |
 
-The ported families match on every cell: 196,386 compared — 71 of
-the 73 definition files. The two Harris files (types 90+) cannot be
+The ported families match on every cell: 204,684 compared — 74 of
+the 76 definition files. The two Harris files (types 90+) cannot be
 computed by anyone: the reference shells out to an external
 `anttypNN` program that is not in the distribution and STOPs without
 it ("Fatal error in subroutine harris"), so HFcast Compatible and the
