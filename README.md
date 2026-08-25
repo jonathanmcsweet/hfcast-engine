@@ -102,7 +102,7 @@ Each test below runs the original Fortran and this engine on the same input, and
 | `paritycheck` | 7,104 fields the [HFcast](https://github.com/jonathanmcsweet/hfcast) app reads | 0 differ |
 | `archcheck` | this engine against itself on a different processor | identical |
 
-Plus 306 unit tests and 61 harness and integration tests.
+Plus 307 unit tests and 61 harness and integration tests.
 
 A [daily job](docs/soak.md) runs 200 paths through HFcast Compatible and
 the Fortran reference with the space weather of that day. It fails if one
