@@ -96,16 +96,17 @@ Each test below runs the original Fortran and this engine on the same input, and
 | --- | --- | --- |
 | `portcheck` | 463,104 printed cells and 23,040 mode labels, over 96 paths | 0 differ |
 | `fuzz` | 600 generated inputs, 434,116 lines of output | identical |
-| `areacheck` | 749 area points and 17,791 cells | identical |
+| `areacheck` | 749 area points and 17,791 cells | 19 of 21 grids identical, 2 differ [by design](docs/port.md) |
 | `lufcheck` | 1,152 rows of the lowest usable frequency table | identical |
 | `antcheck` | each antenna type, against the gain files of the original | identical |
 | `paritycheck` | 7,104 fields the [HFcast](https://github.com/jonathanmcsweet/hfcast) app reads | 0 differ |
 | `archcheck` | this engine against itself on a different processor | identical |
 
-Plus 279 unit tests and 57 harness and integration tests.
+Plus 306 unit tests and 61 harness and integration tests.
 
-A [daily job](docs/soak.md) runs 200 paths through both engines with the
-space weather of that day. It fails if one number is different.
+A [daily job](docs/soak.md) runs 200 paths through HFcast Compatible and
+the Fortran reference with the space weather of that day. It fails if one
+number is different.
 
 ## How accurate is it
 

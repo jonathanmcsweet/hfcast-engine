@@ -68,6 +68,7 @@ pub mod hfmufes;
 pub mod ioncap;
 pub mod ionogram;
 pub mod ionosphere;
+pub mod lattice;
 pub mod magnetic;
 pub mod model;
 pub mod modes;

@@ -88,6 +88,34 @@ struct Case {
     inverse: bool,
 }
 
+/// Why this case is expected to disagree, where it is.
+///
+/// One deviation is deliberate and only two cases reach it. Asked
+/// for several frequencies at once, `ANTCALC` does not take its area
+/// branch: it cuts the ordinary point-to-point pattern along the
+/// transmitter-to-plot-centre bearing and holds it there for the
+/// whole grid, so every point is answered with the antenna aimed at
+/// the middle of the map. The port builds the area table the
+/// reference would have built for each band alone, which is what
+/// makes several bands in one pass equal several single-band runs.
+/// `docs/port.md` records the choice and `tests/area_bands.rs` holds
+/// the port to it.
+///
+/// An isotrope cannot show the difference, which is why the other
+/// several-frequency case agrees. A case named here is still
+/// compared and still printed; it does not fail the run, and a case
+/// that stops disagreeing is reported, because an expectation that
+/// quietly stops applying is worse than none.
+fn expected(case: &Case) -> Option<&'static str> {
+    match case.name {
+        "multiant" | "invmany" => Some(
+            "the reference cuts one bearing for the whole grid when several \
+             frequencies are asked for at once",
+        ),
+        _ => None,
+    }
+}
+
 fn cases() -> Vec<Case> {
     let gc = |plat, plon, xmin, xmax, ymin, ymax, n| Grid {
         projection: Projection::GreatCircle,
@@ -356,6 +384,72 @@ fn cases() -> Vec<Case> {
     ]
 }
 
+/// What one grid's comparison came to.
+struct Outcome {
+    name: &'static str,
+    why: &'static str,
+    points: usize,
+    cells: usize,
+    diffs: Vec<String>,
+    broken: Option<String>,
+    expected: Option<&'static str>,
+}
+
+/// Prints one grid's outcome, and says whether it fails the run.
+fn report_case(o: &Outcome) -> bool {
+    if let Some(why) = &o.broken {
+        println!("{}: {}", o.name, why);
+        return true;
+    }
+    if o.diffs.is_empty() {
+        println!("{:8} {} points — {}", o.name, o.points, o.why);
+        // An expectation that has quietly stopped applying hides a
+        // change rather than recording one, so agreement where a
+        // difference was expected is itself a failure.
+        return match o.expected {
+            Some(expected) => {
+                println!("    expected to differ and did not: {expected}");
+                true
+            }
+            None => false,
+        };
+    }
+    println!(
+        "{:8} {} of {} cells differ — {}",
+        o.name,
+        o.diffs.len(),
+        o.cells,
+        o.why
+    );
+    if let Some(expected) = o.expected {
+        println!("    expected: {expected}");
+    }
+    o.diffs.iter().take(6).for_each(|d| println!("    {d}"));
+    if o.diffs.len() > 6 {
+        println!("    ...and {} more", o.diffs.len() - 6);
+    }
+    // A difference where one was expected is not a failure; one
+    // anywhere else is.
+    o.expected.is_none()
+}
+
+/// Prints every outcome and the totals beneath them, and says whether
+/// the run failed.
+///
+/// Counting the failures rather than asking whether there is one is
+/// deliberate: `any` stops at the first, and every grid has to be
+/// printed whatever the ones before it came to.
+fn report(outcomes: &[Outcome]) -> bool {
+    let failures = outcomes.iter().filter(|o| report_case(o)).count();
+    let points: usize = outcomes.iter().map(|o| o.points).sum();
+    let cells: usize = outcomes.iter().map(|o| o.cells).sum();
+    println!(
+        "\n{points} grid points, {cells} printed cells, over {} grids.",
+        outcomes.len()
+    );
+    failures > 0
+}
+
 fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args().collect();
     let jobs = argv
@@ -375,19 +469,11 @@ fn main() -> ExitCode {
     let cases = cases();
     println!("# Area grid check: {} grids\n", cases.len());
 
-    struct Outcome {
-        name: &'static str,
-        why: &'static str,
-        points: usize,
-        cells: usize,
-        diffs: Vec<String>,
-        broken: Option<String>,
-    }
-
     let outcomes = map_limit(&cases, jobs, |case, _| {
         let mut out = Outcome {
             name: case.name,
             why: case.why,
+            expected: expected(case),
             points: 0,
             cells: 0,
             diffs: Vec::new(),
@@ -508,45 +594,14 @@ fn main() -> ExitCode {
         out
     });
 
-    let mut points = 0usize;
-    let mut cells = 0usize;
-    let mut failed = false;
-    for o in &outcomes {
-        points += o.points;
-        cells += o.cells;
-        if let Some(why) = &o.broken {
-            failed = true;
-            println!("{}: {}", o.name, why);
-            continue;
-        }
-        if o.diffs.is_empty() {
-            println!("{:8} {} points — {}", o.name, o.points, o.why);
-        } else {
-            failed = true;
-            println!(
-                "{:8} {} of {} cells differ — {}",
-                o.name,
-                o.diffs.len(),
-                o.cells,
-                o.why
-            );
-            for d in o.diffs.iter().take(6) {
-                println!("    {d}");
-            }
-            if o.diffs.len() > 6 {
-                println!("    ...and {} more", o.diffs.len() - 6);
-            }
-        }
-    }
-    println!(
-        "\n{points} grid points, {cells} printed cells, over {} grids.",
-        outcomes.len()
-    );
-    if failed {
+    if report(&outcomes) {
         println!("Verdict: the area output disagrees with the reference.");
         ExitCode::FAILURE
     } else {
-        println!("Verdict: every printed cell matches the reference.");
+        println!(
+            "Verdict: every printed cell matches the reference, apart from the \
+             differences named above as expected."
+        );
         ExitCode::SUCCESS
     }
 }

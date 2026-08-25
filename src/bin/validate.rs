@@ -164,45 +164,16 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    // Enables VOACAP's sporadic-E term, which standard practice keeps off.
-    // Used by the summer-mechanism experiment; affects VOACAP only.
-    let sporadic_e = std::env::args().any(|a| a == "--es");
-
-    // Which deviations from the reference's arithmetic the port takes.
-    // One at a time is the point: the first two shipped together, so
-    // their combined cost against measured radio is known and neither
-    // one's is.
-    let numerics = match numerics_choice() {
-        Ok(n) => n,
-        Err(name) => {
-            eprintln!("unknown deviation {name:?}");
-            eprintln!("one of: {}", Numerics::NAMES.join(", "));
+    let Options {
+        sporadic_e,
+        numerics,
+        engine,
+    } = match options() {
+        Ok(o) => o,
+        Err(message) => {
+            eprintln!("{message}");
             return ExitCode::FAILURE;
         }
-    };
-
-    // `--fix NAME` scores the Rust engine with one of the documented
-    // VOACAP defects fixed, against the same measured radio. That is
-    // the only way to say whether fixing a defect makes predictions
-    // better, which "it is a defect" does not answer: the model's
-    // empirical constants were fitted with the defect present.
-    //
-    // The Rust engine is used for both halves of such a run, so the
-    // comparison is one fix rather than one fix plus a change of
-    // engine. Without the flag, the Fortran binary runs as before.
-    let engine = match arg_value("--fix") {
-        Some(name) => match fix_by_name(&name) {
-            Some(fixes) => Engine::Ported(Model::from_fixes(fixes), numerics),
-            None => {
-                eprintln!("unknown fix {name:?}");
-                eprintln!("one of: {}", FIX_NAMES.join(", "));
-                return ExitCode::FAILURE;
-            }
-        },
-        None if std::env::args().any(|a| a == "--ported") => {
-            Engine::Ported(Model::Compatible, numerics)
-        }
-        None => Engine::Reference,
     };
 
     eprintln!(
@@ -467,6 +438,62 @@ enum Engine {
     Ported(Model, Numerics),
 }
 
+/// What the command line asked for beyond where the data lives.
+struct Options {
+    sporadic_e: bool,
+    numerics: Numerics,
+    engine: Engine,
+}
+
+/// Reads the run's options, or the message to print when one is wrong.
+///
+/// Every one of these is a choice about *what* is being scored rather
+/// than about the data, which is why they are read in one place: a run
+/// is named by this struct and by nothing else.
+fn options() -> Result<Options, String> {
+    // Enables VOACAP's sporadic-E term, which standard practice keeps
+    // off. Used by the summer-mechanism experiment; affects VOACAP only.
+    let sporadic_e = std::env::args().any(|a| a == "--es");
+
+    // Which deviations from the reference's arithmetic the port takes.
+    // One at a time is the point: the first two shipped together, so
+    // their combined cost against measured radio is known and neither
+    // one's is.
+    let numerics = numerics_choice().map_err(|name| {
+        format!(
+            "unknown deviation {name:?}\none of: {}",
+            Numerics::NAMES.join(", ")
+        )
+    })?;
+
+    // `--fix NAME` scores the Rust engine with one of the documented
+    // VOACAP defects fixed, against the same measured radio. That is
+    // the only way to say whether fixing a defect makes predictions
+    // better, which "it is a defect" does not answer: the model's
+    // empirical constants were fitted with the defect present.
+    //
+    // The Rust engine is used for both halves of such a run, so the
+    // comparison is one fix rather than one fix plus a change of
+    // engine. Without the flag, the Fortran binary runs as before.
+    let engine = match arg_value("--fix") {
+        Some(name) => {
+            let fixes = fix_by_name(&name)
+                .ok_or_else(|| format!("unknown fix {name:?}\none of: {}", FIX_NAMES.join(", ")))?;
+            Engine::Ported(Model::from_fixes(fixes), numerics)
+        }
+        None if std::env::args().any(|a| a == "--ported") => {
+            Engine::Ported(Model::Compatible, numerics)
+        }
+        None => Engine::Reference,
+    };
+
+    Ok(Options {
+        sporadic_e,
+        numerics,
+        engine,
+    })
+}
+
 /// Which deviations from the reference's arithmetic this run asked for.
 ///
 /// `--truecast-numerics` takes all of them, which is what the published
@@ -628,6 +655,52 @@ fn score(outcomes: &[PathOutcome], uncensored_only: bool) -> Scores {
     s
 }
 
+/// Names the arithmetic a run took, where it was not the reference's.
+///
+/// The results table labels the port's row VOACAP whatever arithmetic
+/// produced it, so a report that took a deviation has to say so or two
+/// runs are indistinguishable once the file is filed away.
+fn print_numerics(numerics: Numerics) {
+    if numerics.is_reference() {
+        return;
+    }
+    println!(
+        "The port ran with these deviations from the reference's \
+         arithmetic: {}.\n",
+        numerics.names().join(", ")
+    );
+}
+
+/// The paragraphs above the tables: what was measured, and how to read
+/// what follows.
+fn print_header(
+    month: &str,
+    ssn: f64,
+    sporadic_e: bool,
+    numerics: Numerics,
+    used: usize,
+    fetched: usize,
+) {
+    println!("# Both engines against measured WSPR reports\n");
+    println!(
+        "{month}, smoothed sunspot number {ssn}, VOACAP sporadic-E {}. \
+         {used} paths used of {fetched} fetched.\n",
+        if sporadic_e { "on" } else { "off" }
+    );
+    println!(
+        "Each path is a fixed pair of stations on a fixed band, so its antennas \
+         and its local noise are unknown but constant. One offset per path is \
+         fitted and removed, which is why this measures how well a model tracks \
+         the **daily shape** of a circuit rather than its absolute level.\n"
+    );
+    println!(
+        "The flat baseline predicts every hour as that path's own median. It \
+         contains no physics. An engine that does not beat it is adding \
+         nothing.\n"
+    );
+    print_numerics(numerics);
+}
+
 fn report(
     month: &str,
     ssn: f64,
@@ -675,34 +748,7 @@ fn report(
         ));
     }
 
-    println!("# Both engines against measured WSPR reports\n");
-    println!(
-        "{month}, smoothed sunspot number {ssn}, VOACAP sporadic-E {}. \
-         {used} paths used of {} fetched.\n",
-        if sporadic_e { "on" } else { "off" },
-        outcomes.len()
-    );
-    println!(
-        "Each path is a fixed pair of stations on a fixed band, so its antennas \
-         and its local noise are unknown but constant. One offset per path is \
-         fitted and removed, which is why this measures how well a model tracks \
-         the **daily shape** of a circuit rather than its absolute level.\n"
-    );
-    println!(
-        "The flat baseline predicts every hour as that path's own median. It \
-         contains no physics. An engine that does not beat it is adding \
-         nothing.\n"
-    );
-    // The results table labels the port's row VOACAP whatever arithmetic
-    // produced it, so a report that took a deviation has to say so or
-    // two runs are indistinguishable once the file is filed away.
-    if !numerics.is_reference() {
-        println!(
-            "The port ran with these deviations from the reference's \
-             arithmetic: {}.\n",
-            numerics.names().join(", ")
-        );
-    }
+    print_header(month, ssn, sporadic_e, numerics, used, outcomes.len());
 
     let all = score(outcomes, false);
     println!("## All paths\n");

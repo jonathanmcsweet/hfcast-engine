@@ -107,6 +107,17 @@ pub struct Numerics {
     /// answer the reference was approximating: 0.0004 percent out
     /// typically against 0.885.
     pub exact_virtual_height: bool,
+    /// Ionosphere lattice spacing in tenths of a degree, zero for off.
+    ///
+    /// Tenths rather than degrees so that the set stays comparable by
+    /// equality and nameable exactly: 50 is five degrees, 25 is two and
+    /// a half, 10 is one. `src/voacap/lattice.rs` says what the lattice
+    /// is and why only the layer parameters go on it.
+    pub lattice_tenths: u16,
+    /// The lattice read as the nearest node instead of the four
+    /// surrounding ones blended. Cheaper, and discontinuous at every
+    /// cell edge. Only meaningful when `lattice_tenths` is nonzero.
+    pub lattice_nearest: bool,
 }
 
 impl Numerics {
@@ -117,6 +128,8 @@ impl Numerics {
             fast_cos: false,
             fast_cos_modes: false,
             exact_virtual_height: false,
+            lattice_tenths: 0,
+            lattice_nearest: false,
         }
     }
 
@@ -127,13 +140,18 @@ impl Numerics {
             fast_cos: true,
             fast_cos_modes: true,
             exact_virtual_height: true,
+            lattice_tenths: 0,
+            lattice_nearest: false,
         }
     }
 
     /// Whether this run deviates from the reference at all. A run with
     /// every flag off must print what the reference prints.
     pub const fn is_reference(self) -> bool {
-        !self.fast_cos && !self.fast_cos_modes && !self.exact_virtual_height
+        !self.fast_cos
+            && !self.fast_cos_modes
+            && !self.exact_virtual_height
+            && self.lattice_tenths == 0
     }
 
     /// The deviations Truecast ships with.
@@ -158,17 +176,42 @@ impl Numerics {
     ///
     /// Both flags stay, because they are how this was measured and how
     /// the next such question will be.
+    /// The ionosphere lattice is taken at two and a half degrees, and is
+    /// read by the grid driver alone. Nothing builds a lattice for a
+    /// point-to-point run, so a band table computes every control point
+    /// as before and this flag is inert there. Wiring it into that path
+    /// later would change those answers and has to be measured first.
+    ///
+    /// Two and a half degrees is the spacing measured to disturb the
+    /// coverage overlay least for the time it saves. Over four months by
+    /// four hours it draws a median 0.04 percent of cells in a different
+    /// coverage band, against 0.19 percent for the virtual height above
+    /// it, and takes 11.6 percent off a world grid. One degree disturbs
+    /// less again and saves nothing; five saves a little more and
+    /// disturbs three times as much.
     pub const fn shipping() -> Self {
         Self {
             fast_cos: false,
             fast_cos_modes: false,
             exact_virtual_height: true,
+            lattice_tenths: 25,
+            lattice_nearest: false,
         }
     }
 
-    /// Every deviation's name, in the order the flags are declared. A
-    /// caller names them on a command line to score one at a time.
+    /// Every boolean deviation's name, in the order the flags are
+    /// declared. A caller names them on a command line to score one at
+    /// a time.
     pub const NAMES: [&'static str; 3] = ["fast-cos", "fast-cos-modes", "exact-height"];
+
+    /// The lattice's name shape, for a caller listing what it accepts.
+    ///
+    /// Not in `NAMES` because it is a family rather than a flag: any
+    /// spacing dividing both 180 and 360, with `-nearest` for the
+    /// single-node read. `NAMES` is the set the boolean flags round
+    /// trip through, and the lattice names round trip through their own
+    /// test instead.
+    pub const LATTICE_NAMES: &'static str = "lattice-<spacing>[-nearest]";
 
     /// The set a comma-separated list of names asks for. An empty list
     /// is the reference's arithmetic.
@@ -194,21 +237,54 @@ impl Numerics {
                     exact_virtual_height: true,
                     ..taken
                 }),
+                lattice if lattice.starts_with("lattice-") => {
+                    parse_lattice(lattice).map(|(tenths, nearest)| Self {
+                        lattice_tenths: tenths,
+                        lattice_nearest: nearest,
+                        ..taken
+                    })
+                }
                 other => Err(other.to_string()),
             })
     }
 
+    /// The lattice spacing in degrees, or `None` when it is off.
+    pub fn lattice_deg(self) -> Option<R> {
+        (self.lattice_tenths > 0).then(|| R::from(self.lattice_tenths) / 10.0)
+    }
+
     /// The names of the deviations this set takes.
-    pub fn names(self) -> Vec<&'static str> {
-        [
+    pub fn names(self) -> Vec<String> {
+        let flags = [
             (self.fast_cos, Self::NAMES[0]),
             (self.fast_cos_modes, Self::NAMES[1]),
             (self.exact_virtual_height, Self::NAMES[2]),
         ]
         .into_iter()
         .filter(|(taken, _)| *taken)
-        .map(|(_, name)| name)
-        .collect()
+        .map(|(_, name)| name.to_string());
+        flags.chain(self.lattice_name()).collect()
+    }
+
+    /// The lattice's name, if it is on: `lattice-5`, `lattice-2.5`,
+    /// and the same with `-nearest` appended.
+    ///
+    /// Formatted so that it parses back to the set it came from, which
+    /// `names_round_trip_through_a_list` is what checks.
+    fn lattice_name(self) -> Option<String> {
+        let tenths = self.lattice_tenths;
+        if tenths == 0 {
+            return None;
+        }
+        let whole = tenths / 10;
+        let tenth = tenths % 10;
+        let spacing = if tenth == 0 {
+            format!("{whole}")
+        } else {
+            format!("{whole}.{tenth}")
+        };
+        let read = if self.lattice_nearest { "-nearest" } else { "" };
+        Some(format!("lattice-{spacing}{read}"))
     }
 
     /// `x.cos()` at `gain_ground`, by whichever route this run asked
@@ -238,6 +314,34 @@ impl Default for Numerics {
     fn default() -> Self {
         Self::reference()
     }
+}
+
+/// `lattice-5`, `lattice-2.5-nearest` and the like, as tenths of a
+/// degree and whether the read is nearest.
+///
+/// A spacing that does not divide both 180 and 360 is refused rather
+/// than rounded, because a lattice built on one would put no row on a
+/// pole and leave the wrap at 180 degrees falling between two columns
+/// instead of on one.
+fn parse_lattice(name: &str) -> Result<(u16, bool), String> {
+    let refused = || name.to_string();
+    let rest = name.strip_prefix("lattice-").ok_or_else(refused)?;
+    let (spacing, nearest) = match rest.strip_suffix("-nearest") {
+        Some(head) => (head, true),
+        None => (rest, false),
+    };
+    let (whole, tenth) = match spacing.split_once('.') {
+        Some((_, tenth)) if tenth.len() != 1 => return Err(refused()),
+        Some((whole, tenth)) => (whole, tenth),
+        None => (spacing, "0"),
+    };
+    let whole: u32 = whole.parse().map_err(|_| refused())?;
+    let tenth: u32 = tenth.parse().map_err(|_| refused())?;
+    let tenths = whole * 10 + tenth;
+    if tenths == 0 || tenths > u32::from(u16::MAX) || 1800 % tenths != 0 || 3600 % tenths != 0 {
+        return Err(refused());
+    }
+    Ok((tenths as u16, nearest))
 }
 
 #[cfg(test)]
@@ -278,7 +382,8 @@ mod tests {
 
     /// Every flag has a name and every name sets a flag, so a
     /// deviation added without a name cannot reach a command line
-    /// silently.
+    /// silently. The lattice is a family of names rather than a flag,
+    /// so `a_lattice_spacing_names_itself_back` covers it instead.
     #[test]
     fn every_deviation_is_nameable() {
         assert_eq!(Numerics::truecast().names(), Numerics::NAMES.to_vec());
@@ -328,11 +433,61 @@ mod tests {
             fast_cos: true,
             fast_cos_modes: false,
             exact_virtual_height: true,
+            lattice_tenths: 0,
+            lattice_nearest: false,
         };
         assert_eq!(Numerics::from_names(&want.names().join(",")), Ok(want));
     }
 
     /// Even, the way the function it replaces is.
+    #[test]
+    fn a_lattice_spacing_names_itself_back() {
+        [
+            "lattice-5",
+            "lattice-2.5",
+            "lattice-1",
+            "lattice-2.5-nearest",
+        ]
+        .into_iter()
+        .for_each(|name| {
+            let taken = Numerics::from_names(name).expect("a lattice name parses");
+            assert_eq!(taken.names(), vec![name.to_string()], "{name}");
+        });
+    }
+
+    #[test]
+    fn a_lattice_spacing_reaches_the_reader_in_degrees() {
+        let taken = Numerics::from_names("lattice-2.5").expect("parses");
+        assert_eq!(taken.lattice_deg(), Some(2.5));
+        assert!(
+            !taken.lattice_nearest,
+            "bilinear unless the name says otherwise"
+        );
+        assert_eq!(Numerics::reference().lattice_deg(), None, "off is off");
+    }
+
+    #[test]
+    fn a_spacing_that_misses_a_pole_or_the_date_line_is_refused() {
+        // 7 divides neither 180 nor 360, and 8 divides 360 but not 180.
+        [
+            "lattice-7",
+            "lattice-8",
+            "lattice-0",
+            "lattice-x",
+            "lattice-2.50",
+        ]
+        .into_iter()
+        .for_each(|name| {
+            assert!(Numerics::from_names(name).is_err(), "{name} was accepted");
+        });
+    }
+
+    #[test]
+    fn a_lattice_run_is_not_a_reference_run() {
+        let taken = Numerics::from_names("lattice-5").expect("parses");
+        assert!(!taken.is_reference(), "the lattice moves numbers");
+    }
+
     #[test]
     fn is_even() {
         let odd_one = std::iter::successors(Some(0.01f32), |x| Some(x * 1.0009))

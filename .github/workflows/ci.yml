@@ -204,3 +204,19 @@ jobs:
             exit 1
           }
           cargo run --release --bin portcheck
+
+      # The map half of the same claim. `portcheck` compares
+      # point-to-point predictions; `areacheck` compares coverage grids,
+      # which is what the application draws. Both are needed before
+      # anything says the port matches the reference.
+      #
+      # Two of its 21 grids are expected to disagree, both of them
+      # several frequencies together with a directional antenna, where
+      # the port declines to follow a fallback in `ANTCALC` that would
+      # aim the antenna at the middle of the map for every point.
+      # `areacheck` names those two, prints their differences, and fails
+      # if either ever stops disagreeing. `docs/port.md` records why.
+      - name: Compare the port's coverage grids against the reference
+        run: |
+          export HFCAST_ITSHFBC="$HOME/itshfbc"
+          cargo run --release --all-features --bin areacheck

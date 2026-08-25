@@ -1016,7 +1016,7 @@ why the receive line's gain field is what reaches a receive isotrope.
 `HFAREA` runs the same one-hour prediction at every grid point. The port
 shares the hour body with the point-to-point driver: `hour_setup` holds
 what one hour reads and does not change, and `hour_body` is the hour
-itself, so `run`, `run_hour` and `run_area` cannot drift apart.
+itself, so `run`, `run_listing` and `run_area` cannot drift apart.
 
 Two things the driver does that a reading of the code alone would
 miss. The mode-loop state and `FSECV` carry from one grid point to the
@@ -1110,6 +1110,57 @@ asks for area coverage; with several frequencies an area run uses the
 ordinary point-to-point table, cut along the transmitter-to-plot-centre
 bearing and fixed for the whole grid, because the deck `AREAMAP` writes
 names the plot centre as the receiver.
+
+### The port does not follow that fallback, on purpose
+
+This is the one place the port answers an area run differently from the
+reference, and it is deliberate rather than a gap. `build_area_antennas`
+builds the area table the reference would have built for each band on
+its own, so several bands asked for together answer exactly as several
+single-band runs do.
+
+The reference's fallback holds one bearing for the whole grid, so every
+point on a map is answered with the antenna aimed at the middle of it.
+The take-off angle is what the no-skip-zone shading is drawn from, so a
+map drawn that way can tell an operator that a station is reachable on a
+bearing the antenna was never pointed along.
+
+Re-measured 2026-08-25, because the figure recorded here before was not
+reproducible. The port was made to follow the fallback behind a
+temporary switch and the same request run both ways, comparing the
+take-off angle cell by cell. Ten configurations: a 3,072-point world
+grid and a 2,048-point regional one, four antenna families, one and both
+ends directional, two hours.
+
+    worst single cell        0 to 37.5 degrees
+    cells that moved at all  0 to 20.2 percent
+
+The spread is the finding. A pattern with no azimuth dependence moves
+nothing, because there is no bearing to get wrong. Where the pattern is
+directional the worst cell sits near the station, where take-off angles
+are high and a few degrees of bearing move them a long way. How many
+cells move depends on the grid: 20 percent of a world grid, and under
+one percent of a regional grid centred on the station, where the bearing
+to the plot centre is degenerate.
+
+The figure this replaces said "at every reachable point, by up to 44
+degrees". Neither half held: no configuration moved every point, and
+none reached 44. The direction and the order of magnitude did hold, so
+the choice the measurement was made to justify still stands.
+
+The deviation is not gated on `Model`, so `Model::Compatible` takes it
+as well. That is a considered exception to the parity contract rather
+than an oversight: it costs nothing to a caller asking for one band at
+a time, which is the only shape the reference itself produces, and it
+is the difference between a correct coverage map and a wrong one for a
+caller asking for several. It cannot be reached point to point.
+
+An isotrope cannot show any of this, so only a directional antenna
+exposes it. `areacheck` names its two multi-frequency directional cases
+as expected divergences, prints their differences, and fails if either
+one ever stops disagreeing. `tests/area_bands.rs` holds the port to the
+property the deviation exists for: a batch of bands equals the same
+bands run one at a time.
 
 The table never travels through `gainNN.dat`. The area branch writes only
 the two header lines and stores the numbers straight into a COMMON, and

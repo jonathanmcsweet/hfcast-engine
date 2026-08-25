@@ -104,6 +104,22 @@ thread_local! {
     static DEPTH: Cell<[u32; STEPS]> = const { Cell::new([0; STEPS]) };
 }
 
+/// The ionosphere lattice's reads, summed over every worker.
+///
+/// Reported whether or not the timers are on, because the number this
+/// answers is not "how long" but "did it run at all". Two earlier caches
+/// in this engine were measured with no counter and quietly hit nothing;
+/// a lattice that reports zero hits has not been measured, whatever the
+/// stopwatch says.
+static LATTICE_HITS: AtomicU64 = AtomicU64::new(0);
+static LATTICE_MISSES: AtomicU64 = AtomicU64::new(0);
+
+/// Records one worker's lattice reads. Called once as the worker ends.
+pub fn lattice_reads(hits: u64, misses: u64) {
+    LATTICE_HITS.fetch_add(hits, Ordering::Relaxed);
+    LATTICE_MISSES.fetch_add(misses, Ordering::Relaxed);
+}
+
 /// Turns the timers on. Called once, from whatever wants a report.
 pub fn enable() {
     ON.store(true, Ordering::Relaxed);
@@ -193,5 +209,16 @@ pub fn report(whole: std::time::Duration) -> String {
         100.0
     ));
     out.push_str("\ngethp nests inside genion, so their shares overlap.\n");
+    let (hits, misses) = (
+        LATTICE_HITS.load(Ordering::Relaxed),
+        LATTICE_MISSES.load(Ordering::Relaxed),
+    );
+    let reads = hits + misses;
+    if reads > 0 {
+        out.push_str(&format!(
+            "lattice: {reads} reads, {misses} nodes built, {:.1}% found\n",
+            100.0 * hits as f64 / reads as f64,
+        ));
+    }
     out
 }
