@@ -126,6 +126,18 @@ jobs:
           fi
           echo "package holds no coefficient files"
 
+          # Cargo ships a binary for every file in src/bin/, so one added
+          # there and not named in Cargo.toml's exclude list ships
+          # silently and `cargo install hfcast` builds it. Four had done
+          # exactly that. Only `predict` is any use to a dependent.
+          shipped="$(tar tzf target/package/hfcast-*.crate |
+            sed -n 's|.*/src/bin/\(.*\)\.rs$|\1|p' | sort | tr '\n' ' ')"
+          if [ "$shipped" != "predict " ]; then
+            echo "::error::the package ships these binaries: ${shipped}see the exclude list in Cargo.toml"
+            exit 1
+          fi
+          echo "package ships predict alone"
+
 
   # The claim this crate is built on: that the Rust engine and the Fortran
   # it was translated from give the same answer. `portcheck` runs both over
