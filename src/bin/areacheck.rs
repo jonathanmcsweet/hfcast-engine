@@ -88,24 +88,31 @@ struct Case {
     inverse: bool,
 }
 
-/// Why this case is expected to disagree, where it is.
+/// Why this case is expected to disagree, and where.
 ///
-/// One deviation is deliberate and only two cases reach it. Asked
-/// for several frequencies at once, `ANTCALC` does not take its area
-/// branch: it cuts the ordinary point-to-point pattern along the
-/// transmitter-to-plot-centre bearing and holds it there for the
-/// whole grid, so every point is answered with the antenna aimed at
-/// the middle of the map. The port builds the area table the
-/// reference would have built for each band alone, which is what
-/// makes several bands in one pass equal several single-band runs.
-/// `docs/port.md` records the choice and `tests/area_bands.rs` holds
-/// the port to it.
+/// Before it predicts anything, VOACAP works out how much gain the
+/// antenna has in each direction. For a coverage map on one frequency
+/// it does that properly: every bearing, every take-off angle. For a
+/// coverage map on several frequencies at once it does not. It falls
+/// back to the table it would build for a single point-to-point path,
+/// which holds the gain along one bearing only, the bearing from the
+/// station to the middle of the map, and then uses that one bearing's
+/// gain for every point on the map.
 ///
-/// An isotrope cannot show the difference, which is why the other
-/// several-frequency case agrees. A case named here is still
-/// compared and still printed; it does not fail the run, and a case
-/// that stops disagreeing is reported, because an expectation that
-/// quietly stops applying is worse than none.
+/// So a beam pointed north-east is treated as pointing north-east at
+/// the map's western edge as well, and the map can show a station
+/// reachable in a direction the antenna was never turned to.
+///
+/// HFcast builds the proper table for each frequency instead, so
+/// asking for four bands together gives what asking for each band on
+/// its own gives. `tests/area_bands.rs` holds it to that, and
+/// `docs/port.md` explains the choice.
+///
+/// Only a directional antenna can show the difference, which is why
+/// the several-frequency case with an isotrope at both ends agrees.
+/// A case named here is still run and still printed. It does not fail
+/// the check, but a case that stops disagreeing does, because an
+/// expectation nobody notices has lapsed is worse than none.
 fn expected(case: &Case) -> Option<&'static str> {
     match case.name {
         "multiant" | "invmany" => Some(
