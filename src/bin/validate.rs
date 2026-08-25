@@ -13,7 +13,7 @@
 //!
 //! So the method is: predict all 24 hours, fit one constant offset per path by
 //! taking the median difference, and report what is left. What is left is how
-//! well the model tracks the **daily shape** of the circuit — when it opens,
+//! well the model tracks the **daily shape** of the circuit: when it opens,
 //! when it peaks, when it closes. Absolute signal level is not tested, and
 //! cannot be without knowing the antennas.
 //!
@@ -77,7 +77,7 @@ const NOISE_DBW: f64 = 145.0;
 /// only shifts a path's whole day by a constant, and the fitted offset removes
 /// it. Using a fixed value also sidesteps a hard limit in the P.533 reference
 /// implementation, which rejects anything below one watt with `RTN_ERRTXPOWER`
-/// (`ValidatePath.c`) — that covers most WSPR beacons, which commonly run
+/// (`ValidatePath.c`), which covers most WSPR beacons, commonly run
 /// 200 mW.
 const REFERENCE_WATTS: f64 = 1.0;
 
@@ -249,7 +249,7 @@ fn dump_hours(outcomes: &[PathOutcome], to: &Path) -> std::io::Result<()> {
 ///
 /// The reference needs a private tree because it writes scratch files
 /// named from a global counter. The port writes nothing, so it reads
-/// the installed tree directly — which is also what makes a `--fix`
+/// the installed tree directly, which is also what makes a `--fix`
 /// run fast enough to do eight months of paths.
 fn listing_text(
     engine: Engine,
@@ -580,7 +580,7 @@ impl EngineScore {
     fn line(&self, name: &str) -> String {
         let optional = |v: &[f64], width: usize| -> String {
             if v.is_empty() {
-                "—".to_string()
+                String::new()
             } else {
                 format!("{:+.*}", width, median(v))
             }
@@ -595,7 +595,7 @@ impl EngineScore {
             optional(&self.correlations, 2),
             optional(&self.slopes, 2),
             if self.scaled_errors.is_empty() {
-                "—".to_string()
+                String::new()
             } else {
                 format!("{:.1}", median(&self.scaled_errors))
             },

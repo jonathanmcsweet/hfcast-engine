@@ -7,7 +7,7 @@
 # an overfit; a factor that holds across seasons and solar levels is safe to
 # ship. The June-fitted column is the one that matters for the server, and the
 # rest of the matrix is the evidence that the choice of fitting month barely
-# matters — or the warning that it does.
+# matters, or the warning that it does.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -25,7 +25,15 @@ if [ ! -x "$BIN" ]; then
 fi
 
 {
-  echo "# Cross-month calibration matrix"
+  case "$DUMP" in
+    hours-es.csv) echo "# Cross-month calibration matrix, sporadic E on" ;;
+    *) echo "# Cross-month calibration matrix, sporadic E off" ;;
+  esac
+  echo
+  echo "How much to shrink each model's daily swing, fitted on one month and"
+  echo "tested on the others. Sporadic E is VOACAP's own term for the patchy"
+  echo "summer E layer; it is off in normal use, and \`docs/accuracy.md\`"
+  echo "measures what turning it on does."
   for fit in "${MONTHS[@]}"; do
     echo
     args=(--fit "data/$fit/$DUMP")

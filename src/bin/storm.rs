@@ -287,7 +287,7 @@ fn print_group_tables(
 ) {
     let side = if lower { "below" } else { "above" };
     for group in GROUPS {
-        println!("\n{} — days {side} the median:\n", group.label());
+        println!("\n{}, days {side} the median:\n", group.label());
         println!(
             "| deviation | calibrated model says | with storm widening | actually happened | days |"
         );
@@ -367,7 +367,7 @@ fn rule_check(months: &[TaggedMonth], table: &GeomagTable) {
     }
 
     for (b, (_, _, label)) in bands.iter().enumerate() {
-        println!("\n{label} — days below the median:\n");
+        println!("\n{label}, days below the median:\n");
         println!(
             "| deviation | calibrated model says | with graded rule | actually happened | days |"
         );
