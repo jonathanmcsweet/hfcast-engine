@@ -463,13 +463,24 @@ fn value_of(slot: &[(&'static str, f64); 4], name: &str) -> Option<f64> {
 const CACHE_HEADER: &str =
     "station,day,hour,char,observed,climatology,irtam,dudeney,essn,essn_index";
 
+/// Writes the month's samples where the next run can read them.
+///
+/// Every number is written with `{}`, which for an `f64` is the
+/// shortest text that reads back as the same value. Four decimal
+/// places were written here before, and that made a cold run and a
+/// warm run disagree: the cold run computed the statistics from full
+/// precision and then rounded the cache, so every later run averaged
+/// slightly different numbers. The difference reached the third
+/// decimal of a published bias, which is enough to make
+/// `docs/ionosonde-output.md` unreproducible from the cache it wrote.
+/// A cache that cannot reproduce its own report is not a cache.
 fn save_cache(path: &Path, samples: &[Sample]) {
-    let column = |value: Option<f64>| value.map(|v| format!("{v:.4}")).unwrap_or_default();
+    let column = |value: Option<f64>| value.map(|v| format!("{v}")).unwrap_or_default();
     let body = samples
         .iter()
         .map(|s| {
             format!(
-                "{},{},{},{},{:.4},{:.4},{},{},{},{}",
+                "{},{},{},{},{},{},{},{},{},{}",
                 s.station,
                 s.day,
                 s.hour,
@@ -764,6 +775,37 @@ mod tests {
         let path = dir.join("t.sonde.csv");
         save_cache(&path, &samples);
         assert_eq!(load_cache(&path), Some(samples));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_cache_round_trips_every_bit() {
+        // The test above uses values that survive rounding to four
+        // decimal places, which is why writing them that way went
+        // unnoticed: a cold run computed its statistics from the full
+        // numbers and every later run read back the rounded ones. These
+        // are model output as it actually arrives.
+        let samples = vec![Sample {
+            station: "AT138".into(),
+            day: 1,
+            hour: 5,
+            characteristic: "fmin".into(),
+            observed: 2.55,
+            climatology: 2.066_258_640_803_747,
+            irtam: Some(4.809_513_366_074_231),
+            dudeney: None,
+            essn: Some(2.046_897_762_846_453_5),
+            essn_index: Some(76.526_007_346_951_45),
+        }];
+        let dir = std::env::temp_dir().join(format!("sonde-bits-test-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("t.sonde.csv");
+        save_cache(&path, &samples);
+        let read = load_cache(&path).expect("the cache reads back");
+        assert_eq!(
+            read, samples,
+            "a cache that rounds cannot reproduce its own report"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
