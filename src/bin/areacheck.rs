@@ -103,6 +103,12 @@ struct Case {
 /// the map's western edge as well, and the map can show a station
 /// reachable in a direction the antenna was never turned to.
 ///
+/// The reference states this restriction rather than hiding it:
+/// `getfreqs` prints "TRANSMIT antenna MUST BE non-directional for
+/// this purpose!" before the run starts. Both cases named here use a
+/// directional transmit antenna, so both are inputs the reference
+/// warns against.
+///
 /// HFcast builds the proper table for each frequency instead, so
 /// asking for four bands together gives what asking for each band on
 /// its own gives. `tests/area_bands.rs` holds it to that, and

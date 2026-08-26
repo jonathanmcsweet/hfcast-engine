@@ -117,7 +117,16 @@ impl Fixes {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Model {
     /// VOACAP as it is, defects included. Byte-identical to the
-    /// reference, and the only tier any of the harnesses can judge.
+    /// reference on every input the reference accepts, and the only
+    /// tier any of the harnesses can judge.
+    ///
+    /// One input falls outside that. A coverage map on several
+    /// frequencies at once needs a non-directional transmit antenna,
+    /// and `getfreqs` prints "TRANSMIT antenna MUST BE non-directional
+    /// for this purpose!" before the run starts. This engine builds
+    /// the proper table per band instead, in both tiers, so a
+    /// directional antenna draws a different map here. `docs/port.md`
+    /// has the measurement and the reasoning.
     #[default]
     Compatible,
     /// VOACAP with its documented defects fixed. Deliberately not

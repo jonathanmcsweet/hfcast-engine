@@ -4,4 +4,4 @@ version = 4
 
 [[package]]
 name = "hfcast"
-version = "2.13.3"
+version = "2.13.4"
