@@ -140,6 +140,35 @@ pub fn overlay_root(dir: &Path) -> PathBuf {
     PathBuf::from(format!("{EMBEDDED}{OVERLAY}{}", dir.display()))
 }
 
+/// The directory an overlay reads before the compiled-in bytes, when the
+/// root is an overlay rather than embedded or a real tree.
+pub fn overlay_dir(root: &Path) -> Option<&Path> {
+    match source(root) {
+        Source::Overlay(dir) => Some(dir),
+        _ => None,
+    }
+}
+
+/// Copies one overlay's files into another, overwriting what is there.
+///
+/// An overlay holds only what its caller generated, a few small files, so
+/// this follows links and copies bytes. `runner::copy_dir_all` is the
+/// opposite case and keeps links as links, because a real `itshfbc` is a
+/// symlink farm over tens of megabytes.
+pub fn copy_overlay(from: &Path, to: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.path().is_dir() {
+            copy_overlay(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(entry.path(), target)?;
+        }
+    }
+    Ok(())
+}
+
 /// Which of the three forms a root is.
 enum Source<'a> {
     Tree(&'a Path),

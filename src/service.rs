@@ -36,7 +36,7 @@
 //! side effect of moving off Fortran, so it is not done here.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::api::{listing, FoF2Model, Ionosphere, Model, Request, Site, Task};
 use crate::deck::AntennaChoice;
@@ -187,12 +187,11 @@ fn offline_essn(req: &Json) -> Result<f64, String> {
     let year = req.number("year")? as u32;
     let month = req.number("month")? as u32;
     let key = format!("{year:04}-{month:02}");
-    let Some(ssn) = crate::wspr::smoothed_ssn(&key) else {
-        return Err(format!(
-            "the embedded sunspot table has no entry for {key}; pass \"essn\" or \
-             update the engine"
-        ));
-    };
+    // Held at the nearer end rather than refused. The table ships with the
+    // build and a field device may run for years without one, so running
+    // out is the ordinary case and not a fault: a caller that wants the
+    // present month's real figure passes "essn".
+    let ssn = crate::wspr::smoothed_ssn_clamped(&key);
     let day = match req.get("day") {
         None => 15,
         Some(_) => match req.number("day")? as u32 {
@@ -267,11 +266,13 @@ fn select_truecast(tree: PathBuf, req: &mut Json) -> Result<(PathBuf, EngineChoi
 
     // Below the floor: the run stays at zero while a synthesized
     // coefficient file holds foF2 on the fitted line.
-    if tree != data::embedded_root() {
+    let theirs = data::overlay_dir(&tree).map(Path::to_path_buf);
+    if tree != data::embedded_root() && theirs.is_none() {
         return Err(
-            "below an index of zero the run needs \"itshfbc\":\"<embedded>\": the \
-             synthesized foF2 overlay shadows only the compiled-in files. A caller \
-             with its own tree or overlay writes coeffs/fof2CCIR.daw there itself"
+            "below an index of zero the run needs \"itshfbc\":\"<embedded>\" or an \
+             overlay over it: the synthesized foF2 file shadows the compiled-in \
+             ones. A caller with a real itshfbc tree writes coeffs/fof2CCIR.daw \
+             there itself"
                 .into(),
         );
     }
@@ -284,6 +285,13 @@ fn select_truecast(tree: PathBuf, req: &mut Json) -> Result<(PathBuf, EngineChoi
     };
     let map = irtam::ccir_at(&data::embedded_root(), month, essn)?;
     let dir = PathBuf::from(work_dir).join(format!("truecast-fof2-{month:02}-{essn:.2}"));
+    // A caller's own overlay carries the files it generated, its station's
+    // antenna among them, and the synthesized root replaces it rather than
+    // stacking on it. So they come along. Copied on every run because the
+    // caller rewrites them and this directory outlives one run.
+    if let Some(theirs) = &theirs {
+        data::copy_overlay(theirs, &dir).map_err(|e| e.to_string())?;
+    }
     let root = irtam::overlay_with(&map, &dir)?;
     Ok((root, EngineChoice::Truecast))
 }
@@ -1196,14 +1204,83 @@ mod tests {
         assert_eq!(offline_essn(&dated).expect("offline index"), on_day);
     }
 
+    // Synthesizing the foF2 file reads the compiled-in coefficients, so
+    // this one only runs in a build that has them.
     #[test]
-    fn an_offline_request_outside_the_table_names_the_problem() {
-        let req = parsed(r#"{"year":1990,"month":6}"#);
-        let err = offline_essn(&req).expect_err("no table entry");
-        assert!(err.contains("sunspot table"), "{err}");
+    #[cfg(feature = "embedded-coefficients")]
+    fn a_station_with_an_antenna_still_runs_below_an_index_of_zero() {
+        // Deep in a solar minimum the index goes under zero and the run
+        // needs a synthesized foF2 file. A station with a real antenna
+        // already hands in an overlay holding that antenna, and losing it
+        // would fail the run over the very file the caller supplied, so
+        // the overlay comes along into the synthesized one.
+        let base = std::env::temp_dir().join(format!("hfcast-overlay-essn-{}", std::process::id()));
+        let theirs = base.join("theirs");
+        std::fs::create_dir_all(theirs.join("antennas/default")).expect("their overlay");
+        std::fs::write(theirs.join("antennas/default/mine.n45"), b"a dipole")
+            .expect("their antenna");
+
+        let mut req = parsed(&format!(
+            r#"{{"engine":"truecast","year":2020,"month":6,"essn":-5.0,
+                 "workDir":"{}"}}"#,
+            base.join("work").display(),
+        ));
+        let tree = crate::voacap::data::overlay_root(&theirs);
+        let (root, _) = select_truecast(tree, &mut req).expect("a run below zero");
+
+        // The synthesized coefficients are there, and so is their antenna.
+        assert!(
+            crate::voacap::data::read(&root, "coeffs/fof2CCIR.daw").is_ok(),
+            "the synthesized foF2 file is missing",
+        );
+        assert_eq!(
+            crate::voacap::data::read(&root, "antennas/default/mine.n45")
+                .expect("their antenna survived")
+                .as_ref(),
+            b"a dipole",
+        );
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn an_offline_request_with_an_impossible_day_names_the_problem() {
+        // A day outside the month is the caller getting it wrong, which is
+        // worth refusing. A year outside the table is not: see
+        // `an_offline_request_past_the_table_still_answers`.
         let bad_day = parsed(r#"{"year":2020,"month":6,"day":32}"#);
         let err = offline_essn(&bad_day).expect_err("day out of range");
         assert!(err.contains("\"day\""), "{err}");
+    }
+
+    #[test]
+    fn an_offline_request_past_the_table_still_answers() {
+        // A device with no network keeps working for years after the last
+        // shipped figure. Refusing would take the whole forecast away over
+        // a sunspot number, and a climatology run from the nearest known
+        // month is far closer to right than nothing at all.
+        let last = crate::wspr::SMOOTHED_SSN.last().expect("a non-empty table");
+        let (year, month) = last.0.split_once('-').expect("YYYY-MM");
+        let past = format!(
+            r#"{{"year":{},"month":{}}}"#,
+            year.parse::<u32>().expect("a year") + 5,
+            month,
+        );
+        let index = offline_essn(&parsed(&past)).expect("an index past the table");
+        let expected = last.1
+            + crate::truecast::api::offline_anomaly(month.parse::<u32>().expect("a month"), 15);
+        assert_eq!(index, expected, "past the table it holds at the last month");
+
+        // And before the first, the other end for the same reason.
+        let first = crate::wspr::SMOOTHED_SSN
+            .first()
+            .expect("a non-empty table");
+        let early = parsed(r#"{"year":1950,"month":6}"#);
+        let index = offline_essn(&early).expect("an index before the table");
+        assert_eq!(
+            index,
+            first.1 + crate::truecast::api::offline_anomaly(6, 15),
+            "before the table it holds at the first month",
+        );
     }
 
     #[test]
