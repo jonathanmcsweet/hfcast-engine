@@ -116,7 +116,6 @@ impl Fixes {
 /// Which behaviour a run reproduces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Model {
-
     /// A coverage map on several
     /// frequencies at once needs a non-directional transmit antenna,
     /// and `getfreqs` prints "TRANSMIT antenna MUST BE non-directional
