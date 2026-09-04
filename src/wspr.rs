@@ -269,12 +269,8 @@ pub fn smoothed_ssn(month: &str) -> Option<f64> {
 /// The same figure, held at the nearer end when the month is outside the
 /// table.
 ///
-/// A device in the field runs for years without an update, so the table
-/// runs out long before the app does. Refusing there would take the whole
-/// forecast away over one number, when the nearest known month still
-/// answers within the spread a climatology run carries anyway. Callers
-/// measuring the model against observations want `smoothed_ssn`, where a
-/// held figure would be a wrong answer rather than a rough one.
+/// An offline device can go long periods without udpates, so the table
+/// runs out long before the app does.
 ///
 /// Relies on the table being sorted by month, which
 /// `the_ssn_table_is_sorted_so_the_ends_are_the_ends` holds.
