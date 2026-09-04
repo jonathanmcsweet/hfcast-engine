@@ -2166,14 +2166,22 @@ fn build_area_antennas(itshfbc: &Path, area: &AreaInputs, nf: usize) -> Result<A
         //
         // `ANTCALC` falls back to the point-to-point table when a run
         // names several frequencies, because an area table is built at
-        // one frequency and the reference holds only one of them. That
-        // fallback is cut along a single bearing for the whole grid,
-        // where an area table is re-cut at every grid point, and the
-        // difference is not small. Re-measured over ten configurations
-        // in 2026: up to 37.5 degrees of take-off angle at the worst
-        // cell, on up to 20 percent of them, and the take-off angle is
-        // what the no-skip-zone shading is drawn from. `docs/port.md`
-        // has the spread and the method.
+        // one frequency and the reference holds only one of them.
+        //
+        // The reference states the restriction rather than hiding it:
+        // `getfreqs` prints "TRANSMIT antenna MUST BE non-directional
+        // for this purpose!" before the run starts. So this is a limit
+        // it announces, not a defect it is unaware of, which is why it
+        // is not one of `Model::Corrected`'s fixes and applies to both
+        // tiers.
+        //
+        // That fallback is cut along a single bearing for the whole
+        // grid, where an area table is re-cut at every grid point, and
+        // the difference is not small. Re-measured over ten
+        // configurations in 2026: up to 37.5 degrees of take-off angle
+        // at the worst cell, on up to 20 percent of them, and the
+        // take-off angle is what the no-skip-zone shading is drawn
+        // from. `docs/port.md` has the spread and the method.
         //
         // So this builds the table the reference would have built for
         // each band alone. Several bands in one pass then answer exactly

@@ -189,15 +189,67 @@ pub const SMOOTHED_SSN: &[(&str, f64)] = &[
     ("2025-11", 106.9),
     ("2025-12", 107.0),
     ("2026-01", 104.2),
-    // Predicted (SWPC predicted-solar-cycle, fetched 2026-08-14).
+    ("2026-02", 99.8),
+    // Predicted (SWPC predicted-solar-cycle, fetched 2026-09-03).
     // SSN_PREDICTED_FROM marks this boundary; move both together.
-    ("2026-02", 102.6),
-    ("2026-03", 100.4),
-    ("2026-04", 98.3),
-    ("2026-05", 97.1),
-    ("2026-06", 97.5),
-    ("2026-07", 95.1),
-    ("2026-08", 95.4),
+    ("2026-03", 97.9),
+    ("2026-04", 95.8),
+    ("2026-05", 94.5),
+    ("2026-06", 94.9),
+    ("2026-07", 92.5),
+    ("2026-08", 90.6),
+    ("2026-09", 90.9),
+    ("2026-10", 91.5),
+    ("2026-11", 91.8),
+    ("2026-12", 91.6),
+    ("2027-01", 90.6),
+    ("2027-02", 88.8),
+    ("2027-03", 86.6),
+    ("2027-04", 83.8),
+    ("2027-05", 80.9),
+    ("2027-06", 77.9),
+    ("2027-07", 74.9),
+    ("2027-08", 72.0),
+    ("2027-09", 69.2),
+    ("2027-10", 66.5),
+    ("2027-11", 63.9),
+    ("2027-12", 61.4),
+    ("2028-01", 58.9),
+    ("2028-02", 56.4),
+    ("2028-03", 54.2),
+    ("2028-04", 51.8),
+    ("2028-05", 49.6),
+    ("2028-06", 47.4),
+    ("2028-07", 45.2),
+    ("2028-08", 43.1),
+    ("2028-09", 41.1),
+    ("2028-10", 39.1),
+    ("2028-11", 37.2),
+    ("2028-12", 35.4),
+    ("2029-01", 33.6),
+    ("2029-02", 31.8),
+    ("2029-03", 30.3),
+    ("2029-04", 28.7),
+    ("2029-05", 27.2),
+    ("2029-06", 25.7),
+    ("2029-07", 24.3),
+    ("2029-08", 22.9),
+    ("2029-09", 21.6),
+    ("2029-10", 20.4),
+    ("2029-11", 19.1),
+    ("2029-12", 18.0),
+    ("2030-01", 16.9),
+    ("2030-02", 15.9),
+    ("2030-03", 15.0),
+    ("2030-04", 14.0),
+    ("2030-05", 13.2),
+    ("2030-06", 12.3),
+    ("2030-07", 11.5),
+    ("2030-08", 10.7),
+    ("2030-09", 10.0),
+    ("2030-10", 9.4),
+    ("2030-11", 8.7),
+    ("2030-12", 8.1),
 ];
 
 /// The first `SMOOTHED_SSN` month whose value is a prediction rather
@@ -205,13 +257,34 @@ pub const SMOOTHED_SSN: &[(&str, f64)] = &[
 /// the table must stop before this month: a "miss" against a
 /// predicted number mixes the model's error with the prediction's.
 /// Kept beside the marker comment in the table; move both together.
-pub const SSN_PREDICTED_FROM: &str = "2026-02";
+pub const SSN_PREDICTED_FROM: &str = "2026-03";
 
 pub fn smoothed_ssn(month: &str) -> Option<f64> {
     SMOOTHED_SSN
         .iter()
         .find(|(m, _)| *m == month)
         .map(|(_, v)| *v)
+}
+
+/// The same figure, held at the nearer end when the month is outside the
+/// table.
+///
+/// An offline device can go long periods without udpates, so the table
+/// runs out long before the app does.
+///
+/// Relies on the table being sorted by month, which
+/// `the_ssn_table_is_sorted_so_the_ends_are_the_ends` holds.
+pub fn smoothed_ssn_clamped(month: &str) -> f64 {
+    if let Some(found) = smoothed_ssn(month) {
+        return found;
+    }
+    let first = SMOOTHED_SSN.first().expect("the table is never empty");
+    let last = SMOOTHED_SSN.last().expect("the table is never empty");
+    if month < first.0 {
+        first.1
+    } else {
+        last.1
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -633,6 +706,16 @@ mod tests {
         assert_eq!(samples[1].day, 2);
         assert_eq!(samples[1].snr_median, -21.5);
         assert_eq!(samples[2].hour, 1);
+    }
+
+    #[test]
+    fn the_ssn_table_is_sorted_so_the_ends_are_the_ends() {
+        // `smoothed_ssn_clamped` takes the first and last entries as the
+        // range. Out of order, it would hold at the wrong figure.
+        let months: Vec<&str> = SMOOTHED_SSN.iter().map(|(m, _)| *m).collect();
+        let mut sorted = months.clone();
+        sorted.sort_unstable();
+        assert_eq!(months, sorted, "the table is not in month order");
     }
 
     #[test]

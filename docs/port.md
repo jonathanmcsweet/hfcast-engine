@@ -35,7 +35,7 @@ against the original on the same input:
 | --- | --- | --- |
 | point-to-point listings | 463,104 printed cells and 23,040 mode labels, 96 paths | every cell identical |
 | whole listing files | 600 generated decks, 434,116 lines | identical as text |
-| coverage maps | 17,791 cells over 21 grids | identical but for the case below |
+| coverage maps | 17,791 cells over 21 grids | identical but for the limit below |
 | antenna gain tables | 204,684 cells, 74 of 76 definition files | identical |
 | the fields an application reads | 7,104 fields, 8 shapes | identical |
 | this engine on another processor | listings and coverage grids | identical to itself |
@@ -60,54 +60,58 @@ noise. The first was traced to one antenna gain whose last bit turns
 into a whole 0.001 when the reference writes it to `gainNN.dat` at three
 decimals and reads it back.
 
-## The one place it differs, on purpose
+## A limit the original states, and this engine lifts
 
-Ask for a coverage map on several frequencies at once, with a
-directional antenna, and this engine and the original draw different
-maps. This is deliberate, and it is the only such case.
+Ask VOACAP for a coverage map on several frequencies at once and it
+prints this before it starts:
 
-Before predicting anything, VOACAP works out how much gain the antenna
-has in each direction. For a map on one frequency it does that properly:
-every bearing, every take-off angle. For a map on several frequencies at
-once it does not. It falls back to the table it builds for an ordinary
-point-to-point path, which holds the gain along a single bearing, the
-bearing from the station to the middle of the map, and then uses that
-one bearing's gain for every point on the map.
+    TRANSMIT antenna MUST BE non-directional for this purpose!
+
+It means it. Before predicting anything, VOACAP works out how much gain
+the antenna has in each direction. For a map on one frequency it does
+that properly: every bearing, every take-off angle. For a map on several
+frequencies at once it does not. It falls back to the table it builds
+for an ordinary point-to-point path, which holds the gain along a single
+bearing, the bearing from the station to the middle of the map, and then
+uses that one bearing's gain for every point on the map.
 
 For an operator that means a beam pointed north-east is treated as
 pointing north-east at the map's western edge too. The take-off angle is
 what the map's shading is drawn from, so a map built that way can show a
 station as reachable in a direction the antenna was never turned to.
+With an antenna that has the same gain in all directions there is no
+bearing to get wrong, which is why the original can state the
+restriction and stop there.
 
 This engine builds the proper table for each frequency instead, so
 asking for four bands together gives what asking for each band on its
-own gives.
+own gives, directional antenna or not. It is the only input where the
+two draw different coverage maps, and it is an input the original tells
+you not to make.
 
-How much it moves the map was measured over ten configurations, a world
+How far apart they land was measured over ten configurations, a world
 grid and a regional one, four antenna families, one and both ends
 directional, two hours:
 
     worst single cell        0 to 37.5 degrees
     cells that moved at all  0 to 20.2 percent
 
-The spread is the point. An antenna with the same gain in all directions
-moves nothing, because there is no bearing to get wrong. Where the
-pattern is directional the worst cell sits near the station, where
+The spread is the point. A non-directional antenna moves nothing. Where
+the pattern is directional the worst cell sits near the station, where
 take-off angles are high and a few degrees of bearing move them a long
 way. How many cells move depends on the map: a fifth of a world grid,
 under one percent of a regional grid centred on the station, where every
 point lies close to the bearing of the centre.
 
-The difference applies to both tiers, `Model::Compatible` included. It
-costs nothing to a caller asking for one band at a time, which is the
-only shape the original itself produces, and it is the difference
-between a correct coverage map and a wrong one for a caller asking for
-several. It cannot be reached point to point.
+This applies to both tiers, `Model::Compatible` included. Holding it
+back to `Model::Corrected` would file a limit the original announces
+alongside six defects it stays silent about, and it would cost the one
+guarantee the behaviour exists to give: that a batch of bands answers as
+the same bands run one at a time. `tests/area_bands.rs` holds the engine
+to that guarantee. It cannot be reached point to point.
 
 `areacheck` names the two cases that reach it, prints what they differ
-by, and fails if either ever stops differing. `tests/area_bands.rs`
-holds the engine to the property the deviation exists for: a batch of
-bands equals the same bands run one at a time.
+by, and fails if either ever stops differing.
 
 ## What is out of scope
 
