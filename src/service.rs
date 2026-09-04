@@ -187,9 +187,9 @@ fn offline_essn(req: &Json) -> Result<f64, String> {
     let year = req.number("year")? as u32;
     let month = req.number("month")? as u32;
     let key = format!("{year:04}-{month:02}");
-    // Held at the nearer end rather than refused. The table ships with the
-    // build and a field device may run for years without one, so running
-    // out is the ordinary case and not a fault: a caller that wants the
+    // The table ships with the
+    // build and an offline device may not update regularly, so running
+    // out is the ordinary case. A caller that wants the
     // present month's real figure passes "essn".
     let ssn = crate::wspr::smoothed_ssn_clamped(&key);
     let day = match req.get("day") {
