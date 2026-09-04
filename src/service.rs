@@ -1244,9 +1244,6 @@ mod tests {
 
     #[test]
     fn an_offline_request_with_an_impossible_day_names_the_problem() {
-        // A day outside the month is the caller getting it wrong, which is
-        // worth refusing. A year outside the table is not: see
-        // `an_offline_request_past_the_table_still_answers`.
         let bad_day = parsed(r#"{"year":2020,"month":6,"day":32}"#);
         let err = offline_essn(&bad_day).expect_err("day out of range");
         assert!(err.contains("\"day\""), "{err}");
