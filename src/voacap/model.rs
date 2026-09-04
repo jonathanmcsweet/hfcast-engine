@@ -116,11 +116,8 @@ impl Fixes {
 /// Which behaviour a run reproduces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Model {
-    /// VOACAP as it is, defects included. Byte-identical to the
-    /// reference on every input the reference accepts, and the only
-    /// tier any of the harnesses can judge.
-    ///
-    /// One input falls outside that. A coverage map on several
+
+    /// A coverage map on several
     /// frequencies at once needs a non-directional transmit antenna,
     /// and `getfreqs` prints "TRANSMIT antenna MUST BE non-directional
     /// for this purpose!" before the run starts. This engine builds
