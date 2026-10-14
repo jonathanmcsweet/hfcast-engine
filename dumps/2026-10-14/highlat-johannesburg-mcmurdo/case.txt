@@ -1,0 +1,8 @@
+case: highlat-johannesburg-mcmurdo
+from: -26.2041 28.0473 JOHANNESBURG
+to: -77.8419 166.6863 MCMURDO
+month: 10
+year: 2026
+ssn: 164
+differs: 09z 14.2 MHz snrLowDecile: fortran 18.2, rust 18.3
+differs: 09z 21.2 MHz snrUpDecile: fortran 12.5, rust 12.6
