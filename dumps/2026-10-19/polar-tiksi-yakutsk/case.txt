@@ -1,0 +1,7 @@
+case: polar-tiksi-yakutsk
+from: 71.6366 128.8675 TIKSI
+to: 62.0355 129.6755 YAKUTSK
+month: 10
+year: 2026
+ssn: 90.6
+differs: 02z 21.2 MHz reliability: fortran 0.49, rust 0.48

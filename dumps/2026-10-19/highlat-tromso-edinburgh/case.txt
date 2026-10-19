@@ -1,0 +1,7 @@
+case: highlat-tromso-edinburgh
+from: 69.6492 18.9553 TROMSO
+to: 55.9533 -3.1883 EDINBURGH
+month: 10
+year: 2026
+ssn: 90.6
+differs: 06z 14.2 MHz snrUpDecile: fortran 13.9, rust 13.8

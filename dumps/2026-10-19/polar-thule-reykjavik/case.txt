@@ -1,0 +1,7 @@
+case: polar-thule-reykjavik
+from: 76.5312 -68.7032 THULE
+to: 64.1466 -21.9426 REYKJAVIK
+month: 10
+year: 2026
+ssn: 90.6
+differs: 08z 24.94 MHz snrUpDecile: fortran 24.8, rust 24.9

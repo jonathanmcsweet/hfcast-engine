@@ -1,0 +1,7 @@
+case: equatorial-lagos-bogota
+from: 6.5244 3.3792 LAGOS
+to: 4.711 -74.0721 BOGOTA
+month: 10
+year: 2026
+ssn: 90.6
+differs: 03z 14.2 MHz snrLowDecile: fortran 14.7, rust 14.8

@@ -1,0 +1,8 @@
+case: highlat-longyearbyen-auckland
+from: 78.2232 15.6267 LONGYEARBYEN
+to: -36.8485 174.7633 AUCKLAND
+month: 10
+year: 2026
+ssn: 90.6
+differs: 12z 10.12 MHz snrLowDecile: fortran 22.4, rust 22.3
+differs: 22z 1.84 MHz snr: fortran -1067, rust -1066

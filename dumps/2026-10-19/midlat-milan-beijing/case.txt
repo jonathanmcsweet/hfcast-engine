@@ -1,0 +1,7 @@
+case: midlat-milan-beijing
+from: 45.4642 9.19 MILAN
+to: 39.9042 116.4074 BEIJING
+month: 10
+year: 2026
+ssn: 90.6
+differs: 13z 24.94 MHz snrUpDecile: fortran 25.5, rust 25.4

@@ -1,0 +1,8 @@
+case: midlat-johannesburg-ushuaia
+from: -26.2041 28.0473 JOHANNESBURG
+to: -54.8019 -68.303 USHUAIA
+month: 10
+year: 2026
+ssn: 90.6
+differs: 06z 7.1 MHz snrLowDecile: fortran 10.6, rust 10.5
+differs: 06z 7.1 MHz snrUpDecile: fortran 8.3, rust 8.4

@@ -1,0 +1,8 @@
+case: highlat-longyearbyen-berlin
+from: 78.2232 15.6267 LONGYEARBYEN
+to: 52.52 13.405 BERLIN
+month: 10
+year: 2026
+ssn: 90.6
+differs: 14z 18.1 MHz snrUpDecile: fortran 7.2, rust 7.1
+differs: 19z 7.1 MHz snrLowDecile: fortran 14.9, rust 14.8

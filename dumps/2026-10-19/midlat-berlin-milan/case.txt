@@ -1,0 +1,7 @@
+case: midlat-berlin-milan
+from: 52.52 13.405 BERLIN
+to: 45.4642 9.19 MILAN
+month: 10
+year: 2026
+ssn: 90.6
+differs: 22z 1.84 MHz snrUpDecile: fortran 8.1, rust 8

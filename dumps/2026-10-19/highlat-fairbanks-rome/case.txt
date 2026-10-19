@@ -1,0 +1,7 @@
+case: highlat-fairbanks-rome
+from: 64.8378 -147.7164 FAIRBANKS
+to: 41.9028 12.4964 ROME
+month: 10
+year: 2026
+ssn: 90.6
+differs: 09z 3.75 MHz snrUpDecile: fortran 6.7, rust 6.8

@@ -1,0 +1,7 @@
+case: short-dublin-london
+from: 53.3498 -6.2603 DUBLIN
+to: 51.5072 -0.1276 LONDON
+month: 10
+year: 2026
+ssn: 90.6
+differs: 23z 1.84 MHz snrUpDecile: fortran 14, rust 14.1

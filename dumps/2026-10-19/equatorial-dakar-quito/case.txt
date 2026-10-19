@@ -1,0 +1,8 @@
+case: equatorial-dakar-quito
+from: 14.7167 -17.4677 DAKAR
+to: -0.1807 -78.4678 QUITO
+month: 10
+year: 2026
+ssn: 90.6
+differs: 23z 7.1 MHz reliability: fortran 0.07, rust 0.08
+differs: 23z 7.1 MHz snrUpDecile: fortran 17.4, rust 17.6

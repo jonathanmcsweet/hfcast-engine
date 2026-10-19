@@ -1,0 +1,7 @@
+case: equatorial-darwin-quito
+from: -12.4634 130.8456 DARWIN
+to: -0.1807 -78.4678 QUITO
+month: 10
+year: 2026
+ssn: 90.6
+differs: 11z 10.12 MHz snrUpDecile: fortran 9.7, rust 9.6

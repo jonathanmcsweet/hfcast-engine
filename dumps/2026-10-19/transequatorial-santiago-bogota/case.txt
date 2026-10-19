@@ -1,0 +1,7 @@
+case: transequatorial-santiago-bogota
+from: -33.4489 -70.6693 SANTIAGO
+to: 4.711 -74.0721 BOGOTA
+month: 10
+year: 2026
+ssn: 90.6
+differs: 11z 14.2 MHz reliability: fortran 0.77, rust 0.76

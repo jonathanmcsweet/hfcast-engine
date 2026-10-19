@@ -1,0 +1,7 @@
+case: transequatorial-delhi-johannesburg
+from: 28.7041 77.1025 DELHI
+to: -26.2041 28.0473 JOHANNESBURG
+month: 10
+year: 2026
+ssn: 90.6
+differs: 09z 21.2 MHz snrUpDecile: fortran 7.4, rust 7.5

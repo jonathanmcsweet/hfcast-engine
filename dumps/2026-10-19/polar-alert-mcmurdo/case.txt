@@ -1,0 +1,7 @@
+case: polar-alert-mcmurdo
+from: 82.5018 -62.3481 ALERT
+to: -77.8419 166.6863 MCMURDO
+month: 10
+year: 2026
+ssn: 90.6
+differs: 20z MUF muf: fortran 21.6, rust 21.5

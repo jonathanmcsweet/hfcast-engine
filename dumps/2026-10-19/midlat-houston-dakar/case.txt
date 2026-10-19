@@ -1,0 +1,7 @@
+case: midlat-houston-dakar
+from: 29.7604 -95.3698 HOUSTON
+to: 14.7167 -17.4677 DAKAR
+month: 10
+year: 2026
+ssn: 90.6
+differs: 02z 18.1 MHz snrUpDecile: fortran 14.8, rust 14.9

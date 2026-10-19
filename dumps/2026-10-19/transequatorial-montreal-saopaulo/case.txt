@@ -1,0 +1,7 @@
+case: transequatorial-montreal-saopaulo
+from: 45.5019 -73.5674 MONTREAL
+to: -23.5505 -46.6333 SAO PAULO
+month: 10
+year: 2026
+ssn: 90.6
+differs: 18z MUF muf: fortran 37.2, rust 37.1
