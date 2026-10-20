@@ -1,0 +1,7 @@
+case: equatorial-dakar-lagos
+from: 14.7167 -17.4677 DAKAR
+to: 6.5244 3.3792 LAGOS
+month: 10
+year: 2026
+ssn: 71.1
+differs: 23z 28.4 MHz snrUpDecile: fortran 15.2, rust 15.3

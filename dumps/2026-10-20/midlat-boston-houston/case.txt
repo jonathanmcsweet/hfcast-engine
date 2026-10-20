@@ -1,0 +1,7 @@
+case: midlat-boston-houston
+from: 42.3601 -71.0589 BOSTON
+to: 29.7604 -95.3698 HOUSTON
+month: 10
+year: 2026
+ssn: 71.1
+differs: 05z 7.1 MHz snrUpDecile: fortran 11.1, rust 11

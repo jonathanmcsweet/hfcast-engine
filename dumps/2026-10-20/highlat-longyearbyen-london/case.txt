@@ -1,0 +1,8 @@
+case: highlat-longyearbyen-london
+from: 78.2232 15.6267 LONGYEARBYEN
+to: 51.5072 -0.1276 LONDON
+month: 10
+year: 2026
+ssn: 71.1
+differs: 07z 28.4 MHz snrLowDecile: fortran 24.9, rust 24.8
+differs: 20z 18.1 MHz snrUpDecile: fortran 25, rust 24.9

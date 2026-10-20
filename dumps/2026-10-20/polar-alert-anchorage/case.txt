@@ -1,0 +1,8 @@
+case: polar-alert-anchorage
+from: 82.5018 -62.3481 ALERT
+to: 61.2181 -149.9003 ANCHORAGE
+month: 10
+year: 2026
+ssn: 71.1
+differs: 09z 3.75 MHz snrUpDecile: fortran 6.2, rust 6.3
+differs: 17z 24.94 MHz snr: fortran -44, rust -43

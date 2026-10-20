@@ -1,0 +1,7 @@
+case: polar-helsinki-mcmurdo
+from: 60.1699 24.9384 HELSINKI
+to: -77.8419 166.6863 MCMURDO
+month: 10
+year: 2026
+ssn: 71.1
+differs: 03z 14.2 MHz snrUpDecile: fortran 16, rust 16.1

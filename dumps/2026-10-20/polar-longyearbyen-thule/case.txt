@@ -1,0 +1,7 @@
+case: polar-longyearbyen-thule
+from: 78.2232 15.6267 LONGYEARBYEN
+to: 76.5312 -68.7032 THULE
+month: 10
+year: 2026
+ssn: 71.1
+differs: 05z 28.4 MHz snrLowDecile: fortran 14.2, rust 14.1

@@ -1,0 +1,7 @@
+case: short-milan-rome
+from: 45.4642 9.19 MILAN
+to: 41.9028 12.4964 ROME
+month: 10
+year: 2026
+ssn: 71.1
+differs: 03z 28.4 MHz snrUpDecile: fortran 7.9, rust 8

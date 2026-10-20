@@ -1,0 +1,7 @@
+case: equatorial-manila-bogota
+from: 14.5995 120.9842 MANILA
+to: 4.711 -74.0721 BOGOTA
+month: 10
+year: 2026
+ssn: 71.1
+differs: 16z 7.1 MHz snrUpDecile: fortran 7.1, rust 7

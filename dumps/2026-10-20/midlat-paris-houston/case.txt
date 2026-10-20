@@ -1,0 +1,8 @@
+case: midlat-paris-houston
+from: 48.8566 2.3522 PARIS
+to: 29.7604 -95.3698 HOUSTON
+month: 10
+year: 2026
+ssn: 71.1
+differs: 07z 21.2 MHz snrUpDecile: fortran 17.3, rust 17.4
+differs: 21z 1.84 MHz snrLowDecile: fortran 13.5, rust 13.6

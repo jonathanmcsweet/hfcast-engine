@@ -1,0 +1,7 @@
+case: polar-alert-fairbanks
+from: 82.5018 -62.3481 ALERT
+to: 64.8378 -147.7164 FAIRBANKS
+month: 10
+year: 2026
+ssn: 71.1
+differs: 13z 28.4 MHz snrLowDecile: fortran 24.4, rust 24.3

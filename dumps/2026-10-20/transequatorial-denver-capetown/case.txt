@@ -1,0 +1,7 @@
+case: transequatorial-denver-capetown
+from: 39.7392 -104.9903 DENVER
+to: -33.9249 18.4241 CAPE TOWN
+month: 10
+year: 2026
+ssn: 71.1
+differs: 23z 14.2 MHz snrUpDecile: fortran 9.5, rust 9.6

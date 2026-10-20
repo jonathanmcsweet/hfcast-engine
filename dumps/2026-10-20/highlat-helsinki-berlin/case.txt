@@ -1,0 +1,7 @@
+case: highlat-helsinki-berlin
+from: 60.1699 24.9384 HELSINKI
+to: 52.52 13.405 BERLIN
+month: 10
+year: 2026
+ssn: 71.1
+differs: 03z 7.1 MHz snrLowDecile: fortran 20.8, rust 20.9
