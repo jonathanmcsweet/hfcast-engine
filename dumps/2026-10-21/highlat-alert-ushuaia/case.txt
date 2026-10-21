@@ -1,0 +1,7 @@
+case: highlat-alert-ushuaia
+from: 82.5018 -62.3481 ALERT
+to: -54.8019 -68.303 USHUAIA
+month: 10
+year: 2026
+ssn: 71.1
+differs: 16z 1.84 MHz snr: fortran -1460, rust -1459

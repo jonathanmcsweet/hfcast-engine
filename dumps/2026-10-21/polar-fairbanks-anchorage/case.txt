@@ -1,0 +1,7 @@
+case: polar-fairbanks-anchorage
+from: 64.8378 -147.7164 FAIRBANKS
+to: 61.2181 -149.9003 ANCHORAGE
+month: 10
+year: 2026
+ssn: 71.1
+differs: 05z 10.12 MHz reliability: fortran 0.53, rust 0.52

@@ -1,0 +1,7 @@
+case: midlat-montreal-boulder
+from: 45.5019 -73.5674 MONTREAL
+to: 40.015 -105.2705 BOULDER
+month: 10
+year: 2026
+ssn: 71.1
+differs: 03z 28.4 MHz snrUpDecile: fortran 18.1, rust 18

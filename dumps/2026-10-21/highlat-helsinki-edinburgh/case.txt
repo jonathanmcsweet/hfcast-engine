@@ -1,0 +1,7 @@
+case: highlat-helsinki-edinburgh
+from: 60.1699 24.9384 HELSINKI
+to: 55.9533 -3.1883 EDINBURGH
+month: 10
+year: 2026
+ssn: 71.1
+differs: 05z 21.2 MHz snrUpDecile: fortran 12.2, rust 12.1

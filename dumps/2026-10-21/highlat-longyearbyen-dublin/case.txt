@@ -1,0 +1,7 @@
+case: highlat-longyearbyen-dublin
+from: 78.2232 15.6267 LONGYEARBYEN
+to: 53.3498 -6.2603 DUBLIN
+month: 10
+year: 2026
+ssn: 71.1
+differs: 01z 1.84 MHz snrLowDecile: fortran 14.1, rust 14.2

@@ -1,0 +1,7 @@
+case: equatorial-darwin-bogota
+from: -12.4634 130.8456 DARWIN
+to: 4.711 -74.0721 BOGOTA
+month: 10
+year: 2026
+ssn: 71.1
+differs: 07z 3.75 MHz snrLowDecile: fortran 12.9, rust 12.8

@@ -1,0 +1,8 @@
+case: highlat-toronto-mcmurdo
+from: 43.6532 -79.3832 TORONTO
+to: -77.8419 166.6863 MCMURDO
+month: 10
+year: 2026
+ssn: 71.1
+differs: 10z 24.94 MHz snrUpDecile: fortran 24.9, rust 25
+differs: 14z 3.75 MHz snrUpDecile: fortran 6.8, rust 6.7

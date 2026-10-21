@@ -1,0 +1,7 @@
+case: polar-tromso-mcmurdo
+from: 69.6492 18.9553 TROMSO
+to: -77.8419 166.6863 MCMURDO
+month: 10
+year: 2026
+ssn: 71.1
+differs: 12z MUF muf: fortran 19.4, rust 19.3
