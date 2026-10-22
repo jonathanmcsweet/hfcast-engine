@@ -1,0 +1,7 @@
+case: highlat-reykjavik-london
+from: 64.1466 -21.9426 REYKJAVIK
+to: 51.5072 -0.1276 LONDON
+month: 10
+year: 2026
+ssn: 62.9
+differs: 06z 7.1 MHz snrUpDecile: fortran 8.2, rust 8.1

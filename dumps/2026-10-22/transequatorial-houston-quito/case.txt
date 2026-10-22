@@ -1,0 +1,10 @@
+case: transequatorial-houston-quito
+from: 29.7604 -95.3698 HOUSTON
+to: -0.1807 -78.4678 QUITO
+month: 10
+year: 2026
+ssn: 62.9
+differs: 01z 18.1 MHz reliability: fortran 0.87, rust 0.86
+differs: 01z 18.1 MHz snr: fortran 39, rust 38
+differs: 01z 18.1 MHz snrLowDecile: fortran 17, rust 16.1
+differs: 01z 18.1 MHz snrUpDecile: fortran 10.9, rust 9.6

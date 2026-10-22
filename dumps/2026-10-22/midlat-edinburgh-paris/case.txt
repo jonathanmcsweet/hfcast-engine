@@ -1,0 +1,7 @@
+case: midlat-edinburgh-paris
+from: 55.9533 -3.1883 EDINBURGH
+to: 48.8566 2.3522 PARIS
+month: 10
+year: 2026
+ssn: 62.9
+differs: 17z 3.75 MHz snrLowDecile: fortran 13.2, rust 13.1

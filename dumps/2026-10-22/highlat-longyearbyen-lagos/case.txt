@@ -1,0 +1,7 @@
+case: highlat-longyearbyen-lagos
+from: 78.2232 15.6267 LONGYEARBYEN
+to: 6.5244 3.3792 LAGOS
+month: 10
+year: 2026
+ssn: 62.9
+differs: 04z 18.1 MHz snrUpDecile: fortran 21.9, rust 22

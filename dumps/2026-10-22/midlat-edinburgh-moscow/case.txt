@@ -1,0 +1,7 @@
+case: midlat-edinburgh-moscow
+from: 55.9533 -3.1883 EDINBURGH
+to: 55.7558 37.6173 MOSCOW
+month: 10
+year: 2026
+ssn: 62.9
+differs: 04z 21.2 MHz snrLowDecile: fortran 10.4, rust 10.3

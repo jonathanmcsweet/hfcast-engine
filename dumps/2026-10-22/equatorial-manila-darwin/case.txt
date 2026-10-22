@@ -1,0 +1,7 @@
+case: equatorial-manila-darwin
+from: 14.5995 120.9842 MANILA
+to: -12.4634 130.8456 DARWIN
+month: 10
+year: 2026
+ssn: 62.9
+differs: 03z 14.2 MHz snrUpDecile: fortran 16.1, rust 16.2

@@ -1,0 +1,7 @@
+case: equatorial-singapore-jakarta
+from: 1.3521 103.8198 SINGAPORE
+to: -6.2088 106.8456 JAKARTA
+month: 10
+year: 2026
+ssn: 62.9
+differs: 10z 28.4 MHz reliability: fortran 0.18, rust 0.19

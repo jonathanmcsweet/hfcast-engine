@@ -1,0 +1,7 @@
+case: transequatorial-montreal-saopaulo
+from: 45.5019 -73.5674 MONTREAL
+to: -23.5505 -46.6333 SAO PAULO
+month: 10
+year: 2026
+ssn: 62.9
+differs: 08z 21.2 MHz snrLowDecile: fortran 10.2, rust 10.3

@@ -1,0 +1,7 @@
+case: midlat-milan-cairo
+from: 45.4642 9.19 MILAN
+to: 30.0444 31.2357 CAIRO
+month: 10
+year: 2026
+ssn: 62.9
+differs: 04z 24.94 MHz snrUpDecile: fortran 12.6, rust 12.7

@@ -1,0 +1,7 @@
+case: highlat-helsinki-london
+from: 60.1699 24.9384 HELSINKI
+to: 51.5072 -0.1276 LONDON
+month: 10
+year: 2026
+ssn: 62.9
+differs: 21z 7.1 MHz snrUpDecile: fortran 6.1, rust 6.2

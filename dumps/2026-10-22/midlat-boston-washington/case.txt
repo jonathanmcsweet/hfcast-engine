@@ -1,0 +1,7 @@
+case: midlat-boston-washington
+from: 42.3601 -71.0589 BOSTON
+to: 38.9072 -77.0369 WASHINGTON
+month: 10
+year: 2026
+ssn: 62.9
+differs: 11z 14.2 MHz snrUpDecile: fortran 12.3, rust 12.4

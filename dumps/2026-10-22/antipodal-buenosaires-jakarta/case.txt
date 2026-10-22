@@ -1,0 +1,7 @@
+case: antipodal-buenosaires-jakarta
+from: -34.6037 -58.3816 BUENOS AIRES
+to: -6.2088 106.8456 JAKARTA
+month: 10
+year: 2026
+ssn: 62.9
+differs: 19z 24.94 MHz reliability: fortran 0.02, rust 0.03

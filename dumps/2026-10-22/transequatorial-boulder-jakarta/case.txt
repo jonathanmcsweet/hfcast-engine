@@ -1,0 +1,7 @@
+case: transequatorial-boulder-jakarta
+from: 40.015 -105.2705 BOULDER
+to: -6.2088 106.8456 JAKARTA
+month: 10
+year: 2026
+ssn: 62.9
+differs: 06z 3.75 MHz snr: fortran -397, rust -398

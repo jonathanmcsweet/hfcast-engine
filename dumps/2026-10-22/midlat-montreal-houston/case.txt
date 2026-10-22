@@ -1,0 +1,10 @@
+case: midlat-montreal-houston
+from: 45.5019 -73.5674 MONTREAL
+to: 29.7604 -95.3698 HOUSTON
+month: 10
+year: 2026
+ssn: 62.9
+differs: 09z 21.2 MHz snrUpDecile: fortran 13.2, rust 13.3
+differs: 10z 3.75 MHz snrUpDecile: fortran 9.5, rust 9.4
+differs: 16z 10.12 MHz snrUpDecile: fortran 6.5, rust 6.6
+differs: 22z 21.2 MHz snrUpDecile: fortran 6.9, rust 6.8

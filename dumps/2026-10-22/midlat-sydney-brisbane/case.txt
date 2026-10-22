@@ -1,0 +1,7 @@
+case: midlat-sydney-brisbane
+from: -33.8688 151.2093 SYDNEY
+to: -27.4698 153.0251 BRISBANE
+month: 10
+year: 2026
+ssn: 62.9
+differs: 20z 14.2 MHz snrLowDecile: fortran 9.7, rust 9.6

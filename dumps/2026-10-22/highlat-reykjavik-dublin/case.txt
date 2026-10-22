@@ -1,0 +1,7 @@
+case: highlat-reykjavik-dublin
+from: 64.1466 -21.9426 REYKJAVIK
+to: 53.3498 -6.2603 DUBLIN
+month: 10
+year: 2026
+ssn: 62.9
+differs: 23z 3.75 MHz snrUpDecile: fortran 11.9, rust 12

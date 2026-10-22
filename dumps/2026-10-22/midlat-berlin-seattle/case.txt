@@ -1,0 +1,9 @@
+case: midlat-berlin-seattle
+from: 52.52 13.405 BERLIN
+to: 47.6062 -122.3321 SEATTLE
+month: 10
+year: 2026
+ssn: 62.9
+differs: 06z 3.75 MHz snrUpDecile: fortran 5.8, rust 5.7
+differs: 19z 14.2 MHz snrUpDecile: fortran 9.2, rust 9.1
+differs: 22z MUF muf: fortran 13.5, rust 13.6
