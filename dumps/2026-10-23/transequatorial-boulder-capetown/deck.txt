@@ -1,0 +1,15 @@
+LINEMAX      55       number of lines-per-page
+COEFFS    CCIR
+TIME          1   24    1    1
+MONTH      202610.00
+SUNSPOT     55.
+LABEL     BOULDER             CAPE TOWN           
+CIRCUIT   40.02N   105.27W    33.92S    18.42E  S     0
+SYSTEM       1. 145. 0.10  90. 24.0 3.00 0.10
+FPROB      1.00 1.00 1.00 1.00
+ANTENNA       1    1    2   30     0.000[default/isotrope     ]  0.0    0.1000
+ANTENNA       2    2    2   30     0.000[default/isotrope     ]  0.0    0.0000
+FREQUENCY  1.84 3.75 7.1010.1214.2018.1021.2024.9428.40 0.00 0.00
+METHOD       30    0
+EXECUTE       0
+QUIT

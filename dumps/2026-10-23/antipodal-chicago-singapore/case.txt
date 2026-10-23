@@ -1,0 +1,7 @@
+case: antipodal-chicago-singapore
+from: 41.8781 -87.6298 CHICAGO
+to: 1.3521 103.8198 SINGAPORE
+month: 10
+year: 2026
+ssn: 54.5
+differs: 02z 10.12 MHz snrLowDecile: fortran 22.9, rust 22.8

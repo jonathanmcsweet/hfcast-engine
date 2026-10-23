@@ -1,0 +1,7 @@
+case: equatorial-darwin-manaus
+from: -12.4634 130.8456 DARWIN
+to: -3.119 -60.0217 MANAUS
+month: 10
+year: 2026
+ssn: 54.5
+differs: 22z 28.4 MHz reliability: fortran 0.1, rust 0.11

@@ -1,0 +1,7 @@
+case: highlat-tiksi-singapore
+from: 71.6366 128.8675 TIKSI
+to: 1.3521 103.8198 SINGAPORE
+month: 10
+year: 2026
+ssn: 54.5
+differs: 08z 10.12 MHz snrUpDecile: fortran 9.6, rust 9.7

@@ -1,0 +1,7 @@
+case: midlat-montreal-washington
+from: 45.5019 -73.5674 MONTREAL
+to: 38.9072 -77.0369 WASHINGTON
+month: 10
+year: 2026
+ssn: 54.5
+differs: 22z 18.1 MHz snrUpDecile: fortran 17.6, rust 17.7

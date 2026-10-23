@@ -1,0 +1,8 @@
+case: polar-tromso-helsinki
+from: 69.6492 18.9553 TROMSO
+to: 60.1699 24.9384 HELSINKI
+month: 10
+year: 2026
+ssn: 54.5
+differs: 00z 7.1 MHz reliability: fortran 0.92, rust 0.93
+differs: 10z 3.75 MHz snrLowDecile: fortran 17.6, rust 17.5

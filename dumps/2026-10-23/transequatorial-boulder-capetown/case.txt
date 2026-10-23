@@ -1,0 +1,7 @@
+case: transequatorial-boulder-capetown
+from: 40.015 -105.2705 BOULDER
+to: -33.9249 18.4241 CAPE TOWN
+month: 10
+year: 2026
+ssn: 54.5
+differs: 05z 14.2 MHz snrUpDecile: fortran 25.1, rust 25

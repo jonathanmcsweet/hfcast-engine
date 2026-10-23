@@ -1,0 +1,7 @@
+case: equatorial-manila-lima
+from: 14.5995 120.9842 MANILA
+to: -12.0464 -77.0428 LIMA
+month: 10
+year: 2026
+ssn: 54.5
+differs: 14z 21.2 MHz snrUpDecile: fortran 10.5, rust 10.6

@@ -1,0 +1,7 @@
+case: antipodal-delhi-bogota
+from: 28.7041 77.1025 DELHI
+to: 4.711 -74.0721 BOGOTA
+month: 10
+year: 2026
+ssn: 54.5
+differs: 09z 24.94 MHz snr: fortran -157, rust -158

@@ -1,0 +1,7 @@
+case: short-edinburgh-london
+from: 55.9533 -3.1883 EDINBURGH
+to: 51.5072 -0.1276 LONDON
+month: 10
+year: 2026
+ssn: 54.5
+differs: 01z 7.1 MHz reliability: fortran 0.81, rust 0.82

@@ -1,0 +1,7 @@
+case: highlat-tromso-nairobi
+from: 69.6492 18.9553 TROMSO
+to: -1.2921 36.8219 NAIROBI
+month: 10
+year: 2026
+ssn: 54.5
+differs: 19z 10.12 MHz snrUpDecile: fortran 11.8, rust 11.7

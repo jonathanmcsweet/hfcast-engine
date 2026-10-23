@@ -1,0 +1,7 @@
+case: equatorial-lagos-singapore
+from: 6.5244 3.3792 LAGOS
+to: 1.3521 103.8198 SINGAPORE
+month: 10
+year: 2026
+ssn: 54.5
+differs: 07z 1.84 MHz snr: fortran -1097, rust -1098

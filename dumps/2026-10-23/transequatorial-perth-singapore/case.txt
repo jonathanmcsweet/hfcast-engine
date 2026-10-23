@@ -1,0 +1,7 @@
+case: transequatorial-perth-singapore
+from: -31.9523 115.8613 PERTH
+to: 1.3521 103.8198 SINGAPORE
+month: 10
+year: 2026
+ssn: 54.5
+differs: 00z 10.12 MHz reliability: fortran 0.71, rust 0.7

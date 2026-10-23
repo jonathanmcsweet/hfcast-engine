@@ -1,0 +1,7 @@
+case: transequatorial-seattle-lima
+from: 47.6062 -122.3321 SEATTLE
+to: -12.0464 -77.0428 LIMA
+month: 10
+year: 2026
+ssn: 54.5
+differs: 12z 1.84 MHz snrUpDecile: fortran 10.9, rust 10.8

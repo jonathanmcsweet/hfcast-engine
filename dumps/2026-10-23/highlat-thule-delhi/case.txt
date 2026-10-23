@@ -1,0 +1,7 @@
+case: highlat-thule-delhi
+from: 76.5312 -68.7032 THULE
+to: 28.7041 77.1025 DELHI
+month: 10
+year: 2026
+ssn: 54.5
+differs: 09z 21.2 MHz reliability: fortran 0.25, rust 0.26

@@ -1,0 +1,8 @@
+case: highlat-tromso-berlin
+from: 69.6492 18.9553 TROMSO
+to: 52.52 13.405 BERLIN
+month: 10
+year: 2026
+ssn: 54.5
+differs: 04z 21.2 MHz snrUpDecile: fortran 15.4, rust 15.3
+differs: 19z 1.84 MHz snrLowDecile: fortran 19.5, rust 19.4

@@ -1,0 +1,7 @@
+case: midlat-paris-milan
+from: 48.8566 2.3522 PARIS
+to: 45.4642 9.19 MILAN
+month: 10
+year: 2026
+ssn: 54.5
+differs: 22z 1.84 MHz snrUpDecile: fortran 11, rust 11.1

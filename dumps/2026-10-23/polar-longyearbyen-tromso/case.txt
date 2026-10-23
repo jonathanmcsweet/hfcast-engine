@@ -1,0 +1,7 @@
+case: polar-longyearbyen-tromso
+from: 78.2232 15.6267 LONGYEARBYEN
+to: 69.6492 18.9553 TROMSO
+month: 10
+year: 2026
+ssn: 54.5
+differs: 08z 18.1 MHz reliability: fortran 0, rust 0.01
