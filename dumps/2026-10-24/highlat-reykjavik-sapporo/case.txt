@@ -1,0 +1,7 @@
+case: highlat-reykjavik-sapporo
+from: 64.1466 -21.9426 REYKJAVIK
+to: 43.0618 141.3545 SAPPORO
+month: 10
+year: 2026
+ssn: 47.1
+differs: 01z 7.1 MHz snr: fortran -10, rust -11

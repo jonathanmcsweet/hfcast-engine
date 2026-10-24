@@ -1,0 +1,7 @@
+case: midlat-berlin-seattle
+from: 52.52 13.405 BERLIN
+to: 47.6062 -122.3321 SEATTLE
+month: 10
+year: 2026
+ssn: 47.1
+differs: 15z 10.12 MHz snrLowDecile: fortran 13.7, rust 13.6

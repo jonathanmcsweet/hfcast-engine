@@ -1,0 +1,7 @@
+case: antipodal-santiago-jakarta
+from: -33.4489 -70.6693 SANTIAGO
+to: -6.2088 106.8456 JAKARTA
+month: 10
+year: 2026
+ssn: 47.1
+differs: 08z 3.75 MHz snr: fortran -215, rust -216

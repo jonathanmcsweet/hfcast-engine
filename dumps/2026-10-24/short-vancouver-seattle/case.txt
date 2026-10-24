@@ -1,0 +1,7 @@
+case: short-vancouver-seattle
+from: 49.2827 -123.1207 VANCOUVER
+to: 47.6062 -122.3321 SEATTLE
+month: 10
+year: 2026
+ssn: 47.1
+differs: 03z 10.12 MHz snrLowDecile: fortran 22.9, rust 22.8

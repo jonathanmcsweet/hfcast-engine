@@ -1,0 +1,7 @@
+case: transequatorial-losangeles-perth
+from: 34.0522 -118.2437 LOS ANGELES
+to: -31.9523 115.8613 PERTH
+month: 10
+year: 2026
+ssn: 47.1
+differs: 13z 3.75 MHz snrUpDecile: fortran 7.9, rust 7.8

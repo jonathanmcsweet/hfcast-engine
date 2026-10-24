@@ -1,0 +1,8 @@
+case: polar-tiksi-anchorage
+from: 71.6366 128.8675 TIKSI
+to: 61.2181 -149.9003 ANCHORAGE
+month: 10
+year: 2026
+ssn: 47.1
+differs: 20z 28.4 MHz snr: fortran -133, rust -132
+differs: 22z MUF muf: fortran 18, rust 18.1

@@ -1,0 +1,7 @@
+case: midlat-berlin-paris
+from: 52.52 13.405 BERLIN
+to: 48.8566 2.3522 PARIS
+month: 10
+year: 2026
+ssn: 47.1
+differs: 23z 10.12 MHz snrLowDecile: fortran 22.5, rust 22.4

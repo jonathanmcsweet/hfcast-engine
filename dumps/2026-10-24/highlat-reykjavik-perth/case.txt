@@ -1,0 +1,7 @@
+case: highlat-reykjavik-perth
+from: 64.1466 -21.9426 REYKJAVIK
+to: -31.9523 115.8613 PERTH
+month: 10
+year: 2026
+ssn: 47.1
+differs: 06z 3.75 MHz snrUpDecile: fortran 7, rust 6.9

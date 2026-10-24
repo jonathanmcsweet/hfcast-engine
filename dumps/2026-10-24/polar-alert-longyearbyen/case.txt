@@ -1,0 +1,7 @@
+case: polar-alert-longyearbyen
+from: 82.5018 -62.3481 ALERT
+to: 78.2232 15.6267 LONGYEARBYEN
+month: 10
+year: 2026
+ssn: 47.1
+differs: 11z 14.2 MHz snrUpDecile: fortran 11, rust 11.1

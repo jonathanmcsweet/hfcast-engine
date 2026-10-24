@@ -1,0 +1,7 @@
+case: equatorial-lagos-quito
+from: 6.5244 3.3792 LAGOS
+to: -0.1807 -78.4678 QUITO
+month: 10
+year: 2026
+ssn: 47.1
+differs: 14z 1.84 MHz snr: fortran -751, rust -752

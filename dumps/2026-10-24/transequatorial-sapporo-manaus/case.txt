@@ -1,0 +1,7 @@
+case: transequatorial-sapporo-manaus
+from: 43.0618 141.3545 SAPPORO
+to: -3.119 -60.0217 MANAUS
+month: 10
+year: 2026
+ssn: 47.1
+differs: 16z 21.2 MHz snrUpDecile: fortran 22, rust 22.1

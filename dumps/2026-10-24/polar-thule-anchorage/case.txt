@@ -1,0 +1,7 @@
+case: polar-thule-anchorage
+from: 76.5312 -68.7032 THULE
+to: 61.2181 -149.9003 ANCHORAGE
+month: 10
+year: 2026
+ssn: 47.1
+differs: 15z 3.75 MHz snrUpDecile: fortran 6.9, rust 6.8

@@ -1,0 +1,7 @@
+case: polar-tiksi-fairbanks
+from: 71.6366 128.8675 TIKSI
+to: 64.8378 -147.7164 FAIRBANKS
+month: 10
+year: 2026
+ssn: 47.1
+differs: 20z 3.75 MHz snrUpDecile: fortran 9.3, rust 9.4

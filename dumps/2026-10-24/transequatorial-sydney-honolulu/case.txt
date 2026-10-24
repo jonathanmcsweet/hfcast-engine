@@ -1,0 +1,7 @@
+case: transequatorial-sydney-honolulu
+from: -33.8688 151.2093 SYDNEY
+to: 21.3069 -157.8583 HONOLULU
+month: 10
+year: 2026
+ssn: 47.1
+differs: 02z 3.75 MHz snrUpDecile: fortran 7.2, rust 7.3

@@ -1,0 +1,8 @@
+case: highlat-reykjavik-milan
+from: 64.1466 -21.9426 REYKJAVIK
+to: 45.4642 9.19 MILAN
+month: 10
+year: 2026
+ssn: 47.1
+differs: 14z 28.4 MHz snrUpDecile: fortran 21.9, rust 21.8
+differs: 23z 7.1 MHz snrLowDecile: fortran 11.8, rust 11.9

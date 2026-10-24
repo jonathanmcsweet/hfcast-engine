@@ -1,0 +1,8 @@
+case: polar-longyearbyen-mcmurdo
+from: 78.2232 15.6267 LONGYEARBYEN
+to: -77.8419 166.6863 MCMURDO
+month: 10
+year: 2026
+ssn: 47.1
+differs: 11z 24.94 MHz snr: fortran -46, rust -45
+differs: 13z 3.75 MHz snr: fortran -118, rust -117

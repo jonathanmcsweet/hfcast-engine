@@ -1,0 +1,7 @@
+case: short-toronto-washington
+from: 43.6532 -79.3832 TORONTO
+to: 38.9072 -77.0369 WASHINGTON
+month: 10
+year: 2026
+ssn: 47.1
+differs: 15z 14.2 MHz snrUpDecile: fortran 24.4, rust 24.3

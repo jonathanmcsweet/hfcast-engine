@@ -1,0 +1,7 @@
+case: polar-alert-thule
+from: 82.5018 -62.3481 ALERT
+to: 76.5312 -68.7032 THULE
+month: 10
+year: 2026
+ssn: 47.1
+differs: 01z 14.2 MHz snrUpDecile: fortran 22, rust 22.1

@@ -1,0 +1,7 @@
+case: midlat-paris-seattle
+from: 48.8566 2.3522 PARIS
+to: 47.6062 -122.3321 SEATTLE
+month: 10
+year: 2026
+ssn: 47.1
+differs: 00z 3.75 MHz snrUpDecile: fortran 8, rust 8.1

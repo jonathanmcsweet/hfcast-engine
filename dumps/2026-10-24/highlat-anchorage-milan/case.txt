@@ -1,0 +1,7 @@
+case: highlat-anchorage-milan
+from: 61.2181 -149.9003 ANCHORAGE
+to: 45.4642 9.19 MILAN
+month: 10
+year: 2026
+ssn: 47.1
+differs: 01z 24.94 MHz snr: fortran -89, rust -88

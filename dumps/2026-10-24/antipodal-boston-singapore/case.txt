@@ -1,0 +1,7 @@
+case: antipodal-boston-singapore
+from: 42.3601 -71.0589 BOSTON
+to: 1.3521 103.8198 SINGAPORE
+month: 10
+year: 2026
+ssn: 47.1
+differs: 01z 28.4 MHz snr: fortran -142, rust -141

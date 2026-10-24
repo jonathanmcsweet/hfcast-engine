@@ -1,0 +1,7 @@
+case: polar-reykjavik-mcmurdo
+from: 64.1466 -21.9426 REYKJAVIK
+to: -77.8419 166.6863 MCMURDO
+month: 10
+year: 2026
+ssn: 47.1
+differs: 06z 7.1 MHz snrLowDecile: fortran 20.1, rust 20

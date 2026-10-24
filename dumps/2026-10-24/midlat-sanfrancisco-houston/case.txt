@@ -1,0 +1,7 @@
+case: midlat-sanfrancisco-houston
+from: 37.7749 -122.4194 SAN FRANCISCO
+to: 29.7604 -95.3698 HOUSTON
+month: 10
+year: 2026
+ssn: 47.1
+differs: 17z 28.4 MHz snrUpDecile: fortran 20.6, rust 20.5

@@ -1,0 +1,7 @@
+case: polar-tromso-reykjavik
+from: 69.6492 18.9553 TROMSO
+to: 64.1466 -21.9426 REYKJAVIK
+month: 10
+year: 2026
+ssn: 47.1
+differs: 08z 28.4 MHz snr: fortran -81, rust -80

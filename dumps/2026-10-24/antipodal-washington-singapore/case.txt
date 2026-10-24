@@ -1,0 +1,8 @@
+case: antipodal-washington-singapore
+from: 38.9072 -77.0369 WASHINGTON
+to: 1.3521 103.8198 SINGAPORE
+month: 10
+year: 2026
+ssn: 47.1
+differs: 08z 14.2 MHz snr: fortran -54, rust -53
+differs: 15z 18.1 MHz reliability: fortran 0.14, rust 0.13

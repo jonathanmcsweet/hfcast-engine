@@ -1,0 +1,9 @@
+case: midlat-toronto-boston
+from: 43.6532 -79.3832 TORONTO
+to: 42.3601 -71.0589 BOSTON
+month: 10
+year: 2026
+ssn: 47.1
+differs: 05z 18.1 MHz snrLowDecile: fortran 18.1, rust 18.2
+differs: 20z 7.1 MHz snrLowDecile: fortran 10.6, rust 10.7
+differs: 22z 10.12 MHz snrLowDecile: fortran 24, rust 23.9

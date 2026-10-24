@@ -1,0 +1,7 @@
+case: highlat-helsinki-sydney
+from: 60.1699 24.9384 HELSINKI
+to: -33.8688 151.2093 SYDNEY
+month: 10
+year: 2026
+ssn: 47.1
+differs: 21z 18.1 MHz snr: fortran -25, rust -24

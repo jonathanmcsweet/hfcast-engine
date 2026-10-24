@@ -1,0 +1,8 @@
+case: polar-longyearbyen-helsinki
+from: 78.2232 15.6267 LONGYEARBYEN
+to: 60.1699 24.9384 HELSINKI
+month: 10
+year: 2026
+ssn: 47.1
+differs: 03z 24.94 MHz snrUpDecile: fortran 8.7, rust 8.6
+differs: 21z 18.1 MHz snrUpDecile: fortran 14.9, rust 15
