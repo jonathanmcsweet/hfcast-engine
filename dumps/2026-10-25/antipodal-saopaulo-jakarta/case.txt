@@ -1,0 +1,7 @@
+case: antipodal-saopaulo-jakarta
+from: -23.5505 -46.6333 SAO PAULO
+to: -6.2088 106.8456 JAKARTA
+month: 10
+year: 2026
+ssn: 35.9
+differs: 01z 18.1 MHz snrUpDecile: fortran 22, rust 22.1

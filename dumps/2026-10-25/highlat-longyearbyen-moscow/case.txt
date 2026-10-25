@@ -1,0 +1,7 @@
+case: highlat-longyearbyen-moscow
+from: 78.2232 15.6267 LONGYEARBYEN
+to: 55.7558 37.6173 MOSCOW
+month: 10
+year: 2026
+ssn: 35.9
+differs: 22z 24.94 MHz snrUpDecile: fortran 21.9, rust 21.8

@@ -1,0 +1,7 @@
+case: highlat-boston-mcmurdo
+from: 42.3601 -71.0589 BOSTON
+to: -77.8419 166.6863 MCMURDO
+month: 10
+year: 2026
+ssn: 35.9
+differs: 13z 1.84 MHz snrLowDecile: fortran 9.9, rust 9.8

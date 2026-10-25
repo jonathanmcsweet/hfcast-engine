@@ -1,0 +1,7 @@
+case: polar-longyearbyen-reykjavik
+from: 78.2232 15.6267 LONGYEARBYEN
+to: 64.1466 -21.9426 REYKJAVIK
+month: 10
+year: 2026
+ssn: 35.9
+differs: 09z 21.2 MHz snr: fortran 21, rust 22

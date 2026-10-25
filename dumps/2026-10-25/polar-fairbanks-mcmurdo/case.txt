@@ -1,0 +1,7 @@
+case: polar-fairbanks-mcmurdo
+from: 64.8378 -147.7164 FAIRBANKS
+to: -77.8419 166.6863 MCMURDO
+month: 10
+year: 2026
+ssn: 35.9
+differs: 01z 28.4 MHz snr: fortran -50, rust -49

@@ -1,0 +1,7 @@
+case: midlat-moscow-london
+from: 55.7558 37.6173 MOSCOW
+to: 51.5072 -0.1276 LONDON
+month: 10
+year: 2026
+ssn: 35.9
+differs: 02z 28.4 MHz snr: fortran -89, rust -88

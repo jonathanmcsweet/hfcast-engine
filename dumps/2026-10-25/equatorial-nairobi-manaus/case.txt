@@ -1,0 +1,7 @@
+case: equatorial-nairobi-manaus
+from: -1.2921 36.8219 NAIROBI
+to: -3.119 -60.0217 MANAUS
+month: 10
+year: 2026
+ssn: 35.9
+differs: 13z 3.75 MHz snr: fortran -591, rust -590

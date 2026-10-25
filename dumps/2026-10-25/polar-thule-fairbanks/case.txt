@@ -1,0 +1,7 @@
+case: polar-thule-fairbanks
+from: 76.5312 -68.7032 THULE
+to: 64.8378 -147.7164 FAIRBANKS
+month: 10
+year: 2026
+ssn: 35.9
+differs: 15z 21.2 MHz snr: fortran -3, rust -4

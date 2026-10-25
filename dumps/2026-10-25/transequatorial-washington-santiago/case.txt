@@ -1,0 +1,7 @@
+case: transequatorial-washington-santiago
+from: 38.9072 -77.0369 WASHINGTON
+to: -33.4489 -70.6693 SANTIAGO
+month: 10
+year: 2026
+ssn: 35.9
+differs: 14z 3.75 MHz snr: fortran -309, rust -310

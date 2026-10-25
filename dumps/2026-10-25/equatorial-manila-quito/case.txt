@@ -1,0 +1,7 @@
+case: equatorial-manila-quito
+from: 14.5995 120.9842 MANILA
+to: -0.1807 -78.4678 QUITO
+month: 10
+year: 2026
+ssn: 35.9
+differs: 10z 28.4 MHz snrLowDecile: fortran 11.1, rust 11.2

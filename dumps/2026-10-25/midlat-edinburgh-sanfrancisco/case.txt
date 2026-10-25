@@ -1,0 +1,7 @@
+case: midlat-edinburgh-sanfrancisco
+from: 55.9533 -3.1883 EDINBURGH
+to: 37.7749 -122.4194 SAN FRANCISCO
+month: 10
+year: 2026
+ssn: 35.9
+differs: 01z 21.2 MHz snr: fortran -49, rust -48

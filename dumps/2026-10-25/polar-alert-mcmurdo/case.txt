@@ -1,0 +1,8 @@
+case: polar-alert-mcmurdo
+from: 82.5018 -62.3481 ALERT
+to: -77.8419 166.6863 MCMURDO
+month: 10
+year: 2026
+ssn: 35.9
+differs: 02z 1.84 MHz snr: fortran -612, rust -611
+differs: 12z 28.4 MHz snr: fortran -120, rust -121

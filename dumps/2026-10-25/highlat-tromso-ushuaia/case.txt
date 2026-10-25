@@ -1,0 +1,7 @@
+case: highlat-tromso-ushuaia
+from: 69.6492 18.9553 TROMSO
+to: -54.8019 -68.303 USHUAIA
+month: 10
+year: 2026
+ssn: 35.9
+differs: 20z 7.1 MHz snrUpDecile: fortran 23.6, rust 23.7

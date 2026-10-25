@@ -1,0 +1,7 @@
+case: transequatorial-mexicocity-quito
+from: 19.4326 -99.1332 MEXICO CITY
+to: -0.1807 -78.4678 QUITO
+month: 10
+year: 2026
+ssn: 35.9
+differs: 07z 24.94 MHz snr: fortran -14, rust -15
