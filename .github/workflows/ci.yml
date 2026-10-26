@@ -36,7 +36,8 @@ jobs:
         run: tools/check-version-bump.sh "origin/${{ github.base_ref }}"
 
   test:
-    runs-on: ubuntu-latest
+    # Pinned, like soak.yml.
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
@@ -147,7 +148,8 @@ jobs:
   # It is a separate job because it needs a Fortran compiler and two builds
   # of the reference, which the fast job should not wait for.
   portcheck:
-    runs-on: ubuntu-latest
+    # Pinned, like soak.yml.
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
