@@ -1,0 +1,7 @@
+case: short-montreal-boston
+from: 45.5019 -73.5674 MONTREAL
+to: 42.3601 -71.0589 BOSTON
+month: 10
+year: 2026
+ssn: 33.4
+differs: 04z 7.1 MHz snrLowDecile: fortran 21.1, rust 21

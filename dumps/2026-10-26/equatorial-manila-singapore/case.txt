@@ -1,0 +1,7 @@
+case: equatorial-manila-singapore
+from: 14.5995 120.9842 MANILA
+to: 1.3521 103.8198 SINGAPORE
+month: 10
+year: 2026
+ssn: 33.4
+differs: 13z 7.1 MHz snrUpDecile: fortran 11.6, rust 11.5

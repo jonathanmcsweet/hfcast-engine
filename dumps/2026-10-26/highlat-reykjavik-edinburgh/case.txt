@@ -1,0 +1,7 @@
+case: highlat-reykjavik-edinburgh
+from: 64.1466 -21.9426 REYKJAVIK
+to: 55.9533 -3.1883 EDINBURGH
+month: 10
+year: 2026
+ssn: 33.4
+differs: 17z 24.94 MHz snrUpDecile: fortran 23.6, rust 23.5

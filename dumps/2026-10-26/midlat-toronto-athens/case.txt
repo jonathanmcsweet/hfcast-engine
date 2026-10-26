@@ -1,0 +1,8 @@
+case: midlat-toronto-athens
+from: 43.6532 -79.3832 TORONTO
+to: 37.9838 23.7275 ATHENS
+month: 10
+year: 2026
+ssn: 33.4
+differs: 07z 7.1 MHz reliability: fortran 0.07, rust 0.06
+differs: 10z 3.75 MHz snrLowDecile: fortran 12.1, rust 12

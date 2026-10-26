@@ -1,0 +1,8 @@
+case: midlat-montreal-denver
+from: 45.5019 -73.5674 MONTREAL
+to: 39.7392 -104.9903 DENVER
+month: 10
+year: 2026
+ssn: 33.4
+differs: 07z 3.75 MHz snrUpDecile: fortran 7.3, rust 7.2
+differs: 08z 7.1 MHz snrUpDecile: fortran 8.6, rust 8.5

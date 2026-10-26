@@ -1,0 +1,7 @@
+case: transequatorial-dublin-manaus
+from: 53.3498 -6.2603 DUBLIN
+to: -3.119 -60.0217 MANAUS
+month: 10
+year: 2026
+ssn: 33.4
+differs: 07z 10.12 MHz snrLowDecile: fortran 16.1, rust 16

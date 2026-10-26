@@ -1,0 +1,8 @@
+case: midlat-toronto-chicago
+from: 43.6532 -79.3832 TORONTO
+to: 41.8781 -87.6298 CHICAGO
+month: 10
+year: 2026
+ssn: 33.4
+differs: 11z 7.1 MHz snrUpDecile: fortran 11.4, rust 11.5
+differs: 17z 10.12 MHz snr: fortran 51, rust 50

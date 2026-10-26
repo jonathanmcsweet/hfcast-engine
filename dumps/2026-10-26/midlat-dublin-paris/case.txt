@@ -1,0 +1,7 @@
+case: midlat-dublin-paris
+from: 53.3498 -6.2603 DUBLIN
+to: 48.8566 2.3522 PARIS
+month: 10
+year: 2026
+ssn: 33.4
+differs: 04z 1.84 MHz snrUpDecile: fortran 14.3, rust 14.2

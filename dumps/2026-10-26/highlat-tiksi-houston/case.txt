@@ -1,0 +1,7 @@
+case: highlat-tiksi-houston
+from: 71.6366 128.8675 TIKSI
+to: 29.7604 -95.3698 HOUSTON
+month: 10
+year: 2026
+ssn: 33.4
+differs: 19z 24.94 MHz snr: fortran -65, rust -66

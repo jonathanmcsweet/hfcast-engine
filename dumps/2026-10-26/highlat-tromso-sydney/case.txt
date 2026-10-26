@@ -1,0 +1,7 @@
+case: highlat-tromso-sydney
+from: 69.6492 18.9553 TROMSO
+to: -33.8688 151.2093 SYDNEY
+month: 10
+year: 2026
+ssn: 33.4
+differs: 09z 10.12 MHz snrUpDecile: fortran 9, rust 9.1

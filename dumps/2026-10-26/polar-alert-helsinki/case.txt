@@ -1,0 +1,8 @@
+case: polar-alert-helsinki
+from: 82.5018 -62.3481 ALERT
+to: 60.1699 24.9384 HELSINKI
+month: 10
+year: 2026
+ssn: 33.4
+differs: 01z 28.4 MHz snrUpDecile: fortran 18.1, rust 18.2
+differs: 03z 21.2 MHz snrUpDecile: fortran 25.6, rust 25.5
