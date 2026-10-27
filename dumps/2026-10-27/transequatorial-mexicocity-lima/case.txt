@@ -1,0 +1,7 @@
+case: transequatorial-mexicocity-lima
+from: 19.4326 -99.1332 MEXICO CITY
+to: -12.0464 -77.0428 LIMA
+month: 10
+year: 2026
+ssn: 33.4
+differs: 05z 7.1 MHz snr: fortran 22, rust 23

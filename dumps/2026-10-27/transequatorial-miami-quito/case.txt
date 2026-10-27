@@ -1,0 +1,8 @@
+case: transequatorial-miami-quito
+from: 25.7617 -80.1918 MIAMI
+to: -0.1807 -78.4678 QUITO
+month: 10
+year: 2026
+ssn: 33.4
+differs: 07z 18.1 MHz reliability: fortran 0.25, rust 0.24
+differs: 21z 18.1 MHz snrUpDecile: fortran 8.8, rust 8.7

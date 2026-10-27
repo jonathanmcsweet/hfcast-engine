@@ -1,0 +1,7 @@
+case: highlat-yakutsk-beijing
+from: 62.0355 129.6755 YAKUTSK
+to: 39.9042 116.4074 BEIJING
+month: 10
+year: 2026
+ssn: 33.4
+differs: 06z 28.4 MHz reliability: fortran 0.51, rust 0.52

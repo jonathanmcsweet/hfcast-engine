@@ -1,0 +1,7 @@
+case: highlat-tromso-moscow
+from: 69.6492 18.9553 TROMSO
+to: 55.7558 37.6173 MOSCOW
+month: 10
+year: 2026
+ssn: 33.4
+differs: 09z 18.1 MHz snrUpDecile: fortran 16.4, rust 16.5

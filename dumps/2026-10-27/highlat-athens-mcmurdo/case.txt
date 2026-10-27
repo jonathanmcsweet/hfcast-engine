@@ -1,0 +1,7 @@
+case: highlat-athens-mcmurdo
+from: 37.9838 23.7275 ATHENS
+to: -77.8419 166.6863 MCMURDO
+month: 10
+year: 2026
+ssn: 33.4
+differs: 22z 10.12 MHz snrUpDecile: fortran 9.5, rust 9.4

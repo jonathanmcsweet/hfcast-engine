@@ -1,0 +1,7 @@
+case: short-edinburgh-dublin
+from: 55.9533 -3.1883 EDINBURGH
+to: 53.3498 -6.2603 DUBLIN
+month: 10
+year: 2026
+ssn: 33.4
+differs: 19z 1.84 MHz snrUpDecile: fortran 16.7, rust 16.6

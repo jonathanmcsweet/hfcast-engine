@@ -1,0 +1,7 @@
+case: polar-thule-tromso
+from: 76.5312 -68.7032 THULE
+to: 69.6492 18.9553 TROMSO
+month: 10
+year: 2026
+ssn: 33.4
+differs: 13z 14.2 MHz snrLowDecile: fortran 24.6, rust 24.5

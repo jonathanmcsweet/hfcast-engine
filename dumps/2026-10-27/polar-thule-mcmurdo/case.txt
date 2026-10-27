@@ -1,0 +1,10 @@
+case: polar-thule-mcmurdo
+from: 76.5312 -68.7032 THULE
+to: -77.8419 166.6863 MCMURDO
+month: 10
+year: 2026
+ssn: 33.4
+differs: 19z 1.84 MHz snrUpDecile: fortran 9.4, rust 9.5
+differs: 19z 3.75 MHz snrUpDecile: fortran 9.4, rust 9.5
+differs: 19z 10.12 MHz snrUpDecile: fortran 9.3, rust 9.4
+differs: 19z 14.2 MHz snrUpDecile: fortran 9.4, rust 9.5

@@ -1,0 +1,8 @@
+case: highlat-helsinki-paris
+from: 60.1699 24.9384 HELSINKI
+to: 48.8566 2.3522 PARIS
+month: 10
+year: 2026
+ssn: 33.4
+differs: 23z 14.2 MHz snrLowDecile: fortran 22.1, rust 22
+differs: 23z 14.2 MHz snrUpDecile: fortran 14.5, rust 14.6

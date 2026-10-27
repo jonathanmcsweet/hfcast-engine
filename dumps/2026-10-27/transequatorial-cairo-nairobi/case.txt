@@ -1,0 +1,10 @@
+case: transequatorial-cairo-nairobi
+from: 30.0444 31.2357 CAIRO
+to: -1.2921 36.8219 NAIROBI
+month: 10
+year: 2026
+ssn: 33.4
+differs: 13z 18.1 MHz reliability: fortran 0.57, rust 0.85
+differs: 13z 18.1 MHz snr: fortran 25, rust 31
+differs: 13z 18.1 MHz snrLowDecile: fortran 7.7, rust 7.9
+differs: 13z 18.1 MHz snrUpDecile: fortran 9.6, rust 10.4

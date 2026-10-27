@@ -1,0 +1,7 @@
+case: highlat-helsinki-moscow
+from: 60.1699 24.9384 HELSINKI
+to: 55.7558 37.6173 MOSCOW
+month: 10
+year: 2026
+ssn: 33.4
+differs: 23z 1.84 MHz snrLowDecile: fortran 11.5, rust 11.4
