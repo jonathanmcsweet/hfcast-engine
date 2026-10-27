@@ -30,7 +30,8 @@ OUT="$(cd "$(dirname "${OUT:-vendor/voacapl-variants}")" 2>/dev/null && pwd || e
 # compiler OOM-killed, which surfaces as a bare "Killed".
 JOBS="${JOBS:-1}"
 
-# -O2 matches how the vendored binary is built and is the reference.
+# O2 is the reference. Its flags are in reference-flags.sh, which
+# build-trace.sh reads too.
 # -ffast-math is included deliberately as an out-of-contract case: it permits
 # reassociation and drops strict IEEE semantics, so it shows what a port that
 # rearranges arithmetic "harmlessly" would cost.
@@ -39,11 +40,13 @@ JOBS="${JOBS:-1}"
 # reference build, and building the other four would be four times the
 # work for nothing.
 read -r -a VARIANT_NAMES <<<"${VARIANTS:-O0 O1 O2 O3 fastmath}"
+# shellcheck source=tools/reference-flags.sh
+. "$(dirname "${BASH_SOURCE[0]}")/reference-flags.sh"
 variant_flags() {
   case "$1" in
     O0) echo "-g -O0" ;;
     O1) echo "-g -O1" ;;
-    O2) echo "-g -O2" ;;
+    O2) echo "$REFERENCE_FFLAGS" ;;
     O3) echo "-g -O3" ;;
     fastmath) echo "-g -O2 -ffast-math" ;;
     *) return 1 ;;
@@ -62,7 +65,8 @@ for name in "${VARIANT_NAMES[@]}"; do
   flags="$(variant_flags "$name")"
   dir="$OUT/$name"
 
-  if [ -x "$dir/src/voacapw/voacapl" ]; then
+  # Rebuilt when its flags changed.
+  if [ -x "$dir/src/voacapw/voacapl" ] && [ "$(cat "$dir/flags" 2>/dev/null)" = "$flags" ]; then
     echo "== $name: already built, skipping"
     continue
   fi
@@ -80,6 +84,7 @@ for name in "${VARIANT_NAMES[@]}"; do
       FCFLAGS="$flags" FFLAGS="$flags" >configure.log 2>&1
     make -j"$JOBS" >build.log 2>&1
   ); then
+    printf '%s\n' "$flags" >"$dir/flags"
     echo "== $name: built $dir/src/voacapw/voacapl"
   else
     echo "== $name: FAILED — see $dir/configure.log and $dir/build.log" >&2

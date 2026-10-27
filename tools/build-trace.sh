@@ -2,10 +2,11 @@
 #
 # Builds the "trace" variant of voacapl: the vendored source with the
 # instrumented files from trace/ copied over their originals, compiled with
-# the reference flags (-O2). Each file in trace/ is a complete replacement
-# for the same-named file under src/voacapw/, identical except for an added
-# trace subroutine. The patched binary behaves identically unless the
-# environment variable HFCAST_TRACE names a directory, in which case each
+# the reference flags (tools/reference-flags.sh). Each file in trace/ is a
+# complete replacement for the same-named file under src/voacapw/,
+# identical except for an added trace subroutine. The patched binary
+# behaves identically unless the environment variable HFCAST_TRACE names
+# a directory, in which case each
 # instrumented stage appends its intermediate values there. The Rust port
 # is tested stage by stage against those values.
 set -euo pipefail
@@ -15,6 +16,8 @@ OUT="${OUT:-vendor/voacapl-variants}"
 JOBS="${JOBS:-4}"
 
 cd "$(dirname "$0")/.."
+# shellcheck source=tools/reference-flags.sh
+. tools/reference-flags.sh
 dir="$OUT/trace"
 
 echo "== trace: copying source"
@@ -38,7 +41,7 @@ echo "== trace: building"
   # configure refuses a relative prefix, and the subshell is already
   # inside "$dir", so name it from there.
   ./configure --prefix="$PWD/prefix" \
-    FCFLAGS="-g -O2" FFLAGS="-g -O2" >configure.log 2>&1
+    FCFLAGS="$REFERENCE_FFLAGS" FFLAGS="$REFERENCE_FFLAGS" >configure.log 2>&1
   make -j"$JOBS" >build.log 2>&1
 )
 echo "== trace: built $dir/src/voacapw/voacapl"

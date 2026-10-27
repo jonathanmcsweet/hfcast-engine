@@ -26,17 +26,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # `ubuntu-24.04-arm` is free for public repositories. This is the
+          # `ubuntu-26.04-arm` is free for public repositories. This is the
           # only place the engine's own tests run on ARM.
           - slug: linux-x86-64
             label: linux x86_64
             target: x86_64-unknown-linux-gnu
-            runner: ubuntu-latest
+            # Pinned, like the ARM row.
+            runner: ubuntu-26.04
             tests: true
           - slug: linux-aarch64
             label: linux aarch64
             target: aarch64-unknown-linux-gnu
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-26.04-arm
             tests: true
           - slug: android-arm64-v8a
             label: android arm64-v8a

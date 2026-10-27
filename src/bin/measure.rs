@@ -22,7 +22,7 @@ use hfcast::listing::{parse_listing, ParsedListing};
 use hfcast::runner::{map_limit, run_deck, variant_bin, IsolatedRoot};
 use hfcast::sweep::{sweep_cases, PATHS};
 
-/// `-O2` matches how the vendored and installed binaries are built.
+/// The reference build. Its flags are in `tools/reference-flags.sh`.
 const REFERENCE: &str = "O2";
 
 /// Variants compared against the reference.
